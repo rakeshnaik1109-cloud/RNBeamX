@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>RNBeamX · Optical Setup Designer</title>
+<meta name="description" content="RNBeamX designs publication-ready optical experiment figures and graphical abstracts in the browser. Beams are traced automatically through mirrors, splitters, lenses, polarisation optics, gratings and prisms. Schematic, shaded and 3D styles, keyframe animation, and SVG / PDF / TIFF / PNG / MP4 export. Nothing is uploaded."/>
+<meta name="author" content="Rakesh Naik"/>
+<meta name="theme-color" content="#121420"/>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml"/>
+<meta property="og:title" content="RNBeamX · Optical Setup Designer"/>
+<meta property="og:description" content="Publication-ready optical setup figures with automatic beam tracing, 3D views and animation. Runs entirely in your browser."/>
+<script>
+/* apply the saved workspace theme before first paint */
+(function(){try{var t=localStorage.getItem('rnbx_theme');t=t?JSON.parse(t):null;
+if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();
+</script>
+<link href="css/style.css?v=202610261944" rel="stylesheet"/>
+<link href="css/layout.css?v=202610261944" rel="stylesheet"/>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand" title="RNBeamX">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#18c2d6"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#lg-brand)"/><path d="M5 22 L14 13 L27 13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 13 L22 25" fill="none" stroke="#ffe27a" stroke-width="2.4" stroke-linecap="round"/><rect x="11.6" y="9.4" width="5" height="1.6" rx=".8" transform="rotate(45 14 13)" fill="#fff"/></svg>
+      <span class="brand-name">RNBeam<b>X</b></span>
+      <span class="pill" id="versionPill">v1.0</span>
+    </div>
+    <nav class="menus" id="menus"></nav>
+    <div class="seg" id="styleSwitch" role="tablist" aria-label="Figure style">
+      <button data-mode="schematic" title="Line-art schematic (1)">Schematic</button>
+      <button data-mode="shaded" title="Shaded with gradients (2)">Shaded</button>
+      <button data-mode="3d" title="3D optical table (3)">3D</button>
+    </div>
+    <div class="tools" id="topTools"></div>
+    <div class="top-right">
+      <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
+      <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
+      <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
+      <button class="icon-btn" id="btnHelp" title="Help &amp; shortcuts (?)"></button>
+    </div>
+  </header>
+
+  <aside class="panel left" id="leftPanel">
+    <div class="panel-head">
+      <input type="search" id="libSearch" placeholder="Search components…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="panel-body" id="palette"></div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" aria-label="Figure canvas">
+      <defs>
+        <pattern id="gridMinor" patternUnits="userSpaceOnUse" width="2.5" height="2.5"><path d="M 2.5 0 L 0 0 0 2.5" fill="none" class="grid-minor"/></pattern>
+        <pattern id="gridMajor" patternUnits="userSpaceOnUse" width="10" height="10"><rect width="10" height="10" fill="url(#gridMinor)"/><path d="M 10 0 L 0 0 0 10" fill="none" class="grid-major"/></pattern>
+        <filter id="pageShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="0.6" stdDeviation="1.6" flood-opacity="0.18"/></filter>
+      </defs>
+      <rect id="pageShadowRect" filter="url(#pageShadow)"/>
+      <g id="figure"></g>
+      <rect id="gridRect" fill="url(#gridMajor)" pointer-events="none"/>
+      <rect id="pageOutline" fill="none" pointer-events="none"/>
+      <g id="overlay"></g>
+    </svg>
+    <div class="stage-hud">
+      <div class="hud-group">
+        <button class="hud-btn" id="zoomOut" title="Zoom out (−)">−</button>
+        <button class="hud-btn wide" id="zoomLabel" title="Fit page (0)">100%</button>
+        <button class="hud-btn" id="zoomIn" title="Zoom in (+)">+</button>
+      </div>
+      <div class="hud-group" id="view3dHud" hidden>
+        <label>Yaw <input type="range" id="hudYaw" min="-180" max="180" step="1"/></label>
+        <label>Tilt <input type="range" id="hudPitch" min="8" max="90" step="1"/></label>
+      </div>
+    </div>
+    <div class="empty-state" id="emptyState">
+      <h2>Design your optical setup</h2>
+      <p>Drag a <b>laser</b> from the library, then drop mirrors, lenses and splitters onto its beam. They snap to the beam and turn to the right angle, and the light is traced automatically.</p>
+      <div class="empty-actions">
+        <button class="btn primary" data-empty="template">Start from a template</button>
+        <button class="btn" data-empty="laser">Add a laser</button>
+      </div>
+    </div>
+    <div class="connect-hint" id="connectHint" hidden></div>
+  </main>
+
+  <aside class="panel right" id="rightPanel">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="inspector">Properties</button>
+      <button class="tab" data-tab="layers">Layers</button>
+    </div>
+    <div class="panel-body" id="inspector"></div>
+    <div class="panel-body" id="layers" hidden></div>
+  </aside>
+
+  <section class="timeline" id="timeline" hidden></section>
+
+  <footer class="status" id="status">
+    <span id="stCursor">x — · y —</span>
+    <span id="stInfo"></span>
+    <span class="grow"></span>
+    <span id="stBeams"></span>
+    <button class="link" id="btnTimeline" title="Animation timeline (T)">▶ Animation</button>
+  </footer>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot" aria-live="polite"></div>
+
+<script src="js/core/utils.js?v=202610261944"></script>
+<script src="js/core/state.js?v=202610261944"></script>
+<script src="js/engine/optics.js?v=202610261944"></script>
+<script src="js/engine/tracer.js?v=202610261944"></script>
+<script src="js/components/library.js?v=202610261944"></script>
+<script src="js/components/sources.js?v=202610261944"></script>
+<script src="js/components/optics.js?v=202610261944"></script>
+<script src="js/components/detectors.js?v=202610261944"></script>
+<script src="js/components/annotations.js?v=202610261944"></script>
+<script src="js/render/text.js?v=202610261944"></script>
+<script src="js/render/defs.js?v=202610261944"></script>
+<script src="js/render/beams.js?v=202610261944"></script>
+<script src="js/render/renderer.js?v=202610261944"></script>
+<script src="js/render/renderer3d.js?v=202610261944"></script>
+<script src="js/anim/animation.js?v=202610261944"></script>
+<script src="js/io/project.js?v=202610261944"></script>
+<script src="js/io/export.js?v=202610261944"></script>
+<script src="js/io/templates.js?v=202610261944"></script>
+<script src="js/ui/dom.js?v=202610261944"></script>
+<script src="js/ui/canvas.js?v=202610261944"></script>
+<script src="js/ui/palette.js?v=202610261944"></script>
+<script src="js/ui/inspector.js?v=202610261944"></script>
+<script src="js/ui/layers.js?v=202610261944"></script>
+<script src="js/ui/timeline.js?v=202610261944"></script>
+<script src="js/ui/dialogs.js?v=202610261944"></script>
+<script src="js/ui/menus.js?v=202610261944"></script>
+<script src="js/app.js?v=202610261944"></script>
+</body>
+</html>

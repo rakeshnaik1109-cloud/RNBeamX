@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use RNBeamX to prepare figures, please cite it as below."
+title: "RNBeamX (Optical Setup Designer)"
+version: "1.0.0"
+date-released: 2026-10-26
+authors:
+  - family-names: Naik
+    given-names: Rakesh
+repository-code: "https://github.com/rakeshnaik1109-cloud/RNBeamX"
+license-url: "https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/LICENSE"
+keywords:
+  - optics
+  - photonics
+  - scientific illustration
+  - optical setup
+  - graphical abstract
+  - ray tracing

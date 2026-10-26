@@ -1,0 +1,61 @@
+# RNBeamX Architecture
+
+RNBeamX is plain browser JavaScript with no build step and no framework. Modules
+attach to one global namespace, `window.RNBX`, and load in dependency order from
+`index.html`.
+
+```
+state (document) ──► tracer ──► renderer (2D) / renderer3d ──► SVG string
+      ▲                                 │
+      │                                 ├─► canvas (live, interactive)
+ inspector, canvas,                     └─► exporters (SVG, PDF, PNG, TIFF, video)
+ timeline, menus
+```
+
+## Modules
+
+| Layer | Files | Responsibility |
+|---|---|---|
+| core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
+| engine | `optics.js`, `tracer.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power |
+| components | `library.js` + four catalogue files | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting |
+| anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
+| io | `project.js`, `export.js`, `templates.js` | Files, autosave, clipboard; exporters; built-in setups |
+| ui | `dom.js`, `canvas.js`, `palette.js`, `inspector.js`, `layers.js`, `timeline.js`, `dialogs.js`, `menus.js` | The application |
+
+## Adding a component
+
+Register it in one of the files in `js/components/`:
+
+```js
+lib.register({
+  type: 'myoptic', name: 'My optic', abbr: 'MO', category: 'Lenses & objectives',
+  defaults: { d: 8, f: 50 },
+  params: [{ key: 'f', label: 'Focal length', type: 'number', unit: 'mm' }],
+  snap: 'perp',                                   // orientation when dropped on a beam
+  bbox: p => [-1, -p.d / 2, 1, p.d / 2],          // local mm, beam along +x
+  draw: (p, S) => H.rect(S, -1, -p.d / 2, 2, p.d, S.fill('glass')),
+  optics: p => [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: p.f }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-1, 1], r: [p.d / 2, p.d / 2], mat: 'glass' }],
+  mount: true,                                    // post + base in 3D
+});
+```
+
+The palette, inspector, tracer, both renderers and all exporters pick it up
+automatically.
+
+## Surface kinds understood by the tracer
+
+`mirror` (optional `f`), `splitter`, `pbs`, `dichroic`, `filter`, `lens`,
+`waveplate`, `polarizer`, `rotator` (optional `isolator`), `grating`, polygon
+refraction (`poly` + `mat`), `aom`, `shg`, `sample` (with emission), `retro`,
+`aperture`, `fiberIn`, `pass`, `absorb`.
+
+## Conventions
+
+- Units: millimetres on the printed page; line weights and type sizes in points.
+- Local frame: the beam travels along +x; rotation is in degrees, clockwise on screen.
+- Jones basis: p (in the table plane) and s (out of it).
+- Rendering is pure: `RNBX.render.build(doc, opts)` returns the same SVG for the
+  canvas and every exporter.
