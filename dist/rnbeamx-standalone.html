@@ -174,6 +174,10 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
 .tools { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
 .tools .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.family-link { text-decoration: none; color: var(--muted); font-weight: 600; }
+.family-link:hover { color: var(--accent); }
+a.icon-btn { text-decoration: none; }
+@media (max-width: 1250px) { .family-link { display: none; } }
 
 /* ---------- side panels ---------- */
 .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
@@ -371,10 +375,12 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
     </div>
     <div class="tools" id="topTools"></div>
     <div class="top-right">
+      <a class="btn ghost family-link" id="lnkSpectrax" href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer" title="RNSpectraX: process and plot the spectra for this setup (companion app)">RNSpectraX ↗</a>
       <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
       <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
       <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
       <button class="icon-btn" id="btnHelp" title="Help &amp; shortcuts (?)"></button>
+      <a class="icon-btn" id="lnkHome" href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer" title="Rakesh Naik: research and other software"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></a>
     </div>
   </header>
 
@@ -444,6 +450,19 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
 <div id="modalRoot"></div>
 <div id="toastRoot" aria-live="polite"></div>
 
+<script>
+/* js/config.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — deployment config
+   Edit these lines if the sites move (e.g. a custom domain).
+═══════════════════════════════════════════════════════════ */
+window.RNBX_LINKS = {
+  home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/',       // author's website
+  spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/',  // companion: spectral analysis
+  code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX',
+};
+
+</script>
 <script>
 /* js/core/utils.js */
 /* ═══════════════════════════════════════════════════════════
@@ -636,6 +655,7 @@ const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
 RNBX.VERSION = '1.1.0';
+RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX' }, window.RNBX_LINKS || {});
 
 /* ---------- event bus ---------- */
 const listeners = {};
@@ -7249,6 +7269,7 @@ Dl.help = () => {
     title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.', wide: true,
     body: [
       el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Fold mirrors and periscopes take beams off the table; Gaussian beams, Fresnel ghosts, cavities, ring resonators and interference (with piezo-driven fringes) are modelled too. Click any detector to see the power, phase and beam size that reach it.' }),
+      el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source &amp; manual</a>` }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),
       grid,
     ],
@@ -7303,6 +7324,9 @@ M.items = {
     '-',
     { label: 'Journal check', action: () => RNBX.dialogs.check() },
     { label: 'Caption helper', action: () => RNBX.dialogs.caption() },
+    '-',
+    { label: 'Open RNSpectraX ↗ (spectra)', action: () => window.open(RNBX.links.spectrax, '_blank', 'noopener') },
+    { label: 'Rakesh Naik — website ↗', action: () => window.open(RNBX.links.home, '_blank', 'noopener') },
   ],
   Edit: () => [
     { label: 'Undo', icon: 'undo', key: mod + 'Z', disabled: !RNBX.history.undoStack.length, action: () => RNBX.history.undo() },
@@ -7393,6 +7417,9 @@ M.init = () => {
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();
+  // links to the companion app and the authors' site (addresses in js/config.js)
+  D.$('#lnkSpectrax').href = RNBX.links.spectrax;
+  D.$('#lnkHome').href = RNBX.links.home;
   D.$('#btnTemplates').onclick = () => RNBX.dialogs.templates();
   D.$('#btnHelp').innerHTML = D.icon('help');
   D.$('#btnHelp').onclick = () => RNBX.dialogs.help();

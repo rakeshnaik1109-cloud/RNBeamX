@@ -20,6 +20,10 @@
 .tools { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
 .tools .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.family-link { text-decoration: none; color: var(--muted); font-weight: 600; }
+.family-link:hover { color: var(--accent); }
+a.icon-btn { text-decoration: none; }
+@media (max-width: 1250px) { .family-link { display: none; } }
 
 /* ---------- side panels ---------- */
 .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }

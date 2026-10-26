@@ -81,6 +81,14 @@ See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) for the full guide,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is organised, and
 [docs/USABILITY_TEST.md](docs/USABILITY_TEST.md) for a ready-made user test with lab members.
 
+## Companion: RNSpectraX
+
+[RNSpectraX](https://rakeshnaik1109-cloud.github.io/RNSpectra_X/) is the
+spectral analysis suite from the same authors (Raman/SERS processing, XY
+plotting and fitting). Press **→ RNBeamX** under its *Export* menu to send a
+processed spectrum here as panel b of your figure, or import its *Plotted
+CSV*. Author website: [rakeshnaik1109-cloud.github.io/RakeshNaik](https://rakeshnaik1109-cloud.github.io/RakeshNaik/).
+
 ## Project layout
 
 ```

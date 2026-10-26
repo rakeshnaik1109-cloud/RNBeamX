@@ -15,8 +15,8 @@
 (function(){try{var t=localStorage.getItem('rnbx_theme');t=t?JSON.parse(t):null;
 if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();
 </script>
-<link href="css/style.css?v=202610262022" rel="stylesheet"/>
-<link href="css/layout.css?v=202610262022" rel="stylesheet"/>
+<link href="css/style.css?v=202610262036" rel="stylesheet"/>
+<link href="css/layout.css?v=202610262036" rel="stylesheet"/>
 </head>
 <body>
 <div id="app">
@@ -34,10 +34,12 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
     </div>
     <div class="tools" id="topTools"></div>
     <div class="top-right">
+      <a class="btn ghost family-link" id="lnkSpectrax" href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer" title="RNSpectraX: process and plot the spectra for this setup (companion app)">RNSpectraX ↗</a>
       <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
       <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
       <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
       <button class="icon-btn" id="btnHelp" title="Help &amp; shortcuts (?)"></button>
+      <a class="icon-btn" id="lnkHome" href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer" title="Rakesh Naik: research and other software"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></a>
     </div>
   </header>
 
@@ -107,37 +109,38 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
 <div id="modalRoot"></div>
 <div id="toastRoot" aria-live="polite"></div>
 
-<script src="js/core/utils.js?v=202610262022"></script>
-<script src="js/core/state.js?v=202610262022"></script>
-<script src="js/engine/optics.js?v=202610262022"></script>
-<script src="js/engine/tracer.js?v=202610262022"></script>
-<script src="js/components/library.js?v=202610262022"></script>
-<script src="js/components/sources.js?v=202610262022"></script>
-<script src="js/components/optics.js?v=202610262022"></script>
-<script src="js/components/detectors.js?v=202610262022"></script>
-<script src="js/components/vertical.js?v=202610262022"></script>
-<script src="js/components/photonics.js?v=202610262022"></script>
-<script src="js/components/plot.js?v=202610262022"></script>
-<script src="js/components/annotations.js?v=202610262022"></script>
-<script src="js/render/text.js?v=202610262022"></script>
-<script src="js/render/defs.js?v=202610262022"></script>
-<script src="js/render/beams.js?v=202610262022"></script>
-<script src="js/render/renderer.js?v=202610262022"></script>
-<script src="js/render/renderer3d.js?v=202610262022"></script>
-<script src="js/render/labels.js?v=202610262022"></script>
-<script src="js/anim/animation.js?v=202610262022"></script>
-<script src="js/io/project.js?v=202610262022"></script>
-<script src="js/io/export.js?v=202610262022"></script>
-<script src="js/io/templates.js?v=202610262022"></script>
-<script src="js/io/styles.js?v=202610262022"></script>
-<script src="js/ui/dom.js?v=202610262022"></script>
-<script src="js/ui/canvas.js?v=202610262022"></script>
-<script src="js/ui/palette.js?v=202610262022"></script>
-<script src="js/ui/inspector.js?v=202610262022"></script>
-<script src="js/ui/layers.js?v=202610262022"></script>
-<script src="js/ui/timeline.js?v=202610262022"></script>
-<script src="js/ui/dialogs.js?v=202610262022"></script>
-<script src="js/ui/menus.js?v=202610262022"></script>
-<script src="js/app.js?v=202610262022"></script>
+<script src="js/config.js?v=202610262036"></script>
+<script src="js/core/utils.js?v=202610262036"></script>
+<script src="js/core/state.js?v=202610262036"></script>
+<script src="js/engine/optics.js?v=202610262036"></script>
+<script src="js/engine/tracer.js?v=202610262036"></script>
+<script src="js/components/library.js?v=202610262036"></script>
+<script src="js/components/sources.js?v=202610262036"></script>
+<script src="js/components/optics.js?v=202610262036"></script>
+<script src="js/components/detectors.js?v=202610262036"></script>
+<script src="js/components/vertical.js?v=202610262036"></script>
+<script src="js/components/photonics.js?v=202610262036"></script>
+<script src="js/components/plot.js?v=202610262036"></script>
+<script src="js/components/annotations.js?v=202610262036"></script>
+<script src="js/render/text.js?v=202610262036"></script>
+<script src="js/render/defs.js?v=202610262036"></script>
+<script src="js/render/beams.js?v=202610262036"></script>
+<script src="js/render/renderer.js?v=202610262036"></script>
+<script src="js/render/renderer3d.js?v=202610262036"></script>
+<script src="js/render/labels.js?v=202610262036"></script>
+<script src="js/anim/animation.js?v=202610262036"></script>
+<script src="js/io/project.js?v=202610262036"></script>
+<script src="js/io/export.js?v=202610262036"></script>
+<script src="js/io/templates.js?v=202610262036"></script>
+<script src="js/io/styles.js?v=202610262036"></script>
+<script src="js/ui/dom.js?v=202610262036"></script>
+<script src="js/ui/canvas.js?v=202610262036"></script>
+<script src="js/ui/palette.js?v=202610262036"></script>
+<script src="js/ui/inspector.js?v=202610262036"></script>
+<script src="js/ui/layers.js?v=202610262036"></script>
+<script src="js/ui/timeline.js?v=202610262036"></script>
+<script src="js/ui/dialogs.js?v=202610262036"></script>
+<script src="js/ui/menus.js?v=202610262036"></script>
+<script src="js/app.js?v=202610262036"></script>
 </body>
 </html>

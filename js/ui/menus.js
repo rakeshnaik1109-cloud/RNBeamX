@@ -42,6 +42,9 @@ M.items = {
     '-',
     { label: 'Journal check', action: () => RNBX.dialogs.check() },
     { label: 'Caption helper', action: () => RNBX.dialogs.caption() },
+    '-',
+    { label: 'Open RNSpectraX ↗ (spectra)', action: () => window.open(RNBX.links.spectrax, '_blank', 'noopener') },
+    { label: 'Rakesh Naik — website ↗', action: () => window.open(RNBX.links.home, '_blank', 'noopener') },
   ],
   Edit: () => [
     { label: 'Undo', icon: 'undo', key: mod + 'Z', disabled: !RNBX.history.undoStack.length, action: () => RNBX.history.undo() },
@@ -132,6 +135,9 @@ M.init = () => {
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();
+  // links to the companion app and the authors' site (addresses in js/config.js)
+  D.$('#lnkSpectrax').href = RNBX.links.spectrax;
+  D.$('#lnkHome').href = RNBX.links.home;
   D.$('#btnTemplates').onclick = () => RNBX.dialogs.templates();
   D.$('#btnHelp').innerHTML = D.icon('help');
   D.$('#btnHelp').onclick = () => RNBX.dialogs.help();
