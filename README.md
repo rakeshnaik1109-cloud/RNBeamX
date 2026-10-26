@@ -8,7 +8,10 @@ diffract and disperse, and they update live as you move or rotate anything.
 There is nothing to install, no account, and your designs never leave your
 computer.
 
-**Version 1.0** · **Author:** Rakesh Naik · © 2026 Rakesh Naik. All rights reserved.
+**Version 1.0** · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
+<sup>1</sup>Centre for Photonics and Quantum Communication Technology, IIT Roorkee ·
+<sup>2</sup>Department of Physics, IIT Roorkee
+© 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.
 
 ---
 
@@ -81,6 +84,6 @@ dist/                   single-file build (python3 build-standalone.py)
 
 ## Licence
 
-© 2026 Rakesh Naik. All rights reserved. See [LICENSE](LICENSE).
+© 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. See [LICENSE](LICENSE).
 Bundled third-party libraries keep their own licences
 (see [js/vendor/THIRD_PARTY_LICENSES.txt](js/vendor/THIRD_PARTY_LICENSES.txt)).

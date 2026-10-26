@@ -1,8 +1,10 @@
 RNBeamX — Proprietary Software Licence
-Copyright © 2026 Rakesh Naik.
+Copyright © 2026 Rakesh Naik and Sachin Kumar Srivastava.
 All rights reserved.
 
-RNBeamX and its source code are the proprietary work of the copyright holder.
+RNBeamX and its source code are the proprietary work of the copyright
+holders, developed at the Centre for Photonics and Quantum Communication
+Technology and the Department of Physics, IIT Roorkee.
 
 PERMITTED WITHOUT REQUEST
   · Viewing this source code.
@@ -10,7 +12,7 @@ PERMITTED WITHOUT REQUEST
   · Using figures created with RNBeamX in publications, theses and
     presentations, with acknowledgement of the software.
 
-REQUIRES WRITTEN CONSENT OF THE COPYRIGHT HOLDER
+REQUIRES WRITTEN CONSENT OF THE COPYRIGHT HOLDERS
   · Copying, redistributing or publishing this software or any derivative of it.
   · Modifying it for distribution.
   · Any commercial use, including use inside a commercial product or service.
@@ -20,7 +22,7 @@ NO WARRANTY
   This software is provided "as is", without warranty of any kind, express or
   implied, including but not limited to the warranties of merchantability,
   fitness for a particular purpose and non-infringement. In no event shall the
-  author be liable for any claim, damages or other liability arising from the
+  authors be liable for any claim, damages or other liability arising from the
   use of this software.
 
 Enquiries: Rakesh Naik, IIT Roorkee.

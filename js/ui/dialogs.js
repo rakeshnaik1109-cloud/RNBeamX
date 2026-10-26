@@ -196,7 +196,7 @@ const KEYS = [
 Dl.help = () => {
   const grid = el('div', { class: 'help-grid' }, KEYS.map(k => el('div', {}, el('span', { text: k[0] }), el('kbd', { text: k[1] }))));
   D.modal({
-    title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik. All rights reserved.', wide: true,
+    title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.', wide: true,
     body: [
       el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Click any detector to see the power that reaches it.' }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),

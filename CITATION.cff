@@ -6,6 +6,10 @@ date-released: 2026-10-26
 authors:
   - family-names: Naik
     given-names: Rakesh
+    affiliation: "Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
+  - family-names: Srivastava
+    given-names: Sachin Kumar
+    affiliation: "Centre for Photonics and Quantum Communication Technology and Department of Physics, IIT Roorkee"
 repository-code: "https://github.com/rakeshnaik1109-cloud/RNBeamX"
 license-url: "https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/LICENSE"
 keywords:
