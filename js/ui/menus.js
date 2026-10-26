@@ -36,6 +36,8 @@ M.items = {
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
+    { label: 'Add data panel (plot)…', icon: 'plus', action: () => RNBX.arrange.addDataPanel() },
+    { label: 'Add data panel from RNSpectraX', action: () => { const d = RNBX.plotData.readHandoff(); if (d) { RNBX.arrange.addDataPanel(d); RNBX.toast('Spectrum from RNSpectraX added as panel'); } else RNBX.toast('Nothing received yet: in RNSpectraX open Export ▾ and press “→ RNBeamX”.'); } },
     { label: 'Export…', icon: 'download', key: mod + 'E', action: () => RNBX.dialogs.exporter() },
     '-',
     { label: 'Journal check', action: () => RNBX.dialogs.check() },
@@ -64,6 +66,7 @@ M.items = {
     { label: 'Rotate −15°', key: '⇧R', disabled: !sel(), action: () => RNBX.inspector.rotateBy(-15) },
     { label: 'Flip', icon: 'flip', key: 'F', disabled: !sel(), action: () => RNBX.inspector.flip() },
     { label: 'Orient to beam', icon: 'wand', key: 'O', disabled: !sel(), action: () => RNBX.canvas.orientToBeam() },
+    { label: 'Auto-arrange labels', icon: 'label', key: '⇧L', action: () => RNBX.labels.arrange() },
     '-',
     { label: 'Align left', icon: 'alignL', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('left') },
     { label: 'Align centres (horizontal)', icon: 'alignC', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('cx') },
@@ -96,6 +99,9 @@ M.syncTools = () => {
   const u = document.getElementById('tUndo'), r = document.getElementById('tRedo');
   if (u) u.disabled = !RNBX.history.undoStack.length;
   if (r) r.disabled = !RNBX.history.redoStack.length;
+  const tu = document.getElementById('tbUndo'), tr = document.getElementById('tbRedo');
+  if (tu) tu.disabled = !RNBX.history.undoStack.length;
+  if (tr) tr.disabled = !RNBX.history.redoStack.length;
   const hud = D.$('#view3dHud');
   hud.hidden = st.mode !== '3d';
   if (st.mode === '3d') { D.$('#hudYaw').value = S.doc.view3d.yaw; D.$('#hudPitch').value = S.doc.view3d.pitch; }
@@ -151,6 +157,29 @@ M.init = () => {
     D.menu(items, e.clientX, e.clientY);
   });
   document.addEventListener('keydown', onKey);
+  // touch toolbar: the essentials within thumb reach on tablets and phones
+  const app = D.$('#app');
+  const scrim = el('div', { class: 'drawer-scrim', onclick: () => app.classList.remove('drawer-open') });
+  app.append(scrim);
+  // narrow screens: slide-out drawer; wider screens: show / hide the docked library
+  M.toggleDrawer = force => {
+    if (innerWidth < 820) app.classList.toggle('drawer-open', force);
+    else { app.classList.remove('drawer-open'); app.classList.toggle('lib-hidden', force === undefined ? undefined : !force); setTimeout(() => RNBX.canvas.fit(), 30); }
+  };
+  const tb = D.$('#touchBar');
+  tb.append(
+    D.iconBtn('grid', 'Components', () => M.toggleDrawer()),
+    D.iconBtn('undo', 'Undo', () => RNBX.history.undo(), { id: 'tbUndo' }),
+    D.iconBtn('redo', 'Redo', () => RNBX.history.redo(), { id: 'tbRedo' }),
+    D.iconBtn('rotate', 'Rotate 15°', () => RNBX.inspector.rotateBy(15)),
+    D.iconBtn('flip', 'Flip', () => RNBX.inspector.flip()),
+    D.iconBtn('copy', 'Duplicate', () => RNBX.project.duplicate()),
+    D.iconBtn('trash', 'Delete', () => RNBX.removeObjects(S.selection.slice())),
+    D.iconBtn('key', 'Add keyframe', () => { if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } else RNBX.toast('Select an object first'); }),
+    D.iconBtn('play', 'Play / pause', () => RNBX.anim.toggle(), { id: 'tbPlay' }));
+  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); });
+  // picking a component from the drawer closes it
+  RNBX.on('selection', () => { if (app.classList.contains('drawer-open')) app.classList.remove('drawer-open'); });
   M.syncTools();
 };
 
@@ -199,7 +228,7 @@ function onKey(e) {
     case 'f': case 'F': RNBX.inspector.flip(); break;
     case 'o': case 'O': RNBX.canvas.orientToBeam(); break;
     case 'g': case 'G': toggleUi('grid', 'Grid'); break;
-    case 'l': case 'L': toggleStyle('showLabels', 'Labels'); break;
+    case 'l': case 'L': if (e.shiftKey) RNBX.labels.arrange(); else toggleStyle('showLabels', 'Labels'); break;
     case 'p': case 'P': toggleStyle('polarization', 'Polarisation marks'); break;
     case 't': case 'T': RNBX.timeline.toggle(); break;
     case 'k': case 'K': RNBX.anim.toggle(); break;

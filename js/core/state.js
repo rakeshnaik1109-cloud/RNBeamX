@@ -18,7 +18,7 @@
 const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
-RNBX.VERSION = '1.0.0';
+RNBX.VERSION = '1.1.0';
 
 /* ---------- event bus ---------- */
 const listeners = {};
@@ -63,7 +63,11 @@ RNBX.defaultStyle = () => ({
   beamArrows: false,
   beamFade: true,             // weaker beams drawn fainter
   beamOpacity: 0.92,
-  colorMode: 'physical',      // physical | safe
+  colorMode: 'physical',      // physical | safe | mono
+  beamModel: 'geometric',     // geometric | gaussian
+  gaussMag: 10,               // Gaussian: drawn width exaggeration
+  waistLabels: false,
+  ghosts: 'off',              // off | uncoated | ar
   polarization: false,        // draw ↕ / • polarisation markers
   scale: 10,                  // physical mm per drawn mm (focal lengths, gratings)
   fiberColor: '#f2b705',

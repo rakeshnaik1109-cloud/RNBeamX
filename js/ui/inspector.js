@@ -68,13 +68,68 @@ function control(param, get, set, ctx = {}) {
       sync = () => { input.value = val() == null ? '' : val(); };
       break;
     }
+    case 'series': {
+      // data editor for plot panels
+      const o = ctx.obj;
+      wrap.append(lab);
+      if (!o) return wrap;
+      const set = d => { RNBX.history.checkpoint(); RNBX.plotData.apply(o, d); RNBX.changed(); Ins.build(); };
+      const fail = e => RNBX.toast(e.message || String(e), 'error');
+      const row = el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
+        el('button', { class: 'btn small', type: 'button', text: 'Import CSV / TXT…', onclick: () => RNBX.project.pickFile('.csv,.txt,.dat,.tsv,text/plain', f => f.text().then(t => set(RNBX.plotData.parse(t))).catch(fail)) }),
+        el('button', { class: 'btn small', type: 'button', text: 'Paste…', onclick: () => {
+          const ta = el('textarea', { rows: 10, placeholder: 'x, y1, y2 …  (one row per line; a header row is optional)', style: { width: '100%', fontFamily: 'var(--mono)' } });
+          const m = D.modal({ title: 'Paste data', sub: 'Columns: x then one or more y', body: ta, foot: [el('button', { class: 'btn primary', type: 'button', text: 'Use data', onclick: () => { try { set(RNBX.plotData.parse(ta.value)); m.close(); } catch (e) { fail(e); } } })] });
+          setTimeout(() => ta.focus(), 30);
+        } }),
+        el('button', { class: 'btn small', type: 'button', text: 'From RNSpectraX', title: 'Uses the plot last sent with “→ RNBeamX” in RNSpectraX', onclick: () => { const d = RNBX.plotData.readHandoff(); if (d) set(d); else RNBX.toast('Nothing received yet: in RNSpectraX open Export ▾ and press “→ RNBeamX”, or import its Plotted CSV.'); } }));
+      wrap.append(row);
+      (o.props.series || []).forEach((sr, i) => {
+        const c = el('input', { type: 'color', value: (sr.color || '#1f77b4').slice(0, 7), oninput: () => { RNBX.history.checkpoint('sc' + o.id + i); sr.color = c.value; RNBX.changed(); } });
+        const nm = el('input', { type: 'text', value: sr.name, oninput: () => { RNBX.history.checkpoint('sn' + o.id + i); sr.name = nm.value; RNBX.changed(); } });
+        const dash = el('select', { onchange: () => { RNBX.history.checkpoint(); sr.dash = dash.value; RNBX.changed(); } }, [['solid', '—'], ['dash', '– –'], ['dot', '···']].map(q => el('option', { value: q[0], text: q[1] })));
+        dash.value = sr.dash || 'solid';
+        wrap.append(el('div', { class: 'color-row', style: { gridTemplateColumns: '34px 1fr 56px auto', marginBottom: '4px' } }, c, nm, dash,
+          D.iconBtn('trash', 'Remove series', () => { RNBX.history.checkpoint(); o.props.series.splice(i, 1); RNBX.changed(); Ins.build(); })));
+      });
+      if ((o.props.series || []).length) wrap.append(el('div', { class: 'hint', text: o.props.series.map(q => `${q.name}: ${q.x.length} points`).join(' · ') }));
+      return wrap;
+    }
     case 'image': {
       const btn = el('button', { class: 'btn small', type: 'button', text: 'Choose image…' });
-      btn.onclick = () => RNBX.project.pickFile('image/*', f => RNBX.project.readImage(f).then(({ href, aspect }) => {
-        ctx.obj && RNBX.history.checkpoint();
-        if (ctx.obj) { ctx.obj.props.href = href; ctx.obj.props.aspect = aspect; ctx.obj.props.h = U.round(ctx.obj.props.w / aspect, 2); RNBX.changed(); Ins.build(); }
-      }));
+      btn.onclick = () => RNBX.project.pickFile('image/*,.svg', f => {
+        const o = ctx.obj;
+        if (!o) return;
+        // SVG drawings for custom components are inlined so they stay vector everywhere
+        if (o.type === 'custom' && (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name))) {
+          f.text().then(txt => {
+            try {
+              const { svg, vb } = lib.importSvg(txt, 'c' + o.id + '-');
+              RNBX.history.checkpoint();
+              Object.assign(o.props, { svg, vb, href: '', h: U.round(o.props.w * vb[3] / vb[2], 2), title: f.name.replace(/\.svg$/i, '') });
+              RNBX.changed(); Ins.build();
+            } catch (e) { RNBX.toast(e.message, 'error'); }
+          });
+          return;
+        }
+        RNBX.project.readImage(f).then(({ href, aspect }) => {
+          RNBX.history.checkpoint();
+          Object.assign(o.props, { href, svg: '', vb: null, aspect, h: U.round(o.props.w / aspect, 2) });
+          RNBX.changed(); Ins.build();
+        });
+      });
       wrap.append(lab, btn);
+      if (ctx.obj && ctx.obj.type === 'custom') {
+        wrap.append(el('button', { class: 'btn small', type: 'button', style: { marginTop: '6px' }, text: 'Save to My components', onclick: () => {
+          const lib2 = U.store.get('rnbx_mylib', []);
+          const name = prompt('Name for this component:', ctx.obj.props.title || 'Custom component');
+          if (!name) return;
+          lib2.push({ id: U.uid(), name, props: Object.assign(U.deepClone(ctx.obj.props), { title: name }) });
+          U.store.set('rnbx_mylib', lib2);
+          RNBX.palette.build();
+          RNBX.toast('Saved to My components (in this browser)');
+        } }));
+      }
       return wrap;
     }
     default: { // number / wavelength
@@ -135,7 +190,16 @@ function readout(obj) {
     if (!fl) return el('div', { class: 'readout', text: 'No light reaches the input coupler yet.' });
     return el('div', { class: 'readout', html: 'Carries ' + Object.keys(fl).map(l => `<b>${U.fmt(Number(l), 1)} nm</b> (${fmtP(fl[l])})`).join(', ') });
   }
-  if (h) return el('div', { class: 'readout', html: `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ') });
+  if (h) {
+    let html = `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ');
+    if (h.interf) {
+      const I = h.interf, dphi = U.deg(I.dphi);
+      html += `<br><b>Interference</b> (${U.fmt(I.lambda, 1)} nm): coherent ${fmtP(h.Pcoh)} · Δφ = ${U.fmt(dphi, 1)}° · visibility ${U.fmt(I.vis, 2)}`;
+      if (I.overlap < 0.99) html += ` · polarisation overlap ${U.fmt(I.overlap, 2)}`;
+    }
+    if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
+    return el('div', { class: 'readout', html });
+  }
   if (def.category === 'Detectors') return el('div', { class: 'readout', text: 'No light reaches this detector.' });
   return null;
 }
@@ -183,6 +247,9 @@ function objectPanel(obj) {
     el('div', { class: 'grid2' },
       control({ key: 'rot', label: 'Rotation', type: 'number', unit: '°', step: 1 }, k => obj[k] || 0, tset),
       control({ key: 'scale', label: 'Scale', type: 'number', unit: '×', min: 0.05, max: 20, step: 0.05 }, k => obj[k] || 1, tset)),
+    ...(def.annotation ? [] : [el('div', { class: 'grid2' },
+      control({ key: 'z', label: 'Height z', type: 'number', unit: 'mm', step: 0.5, hint: 'above the beam plane' }, k => obj[k] || 0, tset),
+      lib.canVertical(obj.type) ? control({ key: 'axis', label: 'Optical axis', type: 'select', options: [['h', 'In table plane'], ['up', 'Vertical, facing up'], ['down', 'Vertical, facing down']] }, k => obj[k] || 'h', (k, v) => tset(k, v, true)) : el('span'))]),
     control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset)));
   }
   const keys = (S.doc.animation.tracks[obj.id] || []).length;
@@ -258,6 +325,21 @@ function docPanel() {
       control({ key: 'bg', label: 'Colour 1', type: 'color' }, k => doc.page[k], dset('page')),
       doc.page.background !== 'custom' ? control({ key: 'bg2', label: 'Colour 2', type: 'color' }, k => doc.page[k], dset('page')) : el('span'))] : [])));
 
+  // one-click looks and house styles
+  const styleSel = el('select', {}, el('option', { value: '', text: 'Apply a style…' }),
+    el('optgroup', { label: 'Built-in' }, RNBX.styles.BUILTIN.map(x => el('option', { value: x.id, text: x.name, title: x.desc }))),
+    RNBX.styles.house().length ? el('optgroup', { label: 'House styles' }, RNBX.styles.house().map(x => el('option', { value: x.id, text: x.name }))) : null);
+  styleSel.onchange = () => { if (styleSel.value) RNBX.styles.apply(styleSel.value); };
+  root.push(sec('Style presets', el('div', { class: 'field' }, styleSel),
+    el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '12px' } },
+      el('button', { class: 'btn small', type: 'button', text: 'Save as house style…', onclick: () => { const nm = prompt('Name for this style (e.g. your group name):', 'Group style'); if (nm) { RNBX.styles.saveHouse(nm); RNBX.toast('Saved house style “' + nm + '”'); Ins.build(); } } }),
+      el('button', { class: 'btn small', type: 'button', text: 'Export', title: 'Download your house styles to share with your group', onclick: () => RNBX.styles.exportHouse() }),
+      el('button', { class: 'btn small', type: 'button', text: 'Import', onclick: () => RNBX.project.pickFile('.json,application/json', f => RNBX.styles.importHouse(f)) }),
+      RNBX.styles.house().length ? el('button', { class: 'btn small ghost danger', type: 'button', text: 'Remove…', onclick: ev => {
+        const items = RNBX.styles.house().map(h => ({ label: h.name, icon: 'trash', action: () => { RNBX.styles.removeHouse(h.id); Ins.build(); } }));
+        const r = ev.currentTarget.getBoundingClientRect(); D.menu(items, r.left, r.bottom + 4);
+      } }) : null)));
+
   // style
   const st = doc.style;
   root.push(sec('Figure style',
@@ -269,13 +351,19 @@ function docPanel() {
     el('div', { class: 'grid2' },
       control({ key: 'labelColor', label: 'Label colour', type: 'color' }, k => st[k], dset('style')),
       control({ key: 'outline', label: 'Outline colour', type: 'color' }, k => st[k], dset('style'))),
-    control({ key: 'showLabels', label: 'Show component labels', type: 'bool' }, k => st[k], dset('style'))));
+    control({ key: 'showLabels', label: 'Show component labels', type: 'bool' }, k => st[k], dset('style')),
+    el('button', { class: 'btn small', type: 'button', style: { marginBottom: '12px' }, html: D.icon('label', 14) + ' Auto-arrange labels', title: 'Shift+L', onclick: () => RNBX.labels.arrange() })));
 
   root.push(sec('Beams',
     control({ key: 'beamStyle', label: 'Drawing', type: 'select', options: [['envelope', 'True width (focus, divergence)'], ['line', 'Uniform line (classic)']] }, k => st[k], dset('style')),
+    control({ key: 'beamModel', label: 'Beam model', type: 'select', options: [['geometric', 'Geometric cone'], ['gaussian', 'Gaussian beam (waist, Rayleigh range, M²)']] }, k => st[k] || 'geometric', dset('style', true)),
+    ...(st.beamModel === 'gaussian' ? [el('div', { class: 'grid2' },
+      control({ key: 'gaussMag', label: 'Width exaggeration', type: 'number', unit: '×', min: 0.1, max: 1000, step: 1, hint: 'drawn ÷ physical, after scale' }, k => st[k] || 10, dset('style')),
+      control({ key: 'waistLabels', label: 'Label foci (2w₀)', type: 'bool' }, k => st[k], dset('style')))] : []),
+    control({ key: 'ghosts', label: 'Surface reflections (ghosts)', type: 'select', options: [['off', 'Off'], ['uncoated', 'Uncoated glass (Fresnel)'], ['ar', 'AR-coated (0.25 % per surface)']] }, k => st[k] || 'off', dset('style')),
     control({ key: 'beamWidth', label: 'Default beam diameter', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05, hint: 'new sources' }, k => st[k], dset('style')),
     control({ key: 'beamOpacity', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01 }, k => st[k], dset('style')),
-    control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)']] }, k => st[k], dset('style')),
+    control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)'], ['mono', 'Monochrome (black)']] }, k => st[k], dset('style')),
     el('div', { class: 'grid2' },
       control({ key: 'beamGlow', label: 'Glow', type: 'bool' }, k => st[k], dset('style')),
       control({ key: 'beamArrows', label: 'Direction arrows', type: 'bool' }, k => st[k], dset('style'))),
@@ -391,6 +479,38 @@ A.distribute = axis => {
   RNBX.anim.touch(objs.map(o => o.id));
   RNBX.changed();
 };
+/* Add a data plot as a second panel (a: setup, b: data). Wide pages
+   get it on the right; narrow ones grow downwards. */
+A.addDataPanel = data => {
+  const doc = S.doc, W = doc.page.width, H = doc.page.height;
+  RNBX.history.checkpoint();
+  let x, y, w, h;
+  // where does the existing content end?
+  const boxes = doc.objects.filter(o => lib.get(o.type) && !lib.get(o.type).connection && o.type !== 'panel').map(o => lib.worldBox(o));
+  const right = boxes.length ? Math.max(...boxes.map(b => b[2])) : 0;
+  const free = W - right - 4;
+  if (free >= Math.max(45, W * 0.3)) {
+    // room beside the setup
+    w = Math.round(Math.min(free - 2, W * 0.45)); h = Math.round(Math.min(H * 0.8, w * 0.72)); x = W - w / 2 - 3; y = H / 2;
+  } else {
+    // no room: the page grows downwards and the plot becomes panel b below
+    w = Math.round(Math.min(W - 10, Math.max(80, W * 0.55))); h = Math.round(w * 0.6);
+    doc.page.height = H + h + 8; doc.page.preset = 'custom'; x = W / 2; y = H + 4 + h / 2;
+  }
+  const plot = RNBX.createObject('plot', x, y);
+  plot.props.w = w; plot.props.h = h;
+  if (data) RNBX.plotData.apply(plot, data);
+  doc.objects.push(plot);
+  const panels = doc.objects.filter(o => o.type === 'panel');
+  if (!panels.length) { const a = RNBX.createObject('panel', 0, 0); a.props.text = 'a'; a.x = 3; a.y = 5; doc.objects.push(a); }
+  const b = RNBX.createObject('panel', 0, 0);
+  b.props.text = 'abcdefghij'[Math.min(9, doc.objects.filter(o => o.type === 'panel').length)];
+  b.x = x - w / 2; b.y = y - h / 2 + 1; doc.objects.push(b);
+  RNBX.select([plot.id]);
+  RNBX.canvas.fit();
+  return plot;
+};
+
 /* change page size, keeping the content centred */
 A.resizePage = (w, h) => {
   const doc = S.doc, dx = (w - doc.page.width) / 2, dy = (h - doc.page.height) / 2;

@@ -19,8 +19,9 @@ const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0
 /* ================= Mirrors & splitters ================= */
 lib.register({
   type: 'mirror', name: 'Mirror', abbr: 'M', category: 'Mirrors & splitters', keywords: 'mirror dielectric silver gold steering',
-  defaults: { d: 8, t: 1.3, R: 1, coating: 'silver' },
+  defaults: { d: 8, t: 1.3, R: 1, coating: 'silver', piezo: 0 },
   params: [P.diameter(), P.thick(), { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'piezo', label: 'Piezo displacement', type: 'number', unit: 'nm', step: 10, hint: 'shifts interference phase; animate it to move fringes', animatable: true },
     { key: 'coating', label: 'Look', type: 'select', options: [['silver', 'Silver / dielectric'], ['gold', 'Gold'], ['dark', 'Dark substrate']] }],
   variants: [{ name: 'Gold mirror', props: { coating: 'gold' }, keywords: 'gold infrared' }],
   snap: 'mirror', mount: true, labelPos: [0, 7],
@@ -112,8 +113,8 @@ lib.register({
 
 lib.register({
   type: 'retro', name: 'Retroreflector', abbr: 'RR', category: 'Mirrors & splitters', keywords: 'retroreflector corner cube delay line hollow roof',
-  defaults: { d: 8 },
-  params: [P.diameter()],
+  defaults: { d: 8, piezo: 0 },
+  params: [P.diameter(), { key: 'piezo', label: 'Piezo displacement', type: 'number', unit: 'nm', step: 10, animatable: true }],
   snap: 'perp', mount: true, labelPos: [0, 7],
   bbox: p => [0, -p.d / 2, p.d * 0.55, p.d / 2],
   draw(p, S) {
@@ -127,13 +128,20 @@ lib.register({
 
 lib.register({
   type: 'slm', name: 'Spatial light modulator', abbr: 'SLM', category: 'Mirrors & splitters', keywords: 'slm spatial light modulator dmd phase hologram liquid crystal lcos',
-  defaults: { w: 11, t: 2.6, R: 1, pattern: 'phase' },
+  defaults: { w: 11, t: 2.6, R: 1, pattern: 'phase', transmit: false },
   params: [{ key: 'w', label: 'Panel width', type: 'number', unit: 'mm', min: 3, max: 50, step: 0.5 }, P.thick(2.6),
-    { key: 'pattern', label: 'Front pattern', type: 'select', options: [['phase', 'Phase grating'], ['pixels', 'Pixel grid'], ['none', 'Plain']] }],
-  variants: [{ name: 'Digital micromirror device (DMD)', abbr: 'DMD', props: { pattern: 'pixels' }, keywords: 'dmd micromirror' }],
+    { key: 'pattern', label: 'Front pattern', type: 'select', options: [['phase', 'Phase grating'], ['pixels', 'Pixel grid'], ['none', 'Plain']] },
+    { key: 'transmit', label: 'Transmissive', type: 'bool' }],
+  variants: [{ name: 'Digital micromirror device (DMD)', abbr: 'DMD', props: { pattern: 'pixels' }, keywords: 'dmd micromirror' },
+    { name: 'Transmissive SLM', props: { transmit: true, t: 1.4 }, keywords: 'transmissive slm lcd phase mask' }],
   snap: 'mirror', labelPos: [0, 8],
   bbox: p => [-0.5, -p.w / 2, p.t, p.w / 2],
   draw(p, S) {
+    if (p.transmit) {
+      let t = H.rect(S, -p.t / 2, -p.w / 2, p.t, p.w, S.fill('glass'), 'rx="0.2"');
+      for (let i = 0; i < 10; i++) t += `<rect x="${n(-p.t / 2 + 0.25)}" y="${n(-p.w / 2 + i * p.w / 10)}" width="${n(p.t - 0.5)}" height="${n(p.w / 10)}" fill="${U.mix('#2a3b55', '#c9d6ea', (i % 4) / 3)}" fill-opacity="0.55" stroke="none"/>`;
+      return t + H.rect(S, -p.t / 2 - 0.4, -p.w / 2 - 0.6, p.t + 0.8, 0.6, S.fill('dark'));
+    }
     let s = H.rect(S, 0, -p.w / 2, p.t, p.w, S.fill('dark'), 'rx="0.3"');
     s += H.sheen(S, 0, -p.w / 2, p.t, p.w * 0.4);
     const k = 10, dy = p.w / k;
@@ -145,8 +153,8 @@ lib.register({
     }
     return s + face + H.line(S, 0, -p.w / 2, 0, p.w / 2, '', 1.2);
   },
-  optics: p => [{ kind: 'mirror', a: [0, -p.w / 2], b: [0, p.w / 2], R: p.R }],
-  solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: 'dark' }, { kind: 'box', x: [-0.12, 0], y: [-p.w / 2 + 0.5, p.w / 2 - 0.5], z: [bh - p.w * 0.35, bh + p.w * 0.35], mat: 'mirror' }],
+  optics: p => [{ kind: p.transmit ? 'pass' : 'mirror', a: [0, -p.w / 2], b: [0, p.w / 2], R: p.R }],
+  solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: p.transmit ? { color: '#9fb0c6', alpha: 0.55 } : 'dark' }, { kind: 'box', x: [-0.12, 0], y: [-p.w / 2 + 0.5, p.w / 2 - 0.5], z: [bh - p.w * 0.35, bh + p.w * 0.35], mat: 'mirror' }],
   mount: true,
 });
 

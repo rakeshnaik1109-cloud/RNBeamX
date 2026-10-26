@@ -16,6 +16,10 @@ const NS = 'http://www.w3.org/2000/svg';
 
 let svg, figure, overlay, vb = { x: -10, y: -10, w: 200, h: 120 };
 let drag = null, spaceDown = false, lastBuild = null, hoverId = null;
+/* touch state: active fingers, pinch gesture, long-press timer */
+const touches = new Map();
+let pinch = null, longPress = null;
+C.pointerType = 'mouse';
 
 const pxPerMm = () => svg.clientWidth / vb.w;
 const MM_PX = 96 / 25.4;
@@ -89,7 +93,7 @@ const isPageSpace = obj => { const d = lib.get(obj.type); return d && (d.annotat
 function localBox(obj) {
   const def = lib.get(obj.type);
   if (!def || !def.bbox) return [-2, -2, 2, 2];
-  try { return def.bbox(obj.props, obj, S.doc); } catch (e) { return [-2, -2, 2, 2]; }
+  try { return lib.objBox(obj, S.doc); } catch (e) { return [-2, -2, 2, 2]; }
 }
 function boxPath(obj) {
   const b = localBox(obj);
@@ -124,7 +128,7 @@ function drawOverlay() {
     const o = sel[0], def = lib.get(o.type);
     if (!def.connection && !(space3d && !isPageSpace(o)) && !o.locked) {
       const b = localBox(o), s = o.scale || 1;
-      const hr = 5 * k;
+      const hr = (C.pointerType === 'touch' ? 11 : 5) * k;
       const canRotate = !(def.handles) && o.type !== 'legend';
       if (canRotate) {
         const top = U.toWorld(o, [(b[0] + b[2]) / 2, b[1] - 0.6 / s]);
@@ -180,9 +184,46 @@ const traceWithout = ids => {
 const snapGrid = v => { const g = S.ui.gridSize || 2.5; return Math.round(v / g) * g; };
 
 /* ---------- pointer handling ---------- */
+function startPinch() {
+  const pts = [...touches.values()];
+  const r = svg.getBoundingClientRect();
+  const mid = [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
+  pinch = { d0: Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1, vb0: Object.assign({}, vb), w0: [vb.x + (mid[0] - r.left) / r.width * vb.w, vb.y + (mid[1] - r.top) / r.height * vb.h] };
+}
+function movePinch() {
+  const pts = [...touches.values()];
+  if (pts.length < 2) return;
+  const r = svg.getBoundingClientRect();
+  const d = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1;
+  const mid = [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
+  vb.w = U.clamp(pinch.vb0.w * pinch.d0 / d, 4, 4000);
+  vb.h = vb.w * (r.height / Math.max(1, r.width));
+  vb.x = pinch.w0[0] - (mid[0] - r.left) / r.width * vb.w;
+  vb.y = pinch.w0[1] - (mid[1] - r.top) / r.height * vb.h;
+  setVB();
+}
+const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.t); longPress = null; } };
+
 function onDown(e) {
   svg.focus({ preventScroll: true });
   D.closeMenu();
+  C.pointerType = e.pointerType || 'mouse';
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) {
+      // second finger: abandon the one-finger action and start pinch / pan
+      cancelLongPress();
+      if (drag && drag.moved) { const ids = drag.ids || (drag.id ? [drag.id] : []); RNBX.anim.touch(ids); ids.forEach(id => RNBX.anim.editing.delete(id)); S.dragging = false; }
+      drag = null;
+      startPinch();
+      drawOverlay();
+      return;
+    }
+    if (touches.size > 2) return;
+    // long press opens the context menu
+    const tgt = e.target, cx = e.clientX, cy = e.clientY;
+    longPress = { x: cx, y: cy, t: setTimeout(() => { longPress = null; if (drag && drag.moved) return; drag = null; RNBX.emit('contextmenu', { target: tgt, clientX: cx, clientY: cy, preventDefault() {} }); }, 550) };
+  }
   const p = C.toPage(e.clientX, e.clientY);
   if (e.button === 1 || e.button === 2 && false || spaceDown) { startPan(e); return; }
   if (e.button !== 0) return;
@@ -215,6 +256,8 @@ function onDown(e) {
     return;
   }
   if (!e.shiftKey) RNBX.select([]);
+  // one finger on empty canvas pans (a marquee is awkward on touch screens)
+  if (e.pointerType === 'touch') { startPan(e); return; }
   drag = { kind: 'marquee', p0: p, p1: p, additive: e.shiftKey };
   capture(e);
 }
@@ -255,6 +298,11 @@ function firstMove() {
 }
 
 function onMove(e) {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (longPress && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 8) cancelLongPress();
+    if (pinch && touches.size >= 2) { movePinch(); return; }
+  }
   const p = C.toPage(e.clientX, e.clientY);
   D.$('#stCursor').textContent = `x ${U.fmt(p[0], 1)} · y ${U.fmt(p[1], 1)} mm`;
   if (!drag) {
@@ -309,7 +357,7 @@ function moveSelection(p, e, k) {
     if (def.snap && S.ui.snap) {
       if (!drag.snapSegs) drag.snapSegs = traceWithout([single.id]);
       const hit = C.beamSnap([single.x, single.y], drag.snapSegs, Math.max(1.2, 9 * k));
-      if (hit) { single.x = hit.q[0]; single.y = hit.q[1]; drag.snapPt = hit.q; snapped = true; drag.snapAng = hit.ang; }
+      if (hit) { single.x = hit.q[0]; single.y = hit.q[1]; single.z = hit.seg.za || 0; drag.snapPt = hit.q; snapped = true; drag.snapAng = hit.ang; }
     }
     // 2. alignment guides against other components (2D)
     if (!snapped && !space3d) {
@@ -370,6 +418,11 @@ function moveHandle(p, e, k) {
 }
 
 function onUp(e) {
+  if (e.pointerType === 'touch') {
+    touches.delete(e.pointerId);
+    cancelLongPress();
+    if (touches.size < 2) pinch = null;
+  }
   if (!drag) return;
   const d = drag;
   drag = null;
@@ -448,9 +501,11 @@ C.placeNew = (entry, p, fromDrop) => {
       const seg = open.reduce((a, b) => (b.s0 > a.s0 ? b : a));
       const d = V.norm(V.sub(seg.b, seg.a)), dist = Math.min(22, seg.len * 0.5);
       const q = V.add(seg.a, V.mul(d, dist));
-      o.x = q[0]; o.y = q[1];
+      o.x = q[0]; o.y = q[1]; o.z = seg.za || 0;
       const r = C.orientFor(def, V.angle(d)); if (r != null) o.rot = r;
+      C.avoidOverlap(o);
       RNBX.addObject(o);
+      if (!is3d() && o.label && RNBX.labels) { RNBX.labels.placeOne(S.doc, o); RNBX.changed(); }
       return o;
     }
   }
@@ -462,11 +517,35 @@ C.placeNew = (entry, p, fromDrop) => {
   if (def.snap) {
     const k = 1 / pxPerMm();
     const hit = C.beamSnap([o.x, o.y], C.trace ? C.trace.segments : [], fromDrop ? Math.max(2, 14 * k) : 6);
-    if (hit) { o.x = hit.q[0]; o.y = hit.q[1]; const r = C.orientFor(def, hit.ang); if (r != null) o.rot = r; }
+    if (hit) { o.x = hit.q[0]; o.y = hit.q[1]; o.z = hit.seg.za || 0; const r = C.orientFor(def, hit.ang); if (r != null) o.rot = r; }
     else if (S.ui.snap && S.ui.grid && !is3d()) { o.x = snapGrid(o.x); o.y = snapGrid(o.y); }
   } else if (S.ui.snap && S.ui.grid && !def.annotation && !is3d()) { o.x = snapGrid(o.x); o.y = snapGrid(o.y); }
+  C.avoidOverlap(o);
   RNBX.addObject(o);
+  if (!is3d() && o.label && RNBX.labels) { RNBX.labels.placeOne(S.doc, o); RNBX.changed(); }
   return o;
+};
+
+/* nudge a newly placed object along its beam (or sideways) until it
+   no longer overlaps an existing part */
+C.avoidOverlap = o => {
+  const def = lib.get(o.type);
+  if (def.annotation || def.connection) return;
+  const boxes = S.doc.objects.filter(q => !lib.get(q.type).annotation && !lib.get(q.type).connection && !lib.get(q.type).under).map(q => lib.worldBox(q));
+  const m = 1.5;   // clearance between parts
+  const hits = () => { const b = lib.worldBox(o); return boxes.some(q => b[0] - m < q[2] && b[2] + m > q[0] && b[1] - m < q[3] && b[3] + m > q[1]); };
+  if (!hits()) return;
+  const segs = C.trace ? C.trace.segments.filter(s => s.kind === 'beam' && !s.vertical) : [];
+  const on = def.snap ? C.beamSnap([o.x, o.y], segs, 0.3) : null;
+  const dir = on ? V.norm(V.sub(on.seg.b, on.seg.a)) : [1, 0];
+  const x0 = o.x, y0 = o.y;
+  for (let k = 1; k <= 24; k++) {
+    for (const sg of [1, -1]) {
+      o.x = x0 + dir[0] * 3 * k * sg; o.y = y0 + dir[1] * 3 * k * sg;
+      if (!hits()) return;
+    }
+  }
+  o.x = x0; o.y = y0;
 };
 
 /* orient the selection to the beam it sits on */

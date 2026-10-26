@@ -122,6 +122,46 @@ const H = lib.H = {
   },
 };
 
+/* components that may lie flat with a vertical optical axis */
+const VERT_OK = new Set(['lens', 'objective', 'sample', 'filter', 'hwp', 'qwp', 'polarizer', 'iris', 'pd', 'camera', 'powermeter', 'screen', 'beamdump', 'mirror', 'cmirror', 'window', 'bsplate', 'dichroic', 'crystal', 'pmt', 'coupler', 'custom']);
+lib.canVertical = type => VERT_OK.has(type);
+
+/* ---------- objects lying flat (vertical optical axis) ----------
+   Seen from above, a lens or objective in a microscope tower is a
+   disc. Its aperture comes from the component's first optical
+   surface, so any component gets a sensible top view. */
+lib.aperture = obj => {
+  const def = lib.get(obj.type);
+  try {
+    const s = (def.optics ? def.optics(obj.props, obj) : []).find(q => !q.poly);
+    if (s) return Math.max(0.8, Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) / 2);
+    const b = def.bbox(obj.props, obj); return Math.max(1, (b[3] - b[1]) / 2);
+  } catch (e) { return 3; }
+};
+lib.objBox = (obj, doc) => {
+  const def = lib.get(obj.type);
+  if (RNBX.isVertical && RNBX.isVertical(obj)) { const r = lib.aperture(obj) + 0.8; return [-r, -r, r, r]; }
+  return def.bbox(obj.props, obj, doc);
+};
+const TOP_FILL = { lens: 'glass', filter: 'glass', waveplate: 'wph', polarizer: 'polar', mirror: 'mirror', splitter: 'glass', dichroic: 'glass', sample: 'sample', absorb: 'black', aperture: 'black', pass: 'glass', shg: 'crystal', fiberIn: 'metal' };
+lib.topView = (obj, S) => {
+  const def = lib.get(obj.type), r = lib.aperture(obj);
+  let kind = 'pass';
+  try { const s = (def.optics(obj.props, obj) || []).find(q => !q.poly); if (s) kind = s.kind; } catch (e) { /* keep default */ }
+  const up = obj.axis !== 'down';
+  let s = `<circle cx="0" cy="0" r="${n(r + 0.7)}" fill="${S.fill('anod')}" ${H.stroke(S, 0.8)}/>`;
+  if (obj.type === 'objective') {
+    s += `<circle cx="0" cy="0" r="${n(r * 0.95)}" fill="${S.fill('metal')}" ${H.stroke(S, 0.7)}/>`;
+    s += `<circle cx="0" cy="0" r="${n(r * 0.55)}" fill="none" stroke="#3a86ff" stroke-width="${n(S.lw * 2.2)}"/>`;
+    s += `<circle cx="0" cy="0" r="${n(r * 0.35)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+  } else {
+    const f = kind === 'filter' && def.tint ? U.lighten(def.tint(obj.props), 0.4) : S.fill(TOP_FILL[kind] || 'glass');
+    s += `<circle cx="0" cy="0" r="${n(r)}" fill="${f}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S, 0.7)}/>`;
+    if (S.shaded) s += `<ellipse cx="${n(-r * 0.3)}" cy="${n(-r * 0.35)}" rx="${n(r * 0.35)}" ry="${n(r * 0.18)}" fill="#fff" opacity="0.45"/>`;
+  }
+  return s + H.axisMark(S, 0, 0, Math.min(1.1, r * 0.35), up);
+};
+
 /* ---------- shared parameter groups ---------- */
 lib.P = {
   diameter: (def = 8) => ({ key: 'd', label: 'Clear aperture', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5, def }),

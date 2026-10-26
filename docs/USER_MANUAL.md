@@ -29,10 +29,23 @@ Focal lengths are physical millimetres. The **figure scale** (Properties ▸ Bea
 sets how many physical mm one drawn mm represents (default 10), so a 100 mm lens
 focuses 10 mm away on the page.
 
+### Beams that leave the table
+
+- **Fold mirror (up / down)** turns a beam vertical. Anything you stack above it
+  must have its **Optical axis** set to *Vertical, facing up* and a **Height z**
+  (Properties ▸ Position). Seen from above, such parts are drawn as discs with
+  ⊙ (beam towards you) or ⊗ (away). See the *Upright Raman microscope* template.
+- **Periscope** changes the beam height (and optionally its direction). Optics
+  dropped onto the raised beam take its height automatically; a part at another
+  height lets the beam pass over or under it.
+
 ## 3. Labels and text
 
-Every component gets a label (M1, L2, PBS…). Drag a label to move it, double-click
-it to edit, and reset it from the inspector. Labels and text boxes accept:
+Every component gets a label (M1, L2, PBS…), placed clear of parts and beams.
+Drag a label to move it, double-click it to edit, and reset it from the
+inspector. **Arrange ▸ Auto-arrange labels** (Shift+L) tidies every label at
+once, adding thin leader lines where a label has to move away. In 3D, labels
+have their own positions, so tidying the 3D view never disturbs the 2D layout. Labels and text boxes accept:
 
 | Markup | Result |
 |---|---|
@@ -56,12 +69,52 @@ with optional glow, direction arrows, power fading, polarisation marks and a
 colour-blind-safe palette. Beams of several wavelengths on one path appear as a
 colour ribbon.
 
+### Physics options (Properties ▸ Beams, with nothing selected)
+
+| Option | What it does |
+|---|---|
+| Beam model: Gaussian | Propagates the complex beam parameter q: true waist size, Rayleigh range and M² (set on the laser). *Label foci* writes 2w₀ at each focus; the beam profiler reports the radius there. *Width exaggeration* scales the drawing only. |
+| Surface reflections | Adds Fresnel ghost beams (dashed) at glass surfaces: uncoated (4 % at normal incidence, with correct s/p dependence, so a Brewster window gives no p-ghost) or AR-coated. |
+| Interference | Always on: detectors report coherent power, phase difference Δφ and visibility. Give a mirror a **piezo displacement** (nm) to shift the phase; the *Interference fringes* annotation shows the camera image and moves when you animate the piezo. |
+
+Resonators: the **Optical cavity** follows the Airy transmission of its two
+mirrors; the **Ring resonator chip** gives through- and drop-port powers. Both
+have a resonant wavelength, free spectral range and a *detuning* you can
+animate to scan the resonance.
+
 ## 5. Graphical abstracts and cover art
 
 Choose a graphical-abstract preset (Elsevier 5 : 2, ACS TOC, square) and a dark or
 gradient background. Add titles, curved arrows, glows, wave packets, photons
 (hν), nanoparticles and images from *Graphical abstract* and *Annotations*.
 The 3D style with beam glow is a quick route to an eye-catching abstract.
+
+## 5b. Multi-panel figures and data
+
+**File ▸ Add data panel** inserts a vector plot as panel b (beside the setup if
+there is room, otherwise below it, growing the page). In its inspector:
+**Import CSV / TXT** (any x, y1, y2… columns, or RNSpectraX's *Plotted CSV*),
+**Paste**, or **From RNSpectraX**. In RNSpectraX, open *Export ▾* and press
+**→ RNBeamX**: the plot on screen opens in RNBeamX as a new panel, with its
+colours and axis titles. Set axis titles, ranges, a reversed axis, stacked
+offsets and legend in the inspector.
+
+## 5c. Your own components and styles
+
+- **Custom component** (*Samples & mechanics*): choose an SVG (kept as vector)
+  or a photo, then an optical behaviour (mirror, splitter, lens, filter, sample,
+  detector, source…). **Save to My components** keeps it in the library.
+- **Style presets** (Figure ▸ Style presets): classic line art, high-impact
+  journal, 3D rendered, monochrome print, colour-blind safe, presentation, dark
+  graphical abstract. **Save as house style** stores your current look;
+  **Export / Import** shares it with your group as a small file.
+
+## 5d. Tablets and phones
+
+Pinch to zoom, drag with two fingers to pan, or drag the empty canvas with one
+finger. Long-press opens the context menu. The touch toolbar (bottom of the
+canvas) has components, undo, redo, rotate, flip, duplicate, delete, keyframe
+and play.
 
 ## 6. Animation
 

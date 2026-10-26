@@ -8,7 +8,7 @@ diffract and disperse, and they update live as you move or rotate anything.
 There is nothing to install, no account, and your designs never leave your
 computer.
 
-**Version 1.0** · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
+**Version 1.1** · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
 <sup>1</sup>Centre for Photonics and Quantum Communication Technology, IIT Roorkee ·
 <sup>2</sup>Department of Physics, IIT Roorkee
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.
@@ -42,6 +42,11 @@ The tracer is a real 2D optical model, not just a line router:
 - **Dispersion**: prisms refract with Sellmeier glass data (N-BK7, fused silica, SF11, CaF₂, sapphire); gratings use the grating equation for any orders.
 - **Nonlinear and active**: SHG / THG crystals, AOM diffraction orders, samples that emit Raman or fluorescence light back through the optics.
 - **Fibres**: couplers joined by a fibre carry light to the far end.
+- **Beams off the table**: fold mirrors and periscopes send light up microscope towers or to a new height; lenses, objectives, samples and detectors can lie flat with a vertical axis.
+- **Gaussian beams**: true waists, Rayleigh ranges and M², with focus labels (2w₀).
+- **Ghost reflections**: Fresnel reflections at glass surfaces (s and p, so Brewster windows work), uncoated or AR-coated.
+- **Interference**: optical path and phase are tracked, so detectors report coherent power and fringe phase; a piezo on any mirror moves live fringes.
+- **Resonators and photonic chips**: Fabry–Pérot cavities (Airy transmission) and add–drop ring resonators that can be tuned and animated.
 - **Power bookkeeping**: click any detector to see how much light, and which wavelengths, reach it.
 
 ## Built for reviewers and editors
@@ -52,19 +57,29 @@ The tracer is a real 2D optical model, not just a line router:
 - **Colour-blind-safe** beam palette (Okabe–Ito), and labels that can show live values (`f = {f} mm`, `λ/2 ({angle}°)`).
 - Text stays **real text** in SVG and PDF, with markup for subscripts, superscripts and Greek letters.
 
+## Figure-making extras
+
+- **Multi-panel figures**: add a vector data plot as panel b. Import CSV/TXT, paste data, or press **→ RNBeamX** in RNSpectraX to send a processed spectrum across.
+- **Automatic label placement** (Shift+L), with leader lines, in 2D and 3D.
+- **Custom components**: import your own SVG drawing (stays vector) or photo, give it an optical behaviour, and keep it in *My components*.
+- **Style presets and house styles**: one-click journal looks, plus your group's own style saved and shared as a file.
+- **Touch and tablets**: pinch-zoom, two-finger pan, long-press menus and a touch toolbar.
+
 ## Getting started
 
 Open `index.html` in a modern browser (Chrome, Edge, Firefox or Safari), or use
 the single-file build `dist/rnbeamx-standalone.html`, which also works offline.
 
 1. **Templates** → pick a setup (Michelson, Mach–Zehnder, confocal Raman/SERS,
-   pump–probe, polarisation, spectrometer, spatial filter, 3D graphical abstract), or
+   pump–probe, polarisation, spectrometer, spatial filter, upright microscope,
+   live fringes, Gaussian telescope, microring, 3D graphical abstract), or
 2. add a **laser**, then click or drag optics from the library. Optics snap onto the beam and turn
    to the right angle. Press **F** to flip the turn direction, **R** to rotate.
 3. Switch style with **1 / 2 / 3**, and use **Export** for the file you need.
 
-See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) for the full guide and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is organised.
+See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) for the full guide,
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is organised, and
+[docs/USABILITY_TEST.md](docs/USABILITY_TEST.md) for a ready-made user test with lab members.
 
 ## Project layout
 
@@ -73,10 +88,10 @@ index.html              application shell
 css/                    style.css (tokens, controls) · layout.css (panels, canvas)
 js/core/                utils (vectors, colour, complex) · state (document, events, undo)
 js/engine/              optics (Jones, Sellmeier, filters) · tracer (beam tracing)
-js/components/          library (registry, drawing kit) · sources · optics · detectors · annotations
-js/render/              text markup · defs (gradients) · beams · renderer (2D/SVG) · renderer3d
+js/components/          library (registry, drawing kit) · sources · optics · detectors · vertical · photonics · plot · annotations
+js/render/              text markup · defs (gradients) · beams · renderer (2D/SVG) · renderer3d · labels (auto placement)
 js/anim/                animation (keyframes, easing, playback)
-js/io/                  project (save/open/autosave) · export (SVG/PDF/PNG/TIFF/video) · templates
+js/io/                  project (save/open/autosave) · export (SVG/PDF/PNG/TIFF/video) · templates · styles
 js/ui/                  dom · canvas · palette · inspector · layers · timeline · dialogs · menus
 js/vendor/              jsPDF + svg2pdf (MIT), loaded only for PDF export
 dist/                   single-file build (python3 build-standalone.py)

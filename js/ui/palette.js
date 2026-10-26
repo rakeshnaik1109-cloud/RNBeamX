@@ -15,9 +15,11 @@ Pal.build = () => {
   const root = D.$('#palette'), q = D.$('#libSearch').value.trim().toLowerCase();
   root.innerHTML = '';
   const mode = S.doc.style.mode === 'schematic' ? 'schematic' : 'shaded';
-  const entries = lib.entries().filter(e => !q || (e.name + ' ' + e.keywords + ' ' + (e.def.abbr || '') + ' ' + e.category).toLowerCase().includes(q));
+  // the user's own saved components come first
+  const mine = U.store.get('rnbx_mylib', []).map(m => ({ type: 'custom', name: m.name, category: 'My components', props: m.props, def: lib.get('custom'), keywords: 'my custom', mineId: m.id }));
+  const entries = mine.concat(lib.entries()).filter(e => !q || (e.name + ' ' + e.keywords + ' ' + (e.def.abbr || '') + ' ' + e.category).toLowerCase().includes(q));
   if (!entries.length) { root.append(D.el('div', { class: 'lib-empty', text: 'No components match “' + q + '”.' })); return; }
-  lib.CATEGORIES.forEach(cat => {
+  ['My components'].concat(lib.CATEGORIES).forEach(cat => {
     const items = entries.filter(e => e.category === cat);
     if (!items.length) return;
     const isCol = !q && collapsed[cat];
@@ -32,12 +34,17 @@ Pal.build = () => {
         html: D.thumb(e.type, e.props, mode) + `<span>${U.esc(e.name)}</span>`,
       });
       const payload = JSON.stringify({ type: e.type, props: e.props, abbr: e.abbr, name: e.name });
+      if (e.mineId) tile.title = e.name + ' · right-click to remove';
       tile.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/rnbx', payload); ev.dataTransfer.effectAllowed = 'copy'; });
       const add = () => {
         if (e.def.tool) { RNBX.canvas.setTool(S.ui.tool === e.def.tool ? 'select' : e.def.tool); Pal.build(); return; }
         RNBX.canvas.placeNew(JSON.parse(payload), RNBX.canvas.visibleCenter(), false);
       };
       tile.addEventListener('click', add);
+      if (e.mineId) tile.addEventListener('contextmenu', ev => {
+        ev.preventDefault();
+        RNBX.dom.menu([{ label: 'Remove from My components', icon: 'trash', action: () => { U.store.set('rnbx_mylib', U.store.get('rnbx_mylib', []).filter(m => m.id !== e.mineId)); Pal.build(); } }], ev.clientX, ev.clientY);
+      });
       tile.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); add(); } });
       grid.append(tile);
     });

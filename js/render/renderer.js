@@ -31,14 +31,19 @@ R.label = (obj, doc, x, y, interactive) => {
   const col = obj.label.color || R.labelColor(doc);
   const y0 = y - (lines.length - 1) * fs * 0.6;
   const body = lines.map((l, i) => `<text x="${n(x)}" y="${n(y0 + i * fs * 1.2)}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(l, fs)}</text>`).join('');
-  return `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
+  let lead = '';
+  if (obj.label.leader && RNBX.labels) {
+    const sz = RNBX.labels.size(obj, doc);
+    lead = RNBX.labels.leader(lib.worldBox(obj), [x - sz.w / 2, y - sz.h / 2, x + sz.w / 2, y + sz.h / 2], RNBX.isDarkPage(doc.page) ? '#c9d1dc' : '#4b5563', n(Math.max(0.12, U.pt2mm(doc.style.lineWidthPt || 0.5) * 0.7)));
+  }
+  return lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
 };
 
 R.object2D = (obj, S, interactive) => {
   const def = lib.get(obj.type);
   if (!def || !def.draw) return '';
   let inner = '';
-  try { inner = def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
+  try { inner = RNBX.isVertical(obj) ? lib.topView(obj, S) : def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
   const op = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
   return `<g ${interactive ? `data-id="${obj.id}"` : ''} transform="${R.transform(obj)}"${op}>${inner}</g>`;
 };
@@ -84,6 +89,7 @@ R.build = (srcDoc, opt = {}) => {
   const trace = RNBX.trace(doc);
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
+  S.trace = trace;
   const I = !!opt.interactive;
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
 

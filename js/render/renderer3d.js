@@ -72,6 +72,18 @@ function cylX(x0, x1, r0, r1, cy, cz) {
   for (let i = 0; i < SEG; i++) { const j = (i + 1) % SEG; faces.push([A[i], A[j], B[j], B[i]]); }
   return faces;
 }
+/* disc of radius r and thickness t, centred at c, axis along a (any direction) */
+function diskAxis(c, a, r, t, seg = 22) {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1, ax = a.map(v => v / l);
+  const ref = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const cr = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  let u = cr(ax, ref); const ul = Math.hypot(...u); u = u.map(v => v / ul);
+  const v = cr(ax, u);
+  const ring = off => { const out = []; for (let i = 0; i < seg; i++) { const th = i / seg * 2 * Math.PI, co = Math.cos(th) * r, si = Math.sin(th) * r; out.push([0, 1, 2].map(k => c[k] + ax[k] * off + u[k] * co + v[k] * si)); } return out; };
+  const A = ring(-t / 2), B = ring(t / 2), faces = [A.slice().reverse(), B];
+  for (let i = 0; i < seg; i++) { const j = (i + 1) % seg; faces.push([A[i], A[j], B[j], B[i]]); }
+  return faces;
+}
 function vcyl(cx, cy, r, z0, z1, seg = 16) {
   const ring = z => { const a = []; for (let i = 0; i < seg; i++) { const t = i / seg * 2 * Math.PI; a.push([cx + r * Math.cos(t), cy + r * Math.sin(t), z]); } return a; };
   const A = ring(z0), B = ring(z1), faces = [A.slice().reverse(), B];
@@ -107,14 +119,20 @@ R3.objectFaces = (obj, doc) => {
   const def = lib.get(obj.type), bh = doc.view3d.beamHeight || 6, s = obj.scale || 1;
   const parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
   const out = [];
-  const zmap = z => Math.max(0, bh + (z - bh) * s);
-  const W = (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
+  const zc = bh + (obj.z || 0);
+  const vert = RNBX.isVertical(obj), dir = obj.axis === 'down' ? -1 : 1;
+  const zmap = z => Math.max(0, zc + (z - bh) * s);
+  // vertical-axis parts: the local optical axis (+x) becomes the world z axis
+  const W = vert
+    ? (p) => { const w = U.toWorld(obj, [p[2] - bh, p[1]]); return [w[0], w[1], zc + p[0] * s * dir]; }
+    : (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
   let r0max = 0;
   for (const part of parts) {
     let faces;
     switch (part.kind) {
       case 'cyl': faces = cylX(part.x[0], part.x[1], part.r[0], part.r[1], part.cy || 0, part.cz == null ? bh : part.cz); r0max = Math.max(r0max, part.r[0], part.r[1]); break;
       case 'vcyl': faces = vcyl(part.cx, part.cy, part.r, part.z[0], part.z[1], 28); break;
+      case 'disk3': faces = diskAxis(part.c, part.nrm, part.r, part.t || 1); r0max = Math.max(r0max, part.r); break;
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }
@@ -127,11 +145,14 @@ R3.objectFaces = (obj, doc) => {
       out.push({ pts: f, n: nrm, m: mat(part.mat), part, decal: !!part.decal });
     }
   }
-  // post + base for mounted optics
+  void r0max;
+  // post + base for mounted optics (a side rod for optics lying flat in a tower)
   if (def.mount && !def.noPost && doc.view3d.posts !== false) {
-    const top = Math.max(0, bh - r0max * s - 0.2);
+    let zmin = Infinity, rad = 0;
+    out.forEach(f => f.pts.forEach(q => { zmin = Math.min(zmin, q[2]); rad = Math.max(rad, Math.hypot(q[0] - obj.x, q[1] - obj.y)); }));
     const pr = (def.postR || 0.6) * s;
-    const c = U.toWorld(obj, [0, 0]);
+    const c = vert ? U.toWorld(obj, [0, rad + pr + 0.3]) : U.toWorld(obj, [0, 0]);
+    const top = vert ? zc + 0.5 : Math.max(0, zmin - 0.1);
     const add = (faces, m) => {
       const cen = [c[0], c[1], top / 2];
       faces.forEach(f => {
@@ -198,6 +219,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
   const items = [];
   let shadows = '';
   let labels = '';
+  const dark3 = RNBX.isDarkPage(doc.page);
   for (const obj of doc.objects) {
     const def = lib.get(obj.type);
     if (!def || obj.hidden || def.annotation || def.special) continue;
@@ -217,7 +239,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const faces = R3.objectFaces(obj, doc);
     if (!faces.length) continue;
     // depth of the object's optical centre
-    const c3 = cam.p(obj.x, obj.y, bh);
+    const c3 = cam.p(obj.x, obj.y, bh + (obj.z || 0));
     let zmax = 0;
     faces.forEach(f => f.pts.forEach(q => { if (q[2] > zmax) zmax = q[2]; }));
     // projected faces
@@ -243,13 +265,25 @@ R3.scene = (doc, trace, S, opt = {}) => {
     // label above the part
     if (obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
       const lp = cam.p(obj.x, obj.y, zmax + 2.2);
-      labels += label3d(obj, doc, lp[0] + (obj.label.dx3 || 0), lp[1] + (obj.label.dy3 || 0), I);
+      const lx = lp[0] + (obj.label.dx3 || 0), ly = lp[1] + (obj.label.dy3 || 0);
+      if (obj.label.leader3 && RNBX.labels) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        proj.forEach(q => q.sp.forEach(p2 => { x0 = Math.min(x0, p2[0]); y0 = Math.min(y0, p2[1]); x1 = Math.max(x1, p2[0]); y1 = Math.max(y1, p2[1]); }));
+        const sz = RNBX.labels.size(obj, doc);
+        const rect = [lx - sz.w / 2, ly + sz.fs * 0.32 - sz.h, lx + sz.w / 2, ly + sz.fs * 0.32];
+        labels += RNBX.labels.leader([x0, y0, x1, y1], rect, dark3 ? '#d5dbe4' : '#4b5563', 0.14);
+      }
+      labels += label3d(obj, doc, lx, ly, I);
     }
   }
 
   // beams, chunked for correct ordering against components
   const dark = RNBX.isDarkPage(doc.page);
+  RNBX.beams.setContext(doc);
   const groups = RNBX.beams.groups(trace.segments);
+  const at = (seg, u) => seg.vertical
+    ? [seg.a[0], seg.a[1], bh + seg.za + (seg.zb - seg.za) * u / (seg.len || 1)]
+    : [seg.a[0] + (seg.b[0] - seg.a[0]) * u / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * u / seg.len, bh + (seg.za || 0)];
   for (const seg of trace.segments) {
     if (seg.len < 1e-4) continue;
     const grp = groups.get(seg);
@@ -263,11 +297,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const steps = Math.max(1, Math.ceil(seg.len / 3));
     for (let i = 0; i < steps; i++) {
       const s0 = seg.len * i / steps, s1 = seg.len * (i + 1) / steps;
-      const a = [seg.a[0] + (seg.b[0] - seg.a[0]) * s0 / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * s0 / seg.len];
-      const b = [seg.a[0] + (seg.b[0] - seg.a[0]) * s1 / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * s1 / seg.len];
-      let pa = cam.p(a[0], a[1], bh), pb = cam.p(b[0], b[1], bh);
-      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : Math.max(0.1, 2 * Math.abs(seg.w0 + seg.dw * (s0 + s1) / 2))) * sk;
+      const a = at(seg, s0), b = at(seg, s1);
+      let pa = cam.p(a[0], a[1], a[2]), pb = cam.p(b[0], b[1], b[2]);
+      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1);
       const w = Math.max(0.12, wm * k);
+      if (seg.ghost) {
+        items.push({ z: (pa[2] + pb[2]) / 2 + 0.01, svg: `<line x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}" stroke="${col}" stroke-opacity="${n(Math.max(0.35, op))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 3)} ${n(w * 3)}"/>` });
+        continue;
+      }
       if (band) {
         const dx = pb[0] - pa[0], dy = pb[1] - pa[1], l = Math.hypot(dx, dy) || 1, off = band * w * 2;
         const ox = -dy / l * off, oy = dx / l * off;
@@ -286,14 +323,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const an = doc.animation, v = an.flowSpeed || 25;
     for (const seg of trace.segments) {
       const pulsed = RNBX.beams.isPulsed(doc, seg, opt.motion);
-      if ((!pulsed && !an.flow) || seg.len < 0.05) continue;
+      if ((!pulsed && !an.flow) || seg.len < 0.05 || seg.ghost) continue;
       const col = RNBX.beams.color(doc, seg), spacing = pulsed ? 14 : 7.7, plen = pulsed ? 2 : 2.2;
       let u = ((v * opt.time - seg.s0) % spacing + spacing) % spacing;
       for (; u < seg.len; u += spacing) {
         const a = Math.max(0, u - plen / 2), b = Math.min(seg.len, u + plen / 2);
-        const pa = cam.p(seg.a[0] + (seg.b[0] - seg.a[0]) * a / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * a / seg.len, bh);
-        const pb = cam.p(seg.a[0] + (seg.b[0] - seg.a[0]) * b / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * b / seg.len, bh);
-        const w = Math.max(0.25, 2 * Math.abs(seg.w0 + seg.dw * u) * k) * (pulsed ? 1.4 : 0.8);
+        const A = at(seg, a), Bq = at(seg, b);
+        const pa = cam.p(A[0], A[1], A[2]), pb = cam.p(Bq[0], Bq[1], Bq[2]);
+        const w = Math.max(0.25, 2 * RNBX.beams.hw(seg, u) * k) * (pulsed ? 1.4 : 0.8);
         const g = `x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}"`;
         items.push({ z: (pa[2] + pb[2]) / 2 + 0.02, svg: `<line ${g} stroke="${col}" stroke-opacity="0.4" stroke-width="${n(w * 3)}" stroke-linecap="round"/><line ${g} stroke="#ffffff" stroke-opacity="0.92" stroke-width="${n(w)}" stroke-linecap="round"/>` });
       }

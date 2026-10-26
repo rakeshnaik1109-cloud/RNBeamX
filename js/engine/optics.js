@@ -101,6 +101,34 @@ O.refract = (d, n, eta) => {
   return U.v.norm([eta * d[0] + a * n[0], eta * d[1] + a * n[1]]);
 };
 
+/* Fresnel amplitude coefficients for a planar interface.
+   cosi: cosine of incidence; returns {rs, rp, ts, tp, Rs, Rp, tir}. */
+O.fresnel = (cosi, n1, n2) => {
+  cosi = Math.min(1, Math.abs(cosi));
+  const sint2 = Math.pow(n1 / n2, 2) * (1 - cosi * cosi);
+  if (sint2 >= 1) return { rs: 1, rp: 1, Rs: 1, Rp: 1, tir: true };
+  const cost = Math.sqrt(1 - sint2);
+  const rs = (n1 * cosi - n2 * cost) / (n1 * cosi + n2 * cost);
+  const rp = (n2 * cosi - n1 * cost) / (n2 * cosi + n1 * cost);
+  return { rs, rp, Rs: rs * rs, Rp: rp * rp, tir: false };
+};
+/* Brewster angle in degrees */
+O.brewster = (n1, n2) => U.deg(Math.atan(n2 / n1));
+
+/* ---------- Gaussian beams (complex q parameter, physical mm) ----------
+   1/q = 1/R − i·M²·λ / (π·n·w²)                                         */
+const cdiv = (a, b) => { const d = b.re * b.re + b.im * b.im || 1e-300; return { re: (a.re * b.re + a.im * b.im) / d, im: (a.im * b.re - a.re * b.im) / d }; };
+O.cdiv = cdiv;
+O.qWaist = (w0, lamMm, M2 = 1, n = 1) => ({ re: 0, im: Math.PI * n * w0 * w0 / (M2 * lamMm) });
+O.qProp = (q, L) => ({ re: q.re + L, im: q.im });
+O.qLens = (q, f) => { const inv = cdiv({ re: 1, im: 0 }, q); return cdiv({ re: 1, im: 0 }, { re: inv.re - 1 / f, im: inv.im }); };
+O.qRadius = (q, lamMm, M2 = 1, n = 1) => {
+  const inv = cdiv({ re: 1, im: 0 }, q);
+  return inv.im >= 0 ? Infinity : Math.sqrt(-M2 * lamMm / (Math.PI * n * inv.im));
+};
+/* waist radius and its distance ahead (+) or behind (−) of the current point */
+O.qWaistInfo = (q, lamMm, M2 = 1, n = 1) => ({ zToWaist: -q.re, zR: q.im, w0: Math.sqrt(Math.max(0, q.im) * M2 * lamMm / (Math.PI * n)) });
+
 /* Spectral transmission of filters and dichroics (sharp-edge model). */
 O.filterT = (p, nm) => {
   switch (p.mode) {

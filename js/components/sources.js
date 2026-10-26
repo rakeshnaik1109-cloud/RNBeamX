@@ -8,6 +8,7 @@ const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
 
 lib.colorOf = (doc, nm, override) => {
   if (override) return override;
+  if (doc && doc.style.colorMode === 'mono') return RNBX.isDarkPage && RNBX.isDarkPage(doc.page) ? '#f2f4f7' : '#1f2125';
   return doc && doc.style.colorMode === 'safe' ? U.wavelengthColorSafe(nm) : U.wavelengthColor(nm);
 };
 
@@ -19,6 +20,7 @@ const beamParams = [
   { key: 'beamWidth', label: 'Beam diameter (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05 },
   { key: 'divergence', label: 'Divergence (half-angle)', type: 'number', unit: '°', min: -30, max: 45, step: 0.1 },
   { key: 'power', label: 'Power', type: 'number', unit: 'mW', min: 0, max: 1e6, step: 0.1 },
+  { key: 'M2', label: 'Beam quality M²', type: 'number', min: 1, max: 100, step: 0.1, hint: 'Gaussian model' },
   { key: 'color', label: 'Beam colour override', type: 'color', allowEmpty: true },
 ];
 
@@ -26,7 +28,7 @@ function rays(p, lambdas, o = [0, 0]) {
   const P = (p.power == null ? 1 : p.power) / lambdas.length;
   return lambdas.map(l => {
     const J = RNBX.optics.jones(p.pol, p.polAngle);
-    return { o, d: [1, 0], lambda: l, P, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };
+    return { o, d: [1, 0], lambda: l, P, M2: p.M2 || 1, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };
   });
 }
 

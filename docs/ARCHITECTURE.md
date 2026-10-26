@@ -18,10 +18,10 @@ state (document) ──► tracer ──► renderer (2D) / renderer3d ──►
 |---|---|---|
 | core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
 | engine | `optics.js`, `tracer.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power |
-| components | `library.js` + four catalogue files | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
-| render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting |
+| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js`, `labels.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting, automatic label placement |
 | anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
-| io | `project.js`, `export.js`, `templates.js` | Files, autosave, clipboard; exporters; built-in setups |
+| io | `project.js`, `export.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
 | ui | `dom.js`, `canvas.js`, `palette.js`, `inspector.js`, `layers.js`, `timeline.js`, `dialogs.js`, `menus.js` | The application |
 
 ## Adding a component
@@ -50,7 +50,13 @@ automatically.
 `mirror` (optional `f`), `splitter`, `pbs`, `dichroic`, `filter`, `lens`,
 `waveplate`, `polarizer`, `rotator` (optional `isolator`), `grating`, polygon
 refraction (`poly` + `mat`), `aom`, `shg`, `sample` (with emission), `retro`,
-`aperture`, `fiberIn`, `pass`, `absorb`.
+`aperture`, `fiberIn`, `vfold`, `periscope`, `cavity`, `ring`, `pass`, `absorb`.
+
+Rays carry a height `z`; while `vz ≠ 0` they travel vertically and meet
+objects whose `axis` is `up` / `down` (their first optical surface is reused,
+placed at its true height along the object's axis). In Gaussian mode each ray
+also carries the complex q parameter; every ray carries its optical path length
+and extra phase, and detectors sum fields coherently per source and wavelength.
 
 ## Conventions
 

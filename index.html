@@ -15,8 +15,8 @@
 (function(){try{var t=localStorage.getItem('rnbx_theme');t=t?JSON.parse(t):null;
 if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();
 </script>
-<link href="css/style.css?v=202610261952" rel="stylesheet"/>
-<link href="css/layout.css?v=202610261952" rel="stylesheet"/>
+<link href="css/style.css?v=202610262022" rel="stylesheet"/>
+<link href="css/layout.css?v=202610262022" rel="stylesheet"/>
 </head>
 <body>
 <div id="app">
@@ -67,6 +67,7 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
         <button class="hud-btn wide" id="zoomLabel" title="Fit page (0)">100%</button>
         <button class="hud-btn" id="zoomIn" title="Zoom in (+)">+</button>
       </div>
+      <div class="hud-group touch-bar" id="touchBar" aria-label="Touch tools"></div>
       <div class="hud-group" id="view3dHud" hidden>
         <label>Yaw <input type="range" id="hudYaw" min="-180" max="180" step="1"/></label>
         <label>Tilt <input type="range" id="hudPitch" min="8" max="90" step="1"/></label>
@@ -106,32 +107,37 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
 <div id="modalRoot"></div>
 <div id="toastRoot" aria-live="polite"></div>
 
-<script src="js/core/utils.js?v=202610261952"></script>
-<script src="js/core/state.js?v=202610261952"></script>
-<script src="js/engine/optics.js?v=202610261952"></script>
-<script src="js/engine/tracer.js?v=202610261952"></script>
-<script src="js/components/library.js?v=202610261952"></script>
-<script src="js/components/sources.js?v=202610261952"></script>
-<script src="js/components/optics.js?v=202610261952"></script>
-<script src="js/components/detectors.js?v=202610261952"></script>
-<script src="js/components/annotations.js?v=202610261952"></script>
-<script src="js/render/text.js?v=202610261952"></script>
-<script src="js/render/defs.js?v=202610261952"></script>
-<script src="js/render/beams.js?v=202610261952"></script>
-<script src="js/render/renderer.js?v=202610261952"></script>
-<script src="js/render/renderer3d.js?v=202610261952"></script>
-<script src="js/anim/animation.js?v=202610261952"></script>
-<script src="js/io/project.js?v=202610261952"></script>
-<script src="js/io/export.js?v=202610261952"></script>
-<script src="js/io/templates.js?v=202610261952"></script>
-<script src="js/ui/dom.js?v=202610261952"></script>
-<script src="js/ui/canvas.js?v=202610261952"></script>
-<script src="js/ui/palette.js?v=202610261952"></script>
-<script src="js/ui/inspector.js?v=202610261952"></script>
-<script src="js/ui/layers.js?v=202610261952"></script>
-<script src="js/ui/timeline.js?v=202610261952"></script>
-<script src="js/ui/dialogs.js?v=202610261952"></script>
-<script src="js/ui/menus.js?v=202610261952"></script>
-<script src="js/app.js?v=202610261952"></script>
+<script src="js/core/utils.js?v=202610262022"></script>
+<script src="js/core/state.js?v=202610262022"></script>
+<script src="js/engine/optics.js?v=202610262022"></script>
+<script src="js/engine/tracer.js?v=202610262022"></script>
+<script src="js/components/library.js?v=202610262022"></script>
+<script src="js/components/sources.js?v=202610262022"></script>
+<script src="js/components/optics.js?v=202610262022"></script>
+<script src="js/components/detectors.js?v=202610262022"></script>
+<script src="js/components/vertical.js?v=202610262022"></script>
+<script src="js/components/photonics.js?v=202610262022"></script>
+<script src="js/components/plot.js?v=202610262022"></script>
+<script src="js/components/annotations.js?v=202610262022"></script>
+<script src="js/render/text.js?v=202610262022"></script>
+<script src="js/render/defs.js?v=202610262022"></script>
+<script src="js/render/beams.js?v=202610262022"></script>
+<script src="js/render/renderer.js?v=202610262022"></script>
+<script src="js/render/renderer3d.js?v=202610262022"></script>
+<script src="js/render/labels.js?v=202610262022"></script>
+<script src="js/anim/animation.js?v=202610262022"></script>
+<script src="js/io/project.js?v=202610262022"></script>
+<script src="js/io/export.js?v=202610262022"></script>
+<script src="js/io/templates.js?v=202610262022"></script>
+<script src="js/io/styles.js?v=202610262022"></script>
+<script src="js/ui/dom.js?v=202610262022"></script>
+<script src="js/ui/canvas.js?v=202610262022"></script>
+<script src="js/ui/palette.js?v=202610262022"></script>
+<script src="js/ui/inspector.js?v=202610262022"></script>
+<script src="js/ui/layers.js?v=202610262022"></script>
+<script src="js/ui/timeline.js?v=202610262022"></script>
+<script src="js/ui/dialogs.js?v=202610262022"></script>
+<script src="js/ui/menus.js?v=202610262022"></script>
+<script src="js/app.js?v=202610262022"></script>
 </body>
 </html>

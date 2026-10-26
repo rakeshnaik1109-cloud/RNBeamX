@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use RNBeamX to prepare figures, please cite it as below."
 title: "RNBeamX (Optical Setup Designer)"
-version: "1.0.0"
+version: "1.1.0"
 date-released: 2026-10-26
 authors:
   - family-names: Naik

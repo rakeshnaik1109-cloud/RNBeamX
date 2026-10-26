@@ -163,6 +163,28 @@
 .help-grid div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 .caption-box { font: 12.5px/1.55 Georgia, "Times New Roman", serif; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; }
 
+/* ---------- touch & tablet ---------- */
+.touch-bar { display: none; }
+.touch-bar .icon-btn { width: 36px; height: 36px; }
+.touch-bar .icon-btn svg { width: 19px; height: 19px; }
+@media (pointer: coarse), (max-width: 1100px) {
+  .touch-bar { display: flex; }
+}
+@media (pointer: coarse) {
+  .icon-btn { width: 36px; height: 36px; }
+  .tile { grid-template-rows: 50px auto; padding: 8px 4px 6px; }
+  .hud-btn { height: 34px; min-width: 34px; }
+  .hud-group input[type=range] { width: 120px; height: 28px; }
+  .menu button { padding: 10px 12px; }
+  .layer { padding: 9px 10px 9px 12px; }
+}
+#app.lib-hidden { grid-template-columns: 0 minmax(0, 1fr) 300px; }
+#app.lib-hidden .panel.left { display: none; }
+/* the library becomes a slide-out drawer on narrow screens */
+#app.drawer-open .panel.left { display: flex; position: fixed; left: 0; top: 50px; bottom: 26px; width: min(320px, 86vw); z-index: 55; box-shadow: var(--shadow-lg); }
+.drawer-scrim { display: none; }
+#app.drawer-open .drawer-scrim { display: block; position: fixed; inset: 50px 0 26px 0; background: rgba(10, 12, 20, .3); z-index: 54; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   #app { grid-template-columns: 216px minmax(0, 1fr) 270px; }

@@ -20,10 +20,42 @@ B.opacity = (doc, seg) => {
   return base * (0.3 + 0.7 * Math.pow(f, 0.45));
 };
 
-/* Envelope polygons for a segment. Splits at a focus so the beam
-   pinches to a waist instead of inverting. */
+/* drawing context: figure scale and Gaussian width exaggeration */
+B.ctx = { scale: 10, gMag: 10 };
+B.setContext = doc => { B.ctx = { scale: doc.style.scale || 10, gMag: doc.style.gaussMag || 10 }; };
+
+/* drawn half-width at distance s along a segment */
+B.hw = (seg, s) => {
+  if (seg.q0) {
+    const c = B.ctx, q = { re: seg.q0.re + s * c.scale, im: seg.q0.im };
+    const w = RNBX.optics.qRadius(q, seg.lambda * 1e-6, seg.M2, seg.nmed);
+    return U.clamp(w * c.gMag / c.scale, WMIN, 60);
+  }
+  return Math.max(WMIN, Math.abs(seg.w0 + seg.dw * s));
+};
+
+/* Envelope polygons for a segment. Geometric beams split at a
+   focus so they pinch to a waist; Gaussian beams are sampled
+   along the hyperbolic profile. */
 B.envelope = (seg, wScale = 1) => {
   const d = V.norm(V.sub(seg.b, seg.a)), p = V.perp(d);
+  if (seg.q0) {
+    const L = seg.len, cuts = [];
+    const N = 18;
+    for (let i = 0; i <= N; i++) cuts.push(L * i / N);
+    const sw = -seg.q0.re / B.ctx.scale;
+    if (sw > 0 && sw < L) cuts.push(sw);
+    cuts.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const s0 = cuts[i], s1 = cuts[i + 1];
+      if (s1 - s0 < 1e-6) continue;
+      const h0 = B.hw(seg, s0) * wScale, h1 = B.hw(seg, s1) * wScale;
+      const A = V.add(seg.a, V.mul(d, s0)), Bp = V.add(seg.a, V.mul(d, s1));
+      out.push({ A, B: Bp, h0, h1, pts: [V.add(A, V.mul(p, h0)), V.add(Bp, V.mul(p, h1)), V.sub(Bp, V.mul(p, h1)), V.sub(A, V.mul(p, h0))] });
+    }
+    return out;
+  }
   const w0 = seg.w0 * wScale, dw = seg.dw * wScale, L = seg.len;
   const pieces = [];
   const sF = Math.abs(dw) > 1e-9 ? -w0 / dw : -1;
@@ -40,7 +72,10 @@ B.envelope = (seg, wScale = 1) => {
 };
 const poly = pts => 'M ' + pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ') + ' Z';
 
-B.isCollimated = seg => Math.abs(seg.dw * seg.len) < 0.02;
+B.isCollimated = seg => {
+  if (seg.q0) { const a = B.hw(seg, 0), b = B.hw(seg, seg.len / 2), c = B.hw(seg, seg.len); return Math.max(a, b, c) - Math.min(a, b, c) < 0.015; }
+  return Math.abs(seg.dw * seg.len) < 0.02;
+};
 
 /* glow halo layers drawn beneath the core beam */
 const GLOW = [[5.5, 0.06], [3.2, 0.11], [1.9, 0.2]];
@@ -54,7 +89,7 @@ B.groups = segs => {
   const canon = s => (s.a[0] < s.b[0] - 1e-6) || (Math.abs(s.a[0] - s.b[0]) <= 1e-6 && s.a[1] <= s.b[1]);
   const key = s => { const c = canon(s), p = c ? [s.a, s.b] : [s.b, s.a]; return [p[0][0], p[0][1], p[1][0], p[1][1]].map(v => Math.round(v * 50)).join(','); };
   const by = new Map();
-  segs.forEach(s => { if (s.len < 1e-4) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
+  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
   const out = new Map();
   by.forEach(list => {
     const ls = [...new Set(list.map(s => s.lambda))];
@@ -73,11 +108,18 @@ B.draw2D = (trace, doc, opt = {}) => {
   const lineMode = st.beamStyle === 'line';
   const dark = RNBX.isDarkPage(doc.page);
   const glow = st.beamGlow || opt.forceGlow;
+  B.setContext(doc);
   const groups = B.groups(segs);
   let halo = '', core = '', deco = '';
   const lineW = Math.max(0.2, st.beamWidth * 0.5);
   for (const seg of segs) {
-    if (seg.len < 1e-4) continue;
+    if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ghost) {
+      // ghost reflections: thin dashed lines, as reviewers expect to see them
+      const w = Math.max(0.12, (lineMode ? lineW : 2 * B.hw(seg, 0)) * 0.45);
+      core += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.max(0.35, B.opacity(doc, seg)))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 4)} ${n(w * 3)}"/>`;
+      continue;
+    }
     const g = groups.get(seg);
     if (g && g.skip) continue;
     const col = B.color(doc, seg), op = B.opacity(doc, seg);
@@ -95,7 +137,7 @@ B.draw2D = (trace, doc, opt = {}) => {
         core += `<path d="${poly(band)}" fill="${coreCol}" fill-opacity="${n(op)}" stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="0.02"/>`;
       }
     } else if (lineMode || B.isCollimated(seg)) {
-      const w = (lineMode ? lineW : Math.max(WMIN * 2, 2 * Math.abs(seg.w0))) * k;
+      const w = (lineMode ? lineW : 2 * B.hw(seg, 0)) * k;
       const geo = `x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}"`;
       if (glow) GLOW.forEach(([kk, a]) => { halo += `<line ${geo} stroke="${col}" stroke-opacity="${n(a * op)}" stroke-width="${n(w * kk + 0.6)}" stroke-linecap="round"/>`; });
       core += `<line ${geo} stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
@@ -108,8 +150,9 @@ B.draw2D = (trace, doc, opt = {}) => {
         core += `<path d="${d}" fill="${coreCol}" fill-opacity="${n(op * 0.88)}" stroke="none"/>`;
       }
     }
-    if (st.beamArrows && seg.kind === 'beam' && seg.len > 9 && !(g && g.i > 0)) deco += B.arrow(seg, g ? '#555b66' : col, op, lineMode ? lineW : 2 * Math.abs(seg.w0 + seg.dw * seg.len / 2));
+    if (st.beamArrows && seg.kind === 'beam' && seg.len > 9 && !(g && g.i > 0)) deco += B.arrow(seg, g ? '#555b66' : col, op, lineMode ? lineW : 2 * B.hw(seg, seg.len / 2));
     if (st.polarization && seg.kind === 'beam' && seg.len > 7 && !g) deco += B.polMarker(seg, col, doc);
+    if (st.waistLabels && seg.q0 && seg.kind === 'beam' && !(g && g.i > 0)) deco += B.waistLabel(seg, doc);
   }
   let flow = '';
   if (opt.time != null && B.hasMotion(doc, segs, opt.motion)) flow = B.flow2D(trace, doc, opt.time, lineMode ? lineW : null, opt.motion);
@@ -120,6 +163,21 @@ B.draw2D = (trace, doc, opt = {}) => {
    show their pulses whenever the animation is actually running */
 B.hasMotion = (doc, segs, motion) => doc.animation.flow || doc.animation.pulses || (motion && segs.some(s => s.pulsed));
 B.isPulsed = (doc, seg, motion) => doc.animation.pulses || (seg.pulsed && (motion || doc.animation.flow));
+
+/* "2w₀ = 12 µm" at a Gaussian focus that lies inside the segment */
+B.waistLabel = (seg, doc) => {
+  const sw = -seg.q0.re / B.ctx.scale;
+  if (!(sw > 0.5 && sw < seg.len - 0.5)) return '';
+  const info = RNBX.optics.qWaistInfo(seg.q0, seg.lambda * 1e-6, seg.M2, seg.nmed);
+  const um = 2 * info.w0 * 1000;
+  const txt = um >= 1000 ? `2w₀ = ${U.fmt(um / 1000, 2)} mm` : `2w₀ = ${U.fmt(um, um < 10 ? 2 : 1)} µm`;
+  const d = V.norm(V.sub(seg.b, seg.a)), p = V.perp(d), at = V.add(seg.a, V.mul(d, sw));
+  const off = B.hw(seg, sw) + 1.6, q = V.sub(at, V.mul(p[1] > 0 ? p : V.mul(p, -1), off));
+  const fs = U.pt2mm(Math.max(5, (doc.style.fontSizePt || 7) - 1));
+  const ink = RNBX.isDarkPage(doc.page) ? '#e8ecf2' : '#333';
+  return `<text x="${n(q[0])}" y="${n(q[1])}" font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="middle">${RNBX.text.markup(txt, fs)}</text>` +
+    `<line x1="${n(at[0])}" y1="${n(at[1])}" x2="${n(q[0])}" y2="${n(q[1] + fs * 0.35)}" stroke="${ink}" stroke-width="0.12" stroke-dasharray="0.4 0.4"/>`;
+};
 
 B.arrow = (seg, col, op, w) => {
   const d = V.norm(V.sub(seg.b, seg.a)), m = V.add(seg.a, V.mul(d, seg.len * 0.5));
@@ -164,17 +222,17 @@ B.flow2D = (trace, doc, t, lineW, motion) => {
   const dark = RNBX.isDarkPage(doc.page);
   let s = '';
   for (const seg of trace.segments) {
-    if (seg.len < 0.05) continue;
+    if (seg.len < 0.05 || seg.vertical || seg.ghost) continue;
     const pulsed = B.isPulsed(doc, seg, motion);
     if (!pulsed && !an.flow) continue;
     const col = B.color(doc, seg), d = V.norm(V.sub(seg.b, seg.a));
-    const wMid = lineW || Math.max(0.25, 2 * Math.abs(seg.w0 + seg.dw * seg.len / 2));
+    const wMid = lineW || Math.max(0.25, 2 * B.hw(seg, seg.len / 2));
     if (pulsed) {
       const spacing = 14, plen = Math.max(1.6, wMid * 2.2);
       let u = ((v * t - seg.s0) % spacing + spacing) % spacing;
       for (; u < seg.len; u += spacing) {
         const c = V.add(seg.a, V.mul(d, u));
-        const w = Math.max(0.3, lineW || 2 * Math.abs(seg.w0 + seg.dw * u)) * 1.25;
+        const w = Math.max(0.3, lineW || 2 * B.hw(seg, u)) * 1.25;
         const a = V.sub(c, V.mul(d, Math.min(plen / 2, u))), b = V.add(c, V.mul(d, Math.min(plen / 2, seg.len - u)));
         const g = `x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}"`;
         s += `<line ${g} stroke="${col}" stroke-opacity="0.35" stroke-width="${n(w * 3)}" stroke-linecap="round"/>`;

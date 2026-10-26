@@ -37,6 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
   } else if (!RNBX.project.restore()) {
     RNBX.changed();
   }
+  // arriving from RNSpectraX's "→ RNBeamX": add the spectrum as a new panel
+  if (params.get('from') === 'rnspectrax') {
+    const d = RNBX.plotData.readHandoff();
+    if (d) setTimeout(() => { RNBX.arrange.addDataPanel(d); RNBX.toast('Plot from RNSpectraX added as a panel. Ctrl+Z to undo.'); }, 50);
+    history.replaceState(null, '', location.pathname);
+  }
   RNBX.inspector.build();
   setTimeout(() => RNBX.canvas.fit(), 0);
   window.addEventListener('beforeunload', () => U.store.set('rnbx_autosave_v1', { t: Date.now(), doc: S.doc }));

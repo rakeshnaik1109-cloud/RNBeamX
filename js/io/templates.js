@@ -185,6 +185,79 @@ T.list.push({
   },
 });
 
+/* ---------- Microscope tower (vertical beam path) ---------- */
+T.list.push({
+  id: 'tower', name: 'Upright Raman microscope (vertical path)', desc: 'Fold mirror sends the beam up to an objective and sample above the table',
+  build() {
+    const d = base('nature-2', 183, 92, 'Upright Raman microscope', { mode: '3d' });
+    Object.assign(d.view3d, { yaw: -32, pitch: 30, zoom: 1.05, beamHeight: 6 });
+    const laser = mk('laser', 22, 58, 0, { lambda: 532, power: 20 }, 'Laser 532 nm', [0, 7]);
+    const bp = mk('filter', 42, 58, 0, { mode: 'bandpass', center: 532, width: 4 }, 'BP', [0, 7]);
+    const dm = mk('dichroic', 78, 58, 45, { edge: 550, mode: 'shortpass' }, 'DM', [8, -3]);
+    const fold = mk('vfold', 120, 58, 180, { dir: 'up' }, 'FM', [-7, 5]);
+    const obj = mk('objective', 120, 58, 0, { fd: 3, mag: '100×' }, 'Objective 100×', [14, -4], { axis: 'up', z: 16 });
+    const smp = mk('sample', 120, 58, 0, { look: 'chip', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 575, emitFrac: 0.6 }, 'Sample', [12, -9], { axis: 'up', z: 16 + 4.5 + 3 + 0.7 });
+    const lp = mk('filter', 78, 70, 90, { mode: 'longpass', edge: 545 }, 'LP', [7, 0]);
+    const spec = mk('spectrometer', 78, 82, 90, { L: 12, H: 9 }, 'Spectrometer', [18, 0]);
+    const note = mk('text', 120, 80, 0, { text: 'objective and sample stacked above the fold mirror\n(z = 16–24 mm, optical axis vertical)', size: 5.5, color: '#555555', italic: true });
+    d.objects.push(laser, bp, dm, fold, obj, smp, lp, spec, note);
+    return d;
+  },
+});
+
+/* ---------- Michelson with live fringes (interference) ---------- */
+T.list.push({
+  id: 'fringes', name: 'Michelson with live fringes (animated)', desc: 'Piezo-driven mirror; the fringe panel follows the computed phase',
+  build() {
+    const d = base('nature-15', 120, 74, 'Michelson interferometer with fringes');
+    const laser = mk('laser', 18, 42, 0, { lambda: 632.8, L: 18, H: 5.5 }, 'He–Ne 632.8 nm', [0, 7]);
+    const bs = mk('bscube', 55, 42, 0, {}, 'BS', [-6.5, 6]);
+    const m1 = mk('mirror', 55, 14, ang(UP, DN), {}, 'M1', [7, 0]);
+    const m2 = mk('mirror', 84, 42, ang(R, L), { piezo: 0 }, 'M2 (piezo)', [0, -8]);
+    const cam = mk('camera', 55, 64, 90, { L: 9, H: 8 }, 'Camera', [-11, 0]);
+    const fr = mk('fringes', 95, 62, 0, { detector: cam.id, size: 16, density: 4 });
+    const t = mk('text', 95, 50.5, 0, { text: 'camera image', size: 6, color: '#555555', italic: true });
+    d.objects.push(laser, bs, m1, m2, cam, fr, t);
+    d.animation.duration = 4;
+    const k = (tt, nm) => ({ t: tt, ease: 'linear', x: m2.x, y: m2.y, rot: m2.rot, scale: 1, opacity: 1, props: Object.assign(U.deepClone(m2.props), { piezo: nm }) });
+    d.animation.tracks[m2.id] = [k(0, 0), k(4, 632.8)];
+    return d;
+  },
+});
+
+/* ---------- Gaussian beam focusing ---------- */
+T.list.push({
+  id: 'gaussian', name: 'Gaussian beam telescope', desc: 'True waists and Rayleigh ranges (Gaussian model), labelled foci',
+  build() {
+    const d = base('nature-15', 120, 46, 'Gaussian beam telescope', { beamModel: 'gaussian', waistLabels: true, gaussMag: 10 });
+    const laser = mk('laser', 14, 22, 0, { lambda: 1064, beamWidth: 1.6, L: 16, M2: 1.1 }, 'Laser 1064 nm, M² = 1.1', [0, 7.5]);
+    const l1 = mk('lens', 34, 22, 0, { f: 200, d: 8 }, 'L1 (f = {f} mm)', [0, 7.5]);
+    const l2 = mk('lens', 64, 22, 0, { f: 100, d: 8 }, 'L2 (f = {f} mm)', [0, 7.5]);
+    const prof = mk('profiler', 104, 22, 0, {}, 'Beam profiler', [0, 7.5]);
+    d.objects.push(laser, l1, l2, prof);
+    return d;
+  },
+});
+
+/* ---------- Ring resonator (integrated photonics) ---------- */
+T.list.push({
+  id: 'ring', name: 'Microring resonator scan (animated)', desc: 'Tunable laser through an add–drop ring; through and drop ports',
+  build() {
+    const d = base('nature-15', 120, 56, 'Microring resonator');
+    const laser = mk('laser', 16, 25, 0, { lambda: 1550, L: 16, power: 1 }, 'Tunable laser\n1550 nm', [0, 8]);
+    const chip = mk('ringchip', 60, 25 + 0.22 * 9, 0, { w: 18, h: 9, drop: true, kappa: 0.08, loss: 0.99, lam0: 1550, fsr: 4, detune: 0 }, 'Si₃N₄ microring', [0, -8.5]);
+    const pd1 = mk('pd', 94, 25, 0, {}, 'PD (through)', [0, 6]);
+    const yDrop = chip.y + (-0.22 * 9 + 2 * Math.min(0.22 * 9, 18 * 0.14) + 0.7);
+    const m = mk('mirror', 38, yDrop, ang(L, DN), {}, 'M', [-6, 0]);
+    const pd2 = mk('pd', 38, 46, 90, {}, 'PD (drop)', [11, 0]);
+    d.objects.push(laser, chip, pd1, m, pd2);
+    d.animation.duration = 6;
+    const k = (tt, det) => ({ t: tt, ease: 'linear', x: chip.x, y: chip.y, rot: 0, scale: 1, opacity: 1, props: Object.assign(U.deepClone(chip.props), { detune: det }) });
+    d.animation.tracks[chip.id] = [k(0, -0.5), k(6, 0.5)];
+    return d;
+  },
+});
+
 /* ---------- Graphical abstract: SHG in 3D ---------- */
 T.list.push({
   id: 'ga-shg', name: 'Graphical abstract · SHG in 3D', desc: 'Dark 3D table, glowing beams, orbiting camera animation',

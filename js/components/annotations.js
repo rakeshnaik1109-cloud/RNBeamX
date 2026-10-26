@@ -23,7 +23,7 @@ H.arrowHead = (x, y, a, size, color) => {
 lib.worldBox = obj => {
   const def = lib.get(obj.type);
   if (!def || !def.bbox) return [obj.x, obj.y, obj.x, obj.y];
-  const b = def.bbox(obj.props);
+  const b = lib.objBox(obj);
   const pts = [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].map(p => U.toWorld(obj, p));
   return [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
 };
@@ -308,6 +308,55 @@ ann({
       s += `<text x="${n(0.9 + c * L.colW)}" y="${n(0.75 + (r + 0.5) * L.fs * 1.35)}" font-family="${font(S)}" font-size="${n(L.fs)}" fill="${p.color}" dominant-baseline="central"><tspan font-weight="700">${U.esc(x[0])}</tspan>  ${U.esc(x[1])}</text>`;
     });
     if (!L.e.length) s += H.text(S, 9, 2, 'Add components to fill the key', { size: L.fs, color: '#888' });
+    return s;
+  },
+});
+
+/* ---------- interference fringes linked to a detector ---------- */
+ann({
+  type: 'fringes', name: 'Interference fringes', keywords: 'interference fringes rings pattern michelson mach zehnder visibility phase',
+  defaults: { detector: '', pattern: 'rings', size: 14, density: 5, color: '', showValue: true, frame: true },
+  params: [
+    { key: 'detector', label: 'Detector', type: 'select', options: () => [['', '— choose —']].concat(RNBX.state.doc.objects.filter(o => { const d = lib.get(o.type); return d && d.category === 'Detectors'; }).map(o => [o.id, (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props) : lib.get(o.type).name)])) },
+    { key: 'pattern', label: 'Pattern', type: 'select', options: [['rings', 'Circular (Michelson / tilt-free)'], ['lines', 'Straight (slight tilt)']] },
+    { key: 'density', label: 'Fringe density', type: 'number', min: 0.5, max: 40, step: 0.5 },
+    { key: 'size', label: 'Size', type: 'number', unit: 'mm', min: 3, max: 100, step: 0.5 },
+    { key: 'color', label: 'Colour (blank = wavelength)', type: 'color', allowEmpty: true },
+    { key: 'showValue', label: 'Show Δφ and visibility', type: 'bool' }, { key: 'frame', label: 'Frame', type: 'bool' }],
+  hint: 'Shows the pattern a camera would see at the linked detector. Animate a mirror’s piezo displacement to make the fringes move.',
+  bbox: p => [-p.size / 2, -p.size / 2, p.size / 2, p.size / 2 + (p.showValue ? 3.2 : 0)],
+  draw(p, S, obj) {
+    const R = p.size / 2, h = S.trace && p.detector ? S.trace.hits[p.detector] : null;
+    const I = h && h.interf;
+    let s = '';
+    if (!I) {
+      s += `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}" fill="#f1f3f5" stroke="#9aa1ab" stroke-width="0.2" stroke-dasharray="1 0.8"/>`;
+      return s + H.text(S, 0, 0, p.detector ? 'No interfering beams here' : 'Link a detector', { size: Math.min(2.2, R / 4), color: '#6b7280' });
+    }
+    const col = p.color || lib.colorOf(S.doc, I.lambda);
+    const a = Math.sqrt(I.I1), b = Math.sqrt(I.I2), Imax = (a + b) * (a + b) || 1;
+    const val = x => (I.I1 + I.I2 + 2 * a * b * I.overlap * Math.cos(I.dphi + x)) / Imax;
+    const cid = 'rbx-fr-' + (obj ? obj.id : 'x');
+    s += `<defs><clipPath id="${cid}">${p.pattern === 'rings' ? `<circle cx="0" cy="0" r="${n(R)}"/>` : `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}"/>`}</clipPath></defs><g clip-path="url(#${cid})">`;
+    if (p.pattern === 'rings') {
+      const N = 64;
+      for (let i = N; i >= 1; i--) {
+        const r = R * i / N, ph = Math.PI * p.density * Math.pow(i / N, 2) * 2;
+        s += `<circle cx="0" cy="0" r="${n(r)}" fill="${U.mix('#000000', col, U.clamp(val(ph), 0, 1))}"/>`;
+      }
+    } else {
+      const N = 72, w = 2 * R / N;
+      for (let i = 0; i < N; i++) {
+        const x = -R + (i + 0.5) * w, ph = 2 * Math.PI * p.density * (x / (2 * R));
+        s += `<rect x="${n(-R + i * w)}" y="${n(-R)}" width="${n(w + 0.02)}" height="${n(2 * R)}" fill="${U.mix('#000000', col, U.clamp(val(ph), 0, 1))}"/>`;
+      }
+    }
+    s += '</g>';
+    if (p.frame) s += p.pattern === 'rings' ? `<circle cx="0" cy="0" r="${n(R)}" fill="none" stroke="${S.ink}" stroke-width="${n(S.lw)}"/>` : `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}" fill="none" stroke="${S.ink}" stroke-width="${n(S.lw)}"/>`;
+    if (p.showValue) {
+      const deg = ((U.deg(I.dphi) % 360) + 360) % 360;
+      s += `<text x="0" y="${n(R + 2.4)}" font-family="${U.esc(S.font)}" font-size="${n(S.fs * 0.85)}" fill="${RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : S.ink}" text-anchor="middle">${RNBX.text.markup(`Δφ = ${U.fmt(deg, 0)}° · V = ${U.fmt(I.vis, 2)}`)}</text>`;
+    }
     return s;
   },
 });

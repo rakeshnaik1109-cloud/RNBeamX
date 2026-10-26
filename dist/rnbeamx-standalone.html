@@ -317,6 +317,28 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
 .help-grid div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 .caption-box { font: 12.5px/1.55 Georgia, "Times New Roman", serif; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; }
 
+/* ---------- touch & tablet ---------- */
+.touch-bar { display: none; }
+.touch-bar .icon-btn { width: 36px; height: 36px; }
+.touch-bar .icon-btn svg { width: 19px; height: 19px; }
+@media (pointer: coarse), (max-width: 1100px) {
+  .touch-bar { display: flex; }
+}
+@media (pointer: coarse) {
+  .icon-btn { width: 36px; height: 36px; }
+  .tile { grid-template-rows: 50px auto; padding: 8px 4px 6px; }
+  .hud-btn { height: 34px; min-width: 34px; }
+  .hud-group input[type=range] { width: 120px; height: 28px; }
+  .menu button { padding: 10px 12px; }
+  .layer { padding: 9px 10px 9px 12px; }
+}
+#app.lib-hidden { grid-template-columns: 0 minmax(0, 1fr) 300px; }
+#app.lib-hidden .panel.left { display: none; }
+/* the library becomes a slide-out drawer on narrow screens */
+#app.drawer-open .panel.left { display: flex; position: fixed; left: 0; top: 50px; bottom: 26px; width: min(320px, 86vw); z-index: 55; box-shadow: var(--shadow-lg); }
+.drawer-scrim { display: none; }
+#app.drawer-open .drawer-scrim { display: block; position: fixed; inset: 50px 0 26px 0; background: rgba(10, 12, 20, .3); z-index: 54; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   #app { grid-template-columns: 216px minmax(0, 1fr) 270px; }
@@ -382,6 +404,7 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
         <button class="hud-btn wide" id="zoomLabel" title="Fit page (0)">100%</button>
         <button class="hud-btn" id="zoomIn" title="Zoom in (+)">+</button>
       </div>
+      <div class="hud-group touch-bar" id="touchBar" aria-label="Touch tools"></div>
       <div class="hud-group" id="view3dHud" hidden>
         <label>Yaw <input type="range" id="hudYaw" min="-180" max="180" step="1"/></label>
         <label>Tilt <input type="range" id="hudPitch" min="8" max="90" step="1"/></label>
@@ -612,7 +635,7 @@ U.slug = s => String(s || 'figure').trim().replace(/[^\w\-]+/g, '_').replace(/_+
 const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
-RNBX.VERSION = '1.0.0';
+RNBX.VERSION = '1.1.0';
 
 /* ---------- event bus ---------- */
 const listeners = {};
@@ -657,7 +680,11 @@ RNBX.defaultStyle = () => ({
   beamArrows: false,
   beamFade: true,             // weaker beams drawn fainter
   beamOpacity: 0.92,
-  colorMode: 'physical',      // physical | safe
+  colorMode: 'physical',      // physical | safe | mono
+  beamModel: 'geometric',     // geometric | gaussian
+  gaussMag: 10,               // Gaussian: drawn width exaggeration
+  waistLabels: false,
+  ghosts: 'off',              // off | uncoated | ar
   polarization: false,        // draw ↕ / • polarisation markers
   scale: 10,                  // physical mm per drawn mm (focal lengths, gratings)
   fiberColor: '#f2b705',
@@ -942,6 +969,34 @@ O.refract = (d, n, eta) => {
   return U.v.norm([eta * d[0] + a * n[0], eta * d[1] + a * n[1]]);
 };
 
+/* Fresnel amplitude coefficients for a planar interface.
+   cosi: cosine of incidence; returns {rs, rp, ts, tp, Rs, Rp, tir}. */
+O.fresnel = (cosi, n1, n2) => {
+  cosi = Math.min(1, Math.abs(cosi));
+  const sint2 = Math.pow(n1 / n2, 2) * (1 - cosi * cosi);
+  if (sint2 >= 1) return { rs: 1, rp: 1, Rs: 1, Rp: 1, tir: true };
+  const cost = Math.sqrt(1 - sint2);
+  const rs = (n1 * cosi - n2 * cost) / (n1 * cosi + n2 * cost);
+  const rp = (n2 * cosi - n1 * cost) / (n2 * cosi + n1 * cost);
+  return { rs, rp, Rs: rs * rs, Rp: rp * rp, tir: false };
+};
+/* Brewster angle in degrees */
+O.brewster = (n1, n2) => U.deg(Math.atan(n2 / n1));
+
+/* ---------- Gaussian beams (complex q parameter, physical mm) ----------
+   1/q = 1/R − i·M²·λ / (π·n·w²)                                         */
+const cdiv = (a, b) => { const d = b.re * b.re + b.im * b.im || 1e-300; return { re: (a.re * b.re + a.im * b.im) / d, im: (a.im * b.re - a.re * b.im) / d }; };
+O.cdiv = cdiv;
+O.qWaist = (w0, lamMm, M2 = 1, n = 1) => ({ re: 0, im: Math.PI * n * w0 * w0 / (M2 * lamMm) });
+O.qProp = (q, L) => ({ re: q.re + L, im: q.im });
+O.qLens = (q, f) => { const inv = cdiv({ re: 1, im: 0 }, q); return cdiv({ re: 1, im: 0 }, { re: inv.re - 1 / f, im: inv.im }); };
+O.qRadius = (q, lamMm, M2 = 1, n = 1) => {
+  const inv = cdiv({ re: 1, im: 0 }, q);
+  return inv.im >= 0 ? Infinity : Math.sqrt(-M2 * lamMm / (Math.PI * n * inv.im));
+};
+/* waist radius and its distance ahead (+) or behind (−) of the current point */
+O.qWaistInfo = (q, lamMm, M2 = 1, n = 1) => ({ zToWaist: -q.re, zR: q.im, w0: Math.sqrt(Math.max(0, q.im) * M2 * lamMm / (Math.PI * n)) });
+
 /* Spectral transmission of filters and dichroics (sharp-edge model). */
 O.filterT = (p, nm) => {
   switch (p.mode) {
@@ -959,68 +1014,98 @@ O.filterT = (p, nm) => {
 /* js/engine/tracer.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — engine/tracer.js
-   2D sequential/non-sequential beam tracer.
+   Beam tracer.
 
    Every source emits one or more rays. Each ray carries:
      wavelength, power, Jones vector (null = unpolarised),
-     signed half-width w and its slope dw (paraxial envelope),
-     cumulative path length s (used for animation phase).
-   At every surface the ray interacts according to the surface
-   kind (mirror, splitter, PBS, lens, grating, refraction, …) and
-   may spawn child rays. The result is a flat list of straight
-   segments that the renderers draw, plus the power that reaches
-   every detector.
+     signed half-width w and slope dw (geometric envelope),
+     complex q parameter (Gaussian mode), optical path length and
+     extra phase (for interference), height z above the beam plane,
+     and vz ≠ 0 while it travels vertically.
+
+   Horizontal rays are traced in the table plane against the
+   objects at their height. Fold mirrors and periscopes turn rays
+   vertical; vertical rays meet objects whose optical axis is
+   vertical (stacked lenses, objectives, samples, detectors…).
+
+   Output: straight segments for the renderers, plus the power
+   (incoherent and coherent) that reaches every absorbing element.
 ═══════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
 const RNBX = window.RNBX = window.RNBX || {};
-const U = RNBX.util, V = U.v, O = RNBX.optics;
+const U = RNBX.util, V = U.v, O = RNBX.optics, C = U.C;
 
-const MAX_SEGMENTS = 4000;
-const MAX_DEPTH = 96;
+const MAX_SEGMENTS = 5000;
+const MAX_DEPTH = 120;
 const EPS = 1e-6;
+const ZMAX = 80;                       // how far a free vertical beam is drawn
+
+RNBX.isVertical = obj => obj && (obj.axis === 'up' || obj.axis === 'down');
+
+/* half-size of an object, used for the height tolerance of horizontal hits */
+function halfSize(obj) {
+  const def = RNBX.lib.get(obj.type);
+  if (!def || !def.bbox) return 3;
+  try { const b = def.bbox(obj.props, obj); return Math.max(1.2, Math.abs(b[1]), Math.abs(b[3])) * (obj.scale || 1); } catch (e) { return 3; }
+}
 
 /* ---------- build world-space surfaces ---------- */
 function buildScene(doc) {
-  const surfaces = [], sources = [], fibers = {};
+  const surfaces = [], vertical = [], sources = [], fibers = {};
   const scale = doc.style.scale || 10;
   for (const obj of doc.objects) {
     if (obj.hidden) continue;
     const def = RNBX.lib.get(obj.type);
     if (!def) continue;
     if (obj.type === 'fiber' && obj.props.from && obj.props.to) fibers[obj.props.from] = obj;
+    const z = obj.z || 0, hz = halfSize(obj);
     if (def.optics) {
       const list = def.optics(obj.props, obj, doc) || [];
-      list.forEach((s, k) => {
-        if (s.poly) {
-          const pts = s.poly.map(p => U.toWorld(obj, p));
-          const key = obj.id + ':' + k;
-          const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
-          for (let i = 0; i < pts.length; i++) {
-            const a = pts[i], b = pts[(i + 1) % pts.length];
-            const t = V.norm(V.sub(b, a));
-            let n = V.perp(t);
-            const mid = V.mul(V.add(a, b), 0.5);
-            if (V.dot(n, V.sub(mid, [cx, cy])) < 0) n = V.mul(n, -1);   // outward
-            surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale });
-          }
-        } else {
-          const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
-          const t = V.norm(V.sub(b, a));
-          surfaces.push(Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale }));
+      if (RNBX.isVertical(obj)) {
+        // lying flat: the first optical surface defines its behaviour
+        const s0 = list.find(s => !s.poly) || (list.length ? { kind: 'pass', a: [0, -3], b: [0, 3] } : null);
+        if (s0) {
+          const r = Math.max(0.8, V.dist(s0.a, s0.b) / 2 * (obj.scale || 1));
+          const port = obj.axis === 'up' ? 1 : -1;
+          // the surface sits where it is along the component's own axis (e.g. an objective's nose)
+          const zc = z + (s0.a[0] + s0.b[0]) / 2 * (obj.scale || 1) * port;
+          vertical.push(Object.assign({}, s0, { obj, r, zc, c: [obj.x, obj.y], scale, port }));
         }
-      });
+      } else {
+        list.forEach((s, k) => {
+          if (s.poly) {
+            const pts = s.poly.map(p => U.toWorld(obj, p));
+            const key = obj.id + ':' + k;
+            const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+            for (let i = 0; i < pts.length; i++) {
+              const a = pts[i], b = pts[(i + 1) % pts.length];
+              const t = V.norm(V.sub(b, a));
+              let n = V.perp(t);
+              const mid = V.mul(V.add(a, b), 0.5);
+              if (V.dot(n, V.sub(mid, [cx, cy])) < 0) n = V.mul(n, -1);   // outward
+              surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz });
+            }
+          } else {
+            const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
+            const t = V.norm(V.sub(b, a));
+            surfaces.push(Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz }));
+            // fold mirrors also act on vertical beams arriving at their height
+            if (s.kind === 'vfold') vertical.push(Object.assign({}, s, { obj, r: Math.max(1, V.dist(s.a, s.b) / 2 * (obj.scale || 1)), zc: z, c: [obj.x, obj.y], scale, port: s.port }));
+          }
+        });
+      }
     }
-    if (def.source) {
+    if (def.source && !RNBX.isVertical(obj)) {
       (def.source(obj.props, obj, doc) || []).forEach(r => {
         sources.push(Object.assign({}, r, {
-          o: U.toWorld(obj, r.o), d: V.norm(U.dirToWorld(obj, r.d)), src: obj.id,
-          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0,
+          o: U.toWorld(obj, r.o), d: V.norm(U.dirToWorld(obj, r.d)), src: obj.id, z,
+          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0, ignore: obj.id,
         }));
       });
     }
   }
-  return { surfaces, sources, fibers };
+  return { surfaces, vertical, sources, fibers, scale };
 }
 
 /* paraxial thin-lens deflection of the central ray */
@@ -1046,126 +1131,152 @@ function exitBox(o, d, box) {
   return t1 > Math.max(t0, 0) ? t1 : 0;
 }
 
+const phaseOf = ray => 2 * Math.PI * ray.opl / (ray.lambda * 1e-6) + (ray.phx || 0);
+
 RNBX.trace = function trace(doc) {
-  const { surfaces, sources, fibers } = buildScene(doc);
+  const { surfaces, vertical, sources, fibers, scale } = buildScene(doc);
   const W = doc.page.width, H = doc.page.height, M = 4;
   const box = [-M, -M, W + M, H + M];
+  const bh = (doc.view3d && doc.view3d.beamHeight) || 6;
+  const gauss = doc.style.beamModel === 'gaussian';
+  const gMag = doc.style.gaussMag || 10;            // drawn width exaggeration
+  const ghosts = doc.style.ghosts && doc.style.ghosts !== 'off' ? doc.style.ghosts : null;
   const segments = [], hits = {}, fiberLight = {};
-  const queue = sources.map(r => Object.assign({ s: 0, depth: 0, last: -1, inside: null, P0: r.P }, r));
+
+  const startQ = (r, lamNm, M2) => O.qWaist(Math.max(1e-4, Math.abs(r.w || 0.35) * scale / gMag), lamNm * 1e-6, M2 || 1);
+  const queue = sources.map(r => Object.assign({ s: 0, depth: 0, last: -1, inside: null, P0: r.P, z: 0, vz: 0, opl: 0, phx: 0, nmed: 1 }, r,
+    { q: gauss ? startQ(r, r.lambda, r.M2) : null, M2: r.M2 || 1 }));
   let guard = 0;
 
   const child = (ray, patch) => Object.assign({}, ray, { depth: ray.depth + 1 }, patch);
   const record = (obj, ray) => {
-    const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {} };
+    const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} };
     h.P += ray.P;
     h.lambdas[ray.lambda] = (h.lambdas[ray.lambda] || 0) + ray.P;
+    // coherent bookkeeping: light from the same source and wavelength interferes
+    const key = ray.src + '|' + U.round(ray.lambda, 4);
+    const ph = C.expi(phaseOf(ray));
+    const Ej = ray.E ? ray.E : [C.c(Math.sqrt(ray.P)), C.c(0)];
+    const f = [C.mul(Ej[0], ph), C.mul(Ej[1], ph)];
+    const acc = h.fields[key] = h.fields[key] || [C.c(0), C.c(0)];
+    acc[0] = C.add(acc[0], f[0]); acc[1] = C.add(acc[1], f[1]);
+    (h.parts[key] = h.parts[key] || []).push({ f, P: ray.P, lambda: ray.lambda });
+    if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
   };
 
-  while (queue.length && segments.length < MAX_SEGMENTS && guard++ < MAX_SEGMENTS * 2) {
-    const ray = queue.shift();
-    if (ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;
+  /* Fresnel ghost: a weak reflection at a glass surface */
+  const ghostOf = (ray, base, dRefl, cosi, n2, vertical) => {
+    if (!ghosts || ray.P < ray.P0 * 2e-3) return null;
+    let Rs, Rp;
+    if (ghosts === 'ar') { Rs = Rp = 0.0025; }
+    else { const fr = O.fresnel(cosi, 1, n2 || 1.5); Rs = fr.Rs; Rp = fr.Rp; }
+    let E = null, P;
+    if (ray.E) { E = [C.scale(ray.E[0], Math.sqrt(Rp)), C.scale(ray.E[1], Math.sqrt(Rs))]; P = O.powerJ(E); }
+    else P = ray.P * (Rs + Rp) / 2;
+    if (P < ray.P0 * 1e-4) return null;
+    const g = child(ray, Object.assign({}, base, { P, E, ghost: true, phx: (ray.phx || 0) + Math.PI }));
+    if (vertical) g.vz = -ray.vz; else g.d = dRefl;
+    return { g, Rs, Rp };
+  };
+  const afterGhost = (ray, gh) => {
+    if (!gh) return {};
+    if (ray.E) { const E = [C.scale(ray.E[0], Math.sqrt(1 - gh.Rp)), C.scale(ray.E[1], Math.sqrt(1 - gh.Rs))]; return { E, P: O.powerJ(E) }; }
+    return { P: ray.P * (1 - (gh.Rs + gh.Rp) / 2) };
+  };
 
-    // nearest hit
-    let best = null, bi = -1;
-    for (let i = 0; i < surfaces.length; i++) {
-      if (i === ray.last) continue;
-      const s = surfaces[i];
-      if (ray.inside) { if (s.poly !== ray.inside) continue; }
-      if (ray.ignore && ray.ignore === s.obj.id) continue;
-      const h = U.raySeg(ray.o, ray.d, s.a, s.b);
-      if (h && h.t > EPS && (!best || h.t < best.t)) { best = h; bi = i; }
-    }
-    let len = best ? best.t : exitBox(ray.o, ray.d, box);
-    if (len <= 0) continue;
-    const end = V.add(ray.o, V.mul(ray.d, len));
-    segments.push({
-      a: ray.o, b: end, len, s0: ray.s, lambda: ray.lambda, P: ray.P, P0: ray.P0,
-      E: ray.E, w0: ray.w, dw: ray.dw, src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted,
-      kind: ray.inside ? 'inside' : 'beam', end: best ? 'hit' : 'open',
-    });
-    if (!best) continue;
-
-    const s = surfaces[bi];
-    const hit = end;
-    const w = ray.w + ray.dw * len;
-    const base = { o: hit, last: bi, s: ray.s + len, w, ignore: null };
-    const out = [];
+  /* Shared interaction for horizontal (H) and vertical (Vt) rays.
+     refl(): patch for a reflected ray; straight: transmitted. */
+  const interact = (ray, s, hit, base, out, ctx) => {
+    const vert = ctx.vertical;
     const d = ray.d;
-    const p = s;  // surface parameters live on the surface record
-
+    const refl = () => vert ? { vz: -ray.vz } : { d: V.reflect(d, s.n) };
+    const cosi = vert ? 1 : Math.abs(V.dot(d, s.n));
+    const w = base.w;
+    // the beam as it arrives at this surface (q, path length) — not as it left the last one
+    const qa = base.q;
+    const rayAt = Object.assign({}, ray, { q: qa, opl: base.opl, w });
+    const lensQ = f => (qa ? { q: O.qLens(qa, f * scale) } : {});
     switch (s.kind) {
       case 'mirror': {
-        let nd = V.reflect(d, s.n);
-        let dw = ray.dw;
-        if (p.f) { const f = p.f / s.scale; nd = lensDeflect(nd, s, hit, f); dw = dw - w / f; }
-        out.push(child(ray, Object.assign({}, base, { d: nd, dw, P: ray.P * (p.R == null ? 1 : p.R), E: O.scaleJ(ray.E, Math.sqrt(p.R == null ? 1 : p.R)) })));
+        const R = s.R == null ? 1 : s.R;
+        let patch = refl(), dw = ray.dw, q = {};
+        if (s.f) { const f = s.f / scale; if (!vert) patch.d = lensDeflect(patch.d, s, hit, f); dw = dw - w / f; q = lensQ(f); }
+        const piezo = (s.obj.props.piezo || 0) * 2e-6;   // nm → mm, double pass
+        out.push(child(ray, Object.assign({}, base, patch, q, { dw, P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)), opl: ray.opl + piezo, phx: ray.phx + Math.PI })));
         break;
       }
       case 'splitter': {
-        const R = U.clamp(p.R == null ? 0.5 : p.R, 0, 1);
-        if (R > 0) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)) })));
-        if (R < 1) out.push(child(ray, Object.assign({}, base, { d, P: ray.P * (1 - R), E: O.scaleJ(ray.E, Math.sqrt(1 - R)) })));
+        const R = U.clamp(s.R == null ? 0.5 : s.R, 0, 1);
+        if (R > 0) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)), phx: ray.phx + Math.PI / 2 })));
+        if (R < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - R), E: O.scaleJ(ray.E, Math.sqrt(1 - R)) })));
         break;
       }
       case 'pbs': {
         let Et, Er;
-        if (!ray.E) { const a = Math.sqrt(ray.P / 2); Et = [U.C.c(a), U.C.c(0)]; Er = [U.C.c(0), U.C.c(a)]; }
-        else { Et = [ray.E[0], U.C.c(0)]; Er = [U.C.c(0), ray.E[1]]; }
+        if (!ray.E) { const a = Math.sqrt(ray.P / 2); Et = [C.c(a), C.c(0)]; Er = [C.c(0), C.c(a)]; }
+        else { Et = [ray.E[0], C.c(0)]; Er = [C.c(0), ray.E[1]]; }
         const Pt = O.powerJ(Et), Pr = O.powerJ(Er);
-        if (Pt > 0) out.push(child(ray, Object.assign({}, base, { d, P: Pt, E: Et })));
-        if (Pr > 0) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), P: Pr, E: Er })));
+        if (Pt > 0) out.push(child(ray, Object.assign({}, base, { P: Pt, E: Et })));
+        if (Pr > 0) out.push(child(ray, Object.assign({}, base, refl(), { P: Pr, E: Er, phx: ray.phx + Math.PI / 2 })));
         break;
       }
       case 'dichroic': {
-        const pass = p.mode === 'shortpass' ? ray.lambda <= p.edge : ray.lambda >= p.edge;
-        if (pass) out.push(child(ray, Object.assign({}, base, { d })));
-        else out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n) })));
+        const pass = s.mode === 'shortpass' ? ray.lambda <= s.edge : ray.lambda >= s.edge;
+        if (pass) out.push(child(ray, Object.assign({}, base)));
+        else out.push(child(ray, Object.assign({}, base, refl(), { phx: ray.phx + Math.PI })));
         break;
       }
       case 'filter': {
-        const T = O.filterT(p, ray.lambda);
-        if (T > 0) out.push(child(ray, Object.assign({}, base, { d, P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)) })));
-        else record(s.obj, ray);
+        const T = O.filterT(s, ray.lambda);
+        const gh = T > 0 ? ghostOf(ray, base, vert ? null : V.reflect(d, s.n), cosi, 1.5, vert) : null;
+        if (gh) out.push(gh.g);
+        const a = afterGhost(ray, gh), P0 = a.P == null ? ray.P : a.P, E0 = a.E || ray.E;
+        if (T > 0) out.push(child(ray, Object.assign({}, base, { P: P0 * T, E: O.scaleJ(E0, Math.sqrt(T)) })));
+        else record(s.obj, rayAt);
         break;
       }
       case 'lens': {
-        const f = (p.f || 100) / s.scale;
-        out.push(child(ray, Object.assign({}, base, { d: lensDeflect(d, s, hit, f), dw: ray.dw - w / f })));
+        const f = (s.f || 100) / scale;
+        const gh = ghostOf(ray, base, vert ? null : V.reflect(d, s.n), cosi, 1.5, vert);
+        if (gh) out.push(gh.g);
+        out.push(child(ray, Object.assign({}, base, afterGhost(ray, gh), vert ? {} : { d: lensDeflect(d, s, hit, f) }, lensQ(f), { dw: ray.dw - w / f })));
         break;
       }
       case 'waveplate': {
-        const E = ray.E ? O.applyM(O.waveplate(p.angle || 0, U.rad(p.retardance == null ? 180 : p.retardance)), ray.E) : null;
-        out.push(child(ray, Object.assign({}, base, { d, E })));
+        const E = ray.E ? O.applyM(O.waveplate(s.angle || 0, U.rad(s.retardance == null ? 180 : s.retardance)), ray.E) : null;
+        const gh = ghostOf(ray, base, vert ? null : V.reflect(d, s.n), cosi, 1.5, vert);
+        if (gh) out.push(gh.g);
+        const a = afterGhost(Object.assign({}, ray, { E }), gh);
+        out.push(child(ray, Object.assign({}, base, { E }, a)));
         break;
       }
       case 'polarizer': {
         let E;
-        if (!ray.E) E = O.scaleJ(O.jones('lin', p.angle || 0), Math.sqrt(ray.P / 2));
-        else E = O.applyM(O.polarizer(p.angle || 0), ray.E);
+        if (!ray.E) E = O.scaleJ(O.jones('lin', s.angle || 0), Math.sqrt(ray.P / 2));
+        else E = O.applyM(O.polarizer(s.angle || 0), ray.E);
         const P = O.powerJ(E);
-        if (P > 0) out.push(child(ray, Object.assign({}, base, { d, E, P })));
+        if (P > 0) out.push(child(ray, Object.assign({}, base, { E, P })));
         break;
       }
       case 'rotator': {
-        if (p.isolator && V.dot(d, s.axis ? U.dirToWorld(s.obj, s.axis) : s.n) < 0) { record(s.obj, ray); break; }
-        const E = ray.E ? O.applyM(O.rotator(p.angle == null ? 45 : p.angle), ray.E) : null;
-        out.push(child(ray, Object.assign({}, base, { d, E })));
+        const axis = s.axis ? U.dirToWorld(s.obj, s.axis) : s.n;
+        if (s.isolator && (vert ? ray.vz < 0 : V.dot(d, axis) < 0)) { record(s.obj, rayAt); break; }
+        const E = ray.E ? O.applyM(O.rotator(s.angle == null ? 45 : s.angle), ray.E) : null;
+        out.push(child(ray, Object.assign({}, base, { E })));
         break;
       }
       case 'grating': {
-        const G = p.G || 600, kt0 = V.dot(d, s.t), sn = Math.sign(V.dot(d, s.n)) || 1;
-        const orders = String(p.orders || '-1,0,1').split(',').map(x => parseInt(x, 10)).filter(x => isFinite(x));
+        if (vert) { out.push(child(ray, Object.assign({}, base, s.transmit ? {} : refl()))); break; }
+        const G = s.G || 600, kt0 = V.dot(d, s.t), sn = Math.sign(V.dot(d, s.n)) || 1;
+        const orders = String(s.orders || '-1,0,1').split(',').map(x => parseInt(x, 10)).filter(x => isFinite(x));
         const valid = [];
-        orders.forEach(m => {
-          const kt = kt0 + m * ray.lambda * 1e-6 * G;
-          if (Math.abs(kt) <= 1) valid.push({ m, kt });
-        });
+        orders.forEach(m => { const kt = kt0 + m * ray.lambda * 1e-6 * G; if (Math.abs(kt) <= 1) valid.push({ m, kt }); });
         const nz = valid.filter(v => v.m !== 0).length;
-        const e0 = valid.some(v => v.m === 0) ? U.clamp(p.eff0 == null ? 0.2 : p.eff0, 0, 1) : 0;
+        const e0 = valid.some(v => v.m === 0) ? U.clamp(s.eff0 == null ? 0.2 : s.eff0, 0, 1) : 0;
         valid.forEach(v => {
           const frac = v.m === 0 ? e0 : (nz ? (1 - e0) / nz : 0);
           if (frac <= 0) return;
-          const kn = Math.sqrt(1 - v.kt * v.kt) * (p.transmit ? sn : -sn);
+          const kn = Math.sqrt(1 - v.kt * v.kt) * (s.transmit ? sn : -sn);
           const nd = V.norm(V.add(V.mul(s.t, v.kt), V.mul(s.n, kn)));
           out.push(child(ray, Object.assign({}, base, { d: nd, P: ray.P * frac, E: O.scaleJ(ray.E, Math.sqrt(frac)) })));
         });
@@ -1174,58 +1285,74 @@ RNBX.trace = function trace(doc) {
       case 'refract': {
         const n = O.index(s.mat, ray.lambda, s.nCustom || 1.5);
         const entering = !ray.inside;
-        // s.n points outward, so it faces a ray arriving from outside
         const facing = entering ? s.n : V.mul(s.n, -1);
-        const eta = entering ? 1 / n : n;
-        const td = O.refract(d, facing, eta);
-        if (td) out.push(child(ray, Object.assign({}, base, { d: td, inside: entering ? s.poly : null })));
-        else out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside })));
+        const n1 = entering ? 1 : n, n2 = entering ? n : 1;
+        const td = O.refract(d, facing, n1 / n2);
+        const qn = qa ? { q: { re: qa.re * n2 / n1, im: qa.im * n2 / n1 } } : {};
+        if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside }))); break; }
+        let tPatch = {};
+        if (ghosts) {
+          const fr = O.fresnel(Math.abs(V.dot(d, facing)), n1, n2);
+          const R = ghosts === 'ar' ? { Rs: 0.0025, Rp: 0.0025 } : fr;
+          let E = null, P;
+          if (ray.E) { E = [C.scale(ray.E[0], Math.sqrt(R.Rp)), C.scale(ray.E[1], Math.sqrt(R.Rs))]; P = O.powerJ(E); }
+          else P = ray.P * (R.Rs + R.Rp) / 2;
+          if (P > ray.P0 * 1e-4) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside, P, E, ghost: true, phx: ray.phx + (entering ? Math.PI : 0) })));
+          if (ray.E) { const Et = [C.scale(ray.E[0], Math.sqrt(1 - R.Rp)), C.scale(ray.E[1], Math.sqrt(1 - R.Rs))]; tPatch = { E: Et, P: O.powerJ(Et) }; }
+          else tPatch = { P: ray.P * (1 - (R.Rs + R.Rp) / 2) };
+        }
+        out.push(child(ray, Object.assign({}, base, qn, tPatch, { d: td, inside: entering ? s.poly : null, nmed: n2 })));
         break;
       }
       case 'aom': {
-        const eff = U.clamp(p.eff == null ? 0.8 : p.eff, 0, 1);
-        if (eff < 1) out.push(child(ray, Object.assign({}, base, { d, P: ray.P * (1 - eff) })));
-        if (eff > 0) out.push(child(ray, Object.assign({}, base, { d: V.rot(d, (p.order || 1) * (p.angle || 3)), P: ray.P * eff })));
+        const eff = U.clamp(s.eff == null ? 0.8 : s.eff, 0, 1);
+        if (eff < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - eff) })));
+        if (eff > 0) out.push(child(ray, Object.assign({}, base, vert ? {} : { d: V.rot(d, (s.order || 1) * (s.angle || 3)) }, { P: ray.P * eff })));
         break;
       }
       case 'shg': {
-        const eta = U.clamp(p.eff == null ? 0.3 : p.eff, 0, 1);
-        if (eta < 1) out.push(child(ray, Object.assign({}, base, { d, P: ray.P * (1 - eta), E: O.scaleJ(ray.E, Math.sqrt(1 - eta)) })));
+        const eta = U.clamp(s.eff == null ? 0.3 : s.eff, 0, 1);
+        if (eta < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - eta), E: O.scaleJ(ray.E, Math.sqrt(1 - eta)) })));
         if (eta > 0) {
-          const E = ray.E ? O.scaleJ([U.C.scale(ray.E[1], -1), ray.E[0]], Math.sqrt(eta)) : null;
-          out.push(child(ray, Object.assign({}, base, { d, P: ray.P * eta, E, lambda: ray.lambda / (p.harmonic || 2), color: null })));
+          const E = ray.E ? O.scaleJ([C.scale(ray.E[1], -1), ray.E[0]], Math.sqrt(eta)) : null;
+          const L2 = ray.lambda / (s.harmonic || 2);
+          out.push(child(ray, Object.assign({}, base, { P: ray.P * eta, E, lambda: L2, color: null, q: qa ? O.qWaist(Math.max(1e-4, (O.qRadius(qa, ray.lambda * 1e-6, ray.M2) || 0.3) / Math.SQRT2), L2 * 1e-6, ray.M2) : null })));
         }
         break;
       }
       case 'sample': {
-        const T = U.clamp(p.T == null ? 1 : p.T, 0, 1);
-        if (T > 0) out.push(child(ray, Object.assign({}, base, { d, P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)) })));
-        else record(s.obj, ray);
-        if (p.emit && !ray.emitted) {
-          const em = { lambda: p.emitLambda || 560, P: ray.P * (p.emitFrac == null ? 0.5 : p.emitFrac), E: null, emitted: true, color: p.emitColor || null, pulsed: ray.pulsed };
-          if (p.emitDir !== 'forward') out.push(child(ray, Object.assign({}, base, em, { d: V.mul(d, -1), dw: -ray.dw, last: -1, ignore: s.obj.id })));
-          if (p.emitDir === 'forward' || p.emitDir === 'both') out.push(child(ray, Object.assign({}, base, em, { d, last: bi })));
+        const T = U.clamp(s.T == null ? 1 : s.T, 0, 1);
+        if (T > 0) out.push(child(ray, Object.assign({}, base, { P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)) })));
+        else record(s.obj, rayAt);
+        if (s.emit && !ray.emitted) {
+          const em = { lambda: s.emitLambda || 560, P: ray.P * (s.emitFrac == null ? 0.5 : s.emitFrac), E: null, emitted: true, color: s.emitColor || null, pulsed: ray.pulsed, phx: 0 };
+          const qBack = qa ? { q: { re: -qa.re, im: qa.im } } : {};
+          if (s.emitDir !== 'forward') out.push(child(ray, Object.assign({}, base, em, qBack, vert ? { vz: -ray.vz } : { d: V.mul(d, -1) }, { dw: -ray.dw, last: -1, ignore: s.obj.id })));
+          if (s.emitDir === 'forward' || s.emitDir === 'both') out.push(child(ray, Object.assign({}, base, em)));
         }
         break;
       }
       case 'retro': {
+        if (vert) { out.push(child(ray, Object.assign({}, base, { vz: -ray.vz, phx: ray.phx + Math.PI }))); break; }
         const h = V.dot(V.sub(hit, s.c), s.t);
         const pOut = V.sub(s.c, V.mul(s.t, h));
-        segments.push({ a: hit, b: pOut, len: Math.abs(2 * h), s0: ray.s + len, lambda: ray.lambda, P: ray.P, P0: ray.P0, E: ray.E, w0: w, dw: 0, src: ray.src, color: ray.color, pulsed: ray.pulsed, kind: 'inside' });
-        out.push(child(ray, Object.assign({}, base, { o: pOut, d: V.mul(d, -1), s: ray.s + len + Math.abs(2 * h), last: bi })));
+        const L = Math.abs(2 * h);
+        segments.push(seg(Object.assign({}, ray, { w: w, dw: 0 }), hit, pOut, L, 'inside', 'hit', base.s, base.opl));
+        const piezo = (s.obj.props.piezo || 0) * 2e-6;
+        out.push(child(ray, Object.assign({}, base, { o: pOut, d: V.mul(d, -1), s: base.s + L, opl: base.opl + L * scale + piezo, phx: ray.phx + Math.PI, last: ctx.index })));
         break;
       }
       case 'aperture': {
-        const h = Math.abs(V.dot(V.sub(hit, s.c), s.t));
-        const r = (p.r || 1);
-        if (h > r) { record(s.obj, ray); break; }
+        const h = vert ? V.dist(hit, s.c) : Math.abs(V.dot(V.sub(hit, s.c), s.t));
+        const r = (s.r || 1);
+        if (h > r) { record(s.obj, rayAt); break; }
         const nw = Math.abs(w) > r ? Math.sign(w) * r : w;
         const P = Math.abs(w) > r ? ray.P * Math.pow(r / Math.abs(w), 2) : ray.P;
-        out.push(child(ray, Object.assign({}, base, { d, w: nw, P })));
+        out.push(child(ray, Object.assign({}, base, { w: nw, P })));
         break;
       }
       case 'fiberIn': {
-        record(s.obj, ray);
+        record(s.obj, rayAt);
         const link = fibers[s.obj.id];
         const target = link && RNBX.getObjIn(doc, link.props.to);
         if (!target || ray.depth > MAX_DEPTH - 4) break;
@@ -1235,23 +1362,174 @@ RNBX.trace = function trace(doc) {
         fl[ray.lambda] = (fl[ray.lambda] || 0) + ray.P;
         const eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
         const keepPol = link.props.fiberType === 'pm';
+        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1);
         out.push(child(ray, {
-          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id,
-          s: ray.s + len + (link.props.length || 40), P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
-          w: (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1), dw: Math.tan(U.rad(target.props.divergence || 0)),
-          inside: null,
+          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id, z: target.z || 0, vz: 0,
+          s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
+          P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
+          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)), inside: null, nmed: 1,
+          q: gauss ? startQ({ w: wOut }, ray.lambda, 1) : null, M2: 1,
         }));
         break;
       }
+      case 'vfold': {
+        // 45° fold mirror between the table plane and the vertical
+        const hdir = U.dirToWorld(s.obj, [1, 0]);
+        const R = s.mode === 'dichroic' ? ((s.foldMode === 'shortpass' ? ray.lambda <= s.edge : ray.lambda >= s.edge) ? 0 : 1) : s.mode === 'splitter' ? U.clamp(s.R == null ? 0.5 : s.R, 0, 1) : 1;
+        const fromPort = vert ? ray.vz === -s.port : V.dot(d, hdir) < 0;
+        if (!fromPort && R >= 1) { record(s.obj, rayAt); break; }
+        if (R < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - R), E: O.scaleJ(ray.E, Math.sqrt(1 - R)) })));
+        if (R > 0 && fromPort) {
+          const turn = vert ? { vz: 0, d: hdir, o: s.c, z: s.zc } : { vz: s.port, o: [s.obj.x, s.obj.y] };
+          out.push(child(ray, Object.assign({}, base, turn, { P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)), phx: ray.phx + Math.PI, ignore: vert ? s.obj.id : null, vlast: vert ? null : s.obj.id })));
+        }
+        break;
+      }
+      case 'periscope': {
+        // two stacked 45° mirrors: change height, then leave in the set direction
+        const inDir = U.dirToWorld(s.obj, [1, 0]);
+        if (V.dot(d, inDir) <= 0 || vert) { record(s.obj, rayAt); break; }
+        const c = [s.obj.x, s.obj.y], z1 = (s.obj.z || 0) + (s.obj.props.rise || 10);
+        const L1 = V.dist(hit, c), Lz = Math.abs(z1 - ray.z);
+        segments.push(seg(ray, hit, c, L1, 'inside', 'hit', base.s, base.opl));
+        segments.push(seg(Object.assign({}, ray, { w: w + ray.dw * L1 }), c, c, Lz, 'vertical', 'hit', base.s + L1, base.opl + L1 * scale, ray.z, z1));
+        const outAng = { straight: 0, left: -90, right: 90, back: 180 }[s.obj.props.turn || 'straight'] || 0;
+        const dOut = U.dirToWorld(s.obj, V.fromAngle(outAng));
+        const Ltot = L1 + Lz;
+        out.push(child(ray, {
+          o: c, d: dOut, z: z1, vz: 0, s: base.s + Ltot, opl: base.opl + Ltot * scale, w: w + ray.dw * Ltot, last: -1, ignore: s.obj.id,
+          q: qa ? O.qProp(qa, Ltot * scale) : null, phx: ray.phx + 2 * Math.PI, inside: null,
+        }));
+        break;
+      }
+      case 'cavity': case 'ring': {
+        // Fabry–Pérot cavity or ring resonator on a chip: the light that is
+        // transmitted (or through-port) leaves the far side of the element
+        const o = s.obj, pp = o.props;
+        const phi = 2 * Math.PI * ((pp.detune || 0) + (ray.lambda - (pp.lam0 || ray.lambda)) / Math.max(1e-9, pp.fsr || 1));
+        let T, Rr = 0, Tdrop = 0;
+        if (s.kind === 'cavity') {
+          const R1 = U.clamp(pp.R1, 0, 0.99999), R2 = U.clamp(pp.R2, 0, 0.99999), g = Math.sqrt(R1 * R2);
+          T = (1 - R1) * (1 - R2) / (Math.pow(1 - g, 2) + 4 * g * Math.pow(Math.sin(phi / 2), 2));
+          Rr = Math.max(0, 1 - T);
+        } else if (pp.ring === false) { T = U.clamp(pp.T == null ? 0.9 : pp.T, 0, 1); }
+        else {
+          const r = Math.sqrt(1 - U.clamp(pp.kappa == null ? 0.1 : pp.kappa, 0, 1)), a = U.clamp(pp.loss == null ? 0.98 : pp.loss, 0, 1), c = Math.cos(phi);
+          const den = 1 - 2 * r * r * a * c + Math.pow(r, 4) * a * a;
+          if (pp.drop) { T = (r * r * a * a - 2 * r * r * a * c + r * r) / den; Tdrop = Math.pow(1 - r * r, 2) * a / den; }
+          else { T = (a * a - 2 * r * a * c + r * r) / (1 - 2 * a * r * c + r * r * a * a); }
+        }
+        const ax = U.dirToWorld(o, [1, 0]), fwd = vert ? 1 : Math.sign(V.dot(d, ax)) || 1;
+        const span = (s.span || 0) * (o.scale || 1);
+        if (T > 1e-6) {
+          if (vert) out.push(child(ray, Object.assign({}, base, { P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)) })));
+          else {
+            const exit = V.add(hit, V.mul(ax, fwd * span));
+            segments.push(seg(Object.assign({}, ray, { w: w, dw: 0, q: null }), hit, exit, span, 'inside', 'hit', base.s, base.opl));
+            out.push(child(ray, Object.assign({}, base, { o: exit, s: base.s + span, opl: base.opl + span * scale * 1.5, P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)), ignore: o.id, last: -1 })));
+          }
+        }
+        if (Rr > 1e-6) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * Rr, E: O.scaleJ(ray.E, Math.sqrt(Rr)) })));
+        if (Tdrop > 1e-6 && !vert && s.dropPort) {
+          const dp = U.toWorld(o, s.dropPort.o), dd = U.dirToWorld(o, s.dropPort.d);
+          out.push(child(ray, { o: dp, d: V.norm(dd), s: base.s + span, opl: base.opl + span * scale * 1.5, P: ray.P * Tdrop, E: O.scaleJ(ray.E, Math.sqrt(Tdrop)), w: w, ignore: o.id, last: -1, inside: null, q: base.q }));
+        }
+        if (T + Rr + Tdrop < 0.999) { const lost = Object.assign({}, rayAt, { P: ray.P * (1 - T - Rr - Tdrop) }); if (lost.P > 0) record(o, lost); }
+        break;
+      }
       case 'pass':
-        out.push(child(ray, Object.assign({}, base, { d })));
+        out.push(child(ray, Object.assign({}, base)));
         break;
       case 'absorb':
       default:
-        record(s.obj, ray);
+        record(s.obj, rayAt);
     }
+  };
+
+  function seg(ray, a, b, len, kind, end, s0, opl0, za, zb) {
+    return {
+      a, b, len, s0: s0 == null ? ray.s : s0, opl0: opl0 == null ? ray.opl : opl0, lambda: ray.lambda, P: ray.P, P0: ray.P0,
+      E: ray.E, w0: ray.w, dw: ray.dw, q0: ray.q || null, M2: ray.M2 || 1, nmed: ray.nmed || 1,
+      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost,
+      kind, end, za: za == null ? (ray.z || 0) : za, zb: zb == null ? (ray.z || 0) : zb, vertical: kind === 'vertical',
+    };
+  }
+
+  while (queue.length && segments.length < MAX_SEGMENTS && guard++ < MAX_SEGMENTS * 3) {
+    const ray = queue.shift();
+    if (ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;
+
+    if (ray.vz) {
+      /* ---------- vertical travel ---------- */
+      let best = null;
+      for (const v of vertical) {
+        if (ray.ignore && v.obj.id === ray.ignore) continue;
+        const dz = (v.zc - ray.z) * ray.vz;
+        if (dz <= 1e-6 || V.dist(ray.o, v.c) > v.r + 0.3) continue;
+        if (!best || dz < best.dz) best = { v, dz };
+      }
+      const zEnd = best ? best.v.zc : ray.vz > 0 ? ray.z + ZMAX : -bh;
+      const L = Math.abs(zEnd - ray.z);
+      segments.push(seg(ray, ray.o, ray.o, L, 'vertical', best ? 'hit' : ray.vz > 0 ? 'open' : 'hit', null, null, ray.z, zEnd));
+      if (!best) continue;
+      const w = ray.w + ray.dw * L;
+      const base = { o: ray.o, z: zEnd, s: ray.s + L, opl: ray.opl + L * scale * (ray.nmed || 1), w, ignore: best.v.obj.id, last: -1, q: ray.q ? O.qProp(ray.q, L * scale) : null };
+      const out = [];
+      interact(ray, best.v, ray.o, base, out, { vertical: true });
+      // a ray that keeps going vertically must not meet the same element again
+      out.forEach(r => { if (r.vz) r.ignore = best.v.obj.id; queue.push(r); });
+      continue;
+    }
+
+    /* ---------- horizontal travel ---------- */
+    let best = null, bi = -1;
+    for (let i = 0; i < surfaces.length; i++) {
+      if (i === ray.last) continue;
+      const s = surfaces[i];
+      if (ray.inside) { if (s.poly !== ray.inside) continue; }
+      if (ray.ignore && ray.ignore === s.obj.id) continue;
+      if (ray.vlast && ray.vlast === s.obj.id) continue;
+      if (Math.abs((ray.z || 0) - s.z) > s.hz) continue;          // passes above / below
+      const h = U.raySeg(ray.o, ray.d, s.a, s.b);
+      if (h && h.t > EPS && (!best || h.t < best.t)) { best = h; bi = i; }
+    }
+    const len = best ? best.t : exitBox(ray.o, ray.d, box);
+    if (len <= 0) continue;
+    const end = V.add(ray.o, V.mul(ray.d, len));
+    segments.push(seg(ray, ray.o, end, len, ray.inside ? 'inside' : 'beam', best ? 'hit' : 'open'));
+    if (!best) continue;
+
+    const s = surfaces[bi];
+    const w = ray.w + ray.dw * len;
+    const nm = ray.inside ? (ray.nmed || 1) : 1;
+    const base = { o: end, last: bi, s: ray.s + len, opl: ray.opl + len * scale * nm, w, ignore: null, vlast: null, q: ray.q ? O.qProp(ray.q, len * scale) : null };
+    const out = [];
+    interact(ray, s, end, base, out, { vertical: false, index: bi });
     for (const r of out) queue.push(r);
   }
+
+  /* ---------- coherent detector readout ---------- */
+  Object.keys(hits).forEach(id => {
+    const h = hits[id];
+    let Pc = 0, best = null;
+    Object.keys(h.fields).forEach(k => {
+      const F = h.fields[k];
+      Pc += C.abs2(F[0]) + C.abs2(F[1]);
+      const parts = h.parts[k];
+      if (parts.length >= 2) {
+        const sorted = parts.slice().sort((a, b) => b.P - a.P);
+        const a = sorted[0], b = sorted[1];
+        const inner = C.add(C.mul(b.f[0], C.conj(a.f[0])), C.mul(b.f[1], C.conj(a.f[1])));
+        const I1 = C.abs2(a.f[0]) + C.abs2(a.f[1]), I2 = C.abs2(b.f[0]) + C.abs2(b.f[1]);
+        const overlap = Math.sqrt(C.abs2(inner)) / Math.max(1e-30, Math.sqrt(I1 * I2));   // polarisation overlap
+        const cand = { I1, I2, dphi: Math.atan2(inner.im, inner.re), vis: 2 * Math.sqrt(I1 * I2) * overlap / (I1 + I2), lambda: a.lambda, overlap };
+        if (!best || I1 + I2 > best.I1 + best.I2) best = cand;
+      }
+    });
+    h.Pcoh = Pc;
+    h.interf = best;
+    delete h.parts;
+  });
   return { segments, hits, fiberLight, truncated: segments.length >= MAX_SEGMENTS };
 };
 
@@ -1385,6 +1663,46 @@ const H = lib.H = {
   },
 };
 
+/* components that may lie flat with a vertical optical axis */
+const VERT_OK = new Set(['lens', 'objective', 'sample', 'filter', 'hwp', 'qwp', 'polarizer', 'iris', 'pd', 'camera', 'powermeter', 'screen', 'beamdump', 'mirror', 'cmirror', 'window', 'bsplate', 'dichroic', 'crystal', 'pmt', 'coupler', 'custom']);
+lib.canVertical = type => VERT_OK.has(type);
+
+/* ---------- objects lying flat (vertical optical axis) ----------
+   Seen from above, a lens or objective in a microscope tower is a
+   disc. Its aperture comes from the component's first optical
+   surface, so any component gets a sensible top view. */
+lib.aperture = obj => {
+  const def = lib.get(obj.type);
+  try {
+    const s = (def.optics ? def.optics(obj.props, obj) : []).find(q => !q.poly);
+    if (s) return Math.max(0.8, Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) / 2);
+    const b = def.bbox(obj.props, obj); return Math.max(1, (b[3] - b[1]) / 2);
+  } catch (e) { return 3; }
+};
+lib.objBox = (obj, doc) => {
+  const def = lib.get(obj.type);
+  if (RNBX.isVertical && RNBX.isVertical(obj)) { const r = lib.aperture(obj) + 0.8; return [-r, -r, r, r]; }
+  return def.bbox(obj.props, obj, doc);
+};
+const TOP_FILL = { lens: 'glass', filter: 'glass', waveplate: 'wph', polarizer: 'polar', mirror: 'mirror', splitter: 'glass', dichroic: 'glass', sample: 'sample', absorb: 'black', aperture: 'black', pass: 'glass', shg: 'crystal', fiberIn: 'metal' };
+lib.topView = (obj, S) => {
+  const def = lib.get(obj.type), r = lib.aperture(obj);
+  let kind = 'pass';
+  try { const s = (def.optics(obj.props, obj) || []).find(q => !q.poly); if (s) kind = s.kind; } catch (e) { /* keep default */ }
+  const up = obj.axis !== 'down';
+  let s = `<circle cx="0" cy="0" r="${n(r + 0.7)}" fill="${S.fill('anod')}" ${H.stroke(S, 0.8)}/>`;
+  if (obj.type === 'objective') {
+    s += `<circle cx="0" cy="0" r="${n(r * 0.95)}" fill="${S.fill('metal')}" ${H.stroke(S, 0.7)}/>`;
+    s += `<circle cx="0" cy="0" r="${n(r * 0.55)}" fill="none" stroke="#3a86ff" stroke-width="${n(S.lw * 2.2)}"/>`;
+    s += `<circle cx="0" cy="0" r="${n(r * 0.35)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+  } else {
+    const f = kind === 'filter' && def.tint ? U.lighten(def.tint(obj.props), 0.4) : S.fill(TOP_FILL[kind] || 'glass');
+    s += `<circle cx="0" cy="0" r="${n(r)}" fill="${f}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S, 0.7)}/>`;
+    if (S.shaded) s += `<ellipse cx="${n(-r * 0.3)}" cy="${n(-r * 0.35)}" rx="${n(r * 0.35)}" ry="${n(r * 0.18)}" fill="#fff" opacity="0.45"/>`;
+  }
+  return s + H.axisMark(S, 0, 0, Math.min(1.1, r * 0.35), up);
+};
+
 /* ---------- shared parameter groups ---------- */
 lib.P = {
   diameter: (def = 8) => ({ key: 'd', label: 'Clear aperture', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5, def }),
@@ -1406,6 +1724,7 @@ const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
 
 lib.colorOf = (doc, nm, override) => {
   if (override) return override;
+  if (doc && doc.style.colorMode === 'mono') return RNBX.isDarkPage && RNBX.isDarkPage(doc.page) ? '#f2f4f7' : '#1f2125';
   return doc && doc.style.colorMode === 'safe' ? U.wavelengthColorSafe(nm) : U.wavelengthColor(nm);
 };
 
@@ -1417,6 +1736,7 @@ const beamParams = [
   { key: 'beamWidth', label: 'Beam diameter (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05 },
   { key: 'divergence', label: 'Divergence (half-angle)', type: 'number', unit: '°', min: -30, max: 45, step: 0.1 },
   { key: 'power', label: 'Power', type: 'number', unit: 'mW', min: 0, max: 1e6, step: 0.1 },
+  { key: 'M2', label: 'Beam quality M²', type: 'number', min: 1, max: 100, step: 0.1, hint: 'Gaussian model' },
   { key: 'color', label: 'Beam colour override', type: 'color', allowEmpty: true },
 ];
 
@@ -1424,7 +1744,7 @@ function rays(p, lambdas, o = [0, 0]) {
   const P = (p.power == null ? 1 : p.power) / lambdas.length;
   return lambdas.map(l => {
     const J = RNBX.optics.jones(p.pol, p.polAngle);
-    return { o, d: [1, 0], lambda: l, P, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };
+    return { o, d: [1, 0], lambda: l, P, M2: p.M2 || 1, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };
   });
 }
 
@@ -1562,8 +1882,9 @@ const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0
 /* ================= Mirrors & splitters ================= */
 lib.register({
   type: 'mirror', name: 'Mirror', abbr: 'M', category: 'Mirrors & splitters', keywords: 'mirror dielectric silver gold steering',
-  defaults: { d: 8, t: 1.3, R: 1, coating: 'silver' },
+  defaults: { d: 8, t: 1.3, R: 1, coating: 'silver', piezo: 0 },
   params: [P.diameter(), P.thick(), { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'piezo', label: 'Piezo displacement', type: 'number', unit: 'nm', step: 10, hint: 'shifts interference phase; animate it to move fringes', animatable: true },
     { key: 'coating', label: 'Look', type: 'select', options: [['silver', 'Silver / dielectric'], ['gold', 'Gold'], ['dark', 'Dark substrate']] }],
   variants: [{ name: 'Gold mirror', props: { coating: 'gold' }, keywords: 'gold infrared' }],
   snap: 'mirror', mount: true, labelPos: [0, 7],
@@ -1655,8 +1976,8 @@ lib.register({
 
 lib.register({
   type: 'retro', name: 'Retroreflector', abbr: 'RR', category: 'Mirrors & splitters', keywords: 'retroreflector corner cube delay line hollow roof',
-  defaults: { d: 8 },
-  params: [P.diameter()],
+  defaults: { d: 8, piezo: 0 },
+  params: [P.diameter(), { key: 'piezo', label: 'Piezo displacement', type: 'number', unit: 'nm', step: 10, animatable: true }],
   snap: 'perp', mount: true, labelPos: [0, 7],
   bbox: p => [0, -p.d / 2, p.d * 0.55, p.d / 2],
   draw(p, S) {
@@ -1670,13 +1991,20 @@ lib.register({
 
 lib.register({
   type: 'slm', name: 'Spatial light modulator', abbr: 'SLM', category: 'Mirrors & splitters', keywords: 'slm spatial light modulator dmd phase hologram liquid crystal lcos',
-  defaults: { w: 11, t: 2.6, R: 1, pattern: 'phase' },
+  defaults: { w: 11, t: 2.6, R: 1, pattern: 'phase', transmit: false },
   params: [{ key: 'w', label: 'Panel width', type: 'number', unit: 'mm', min: 3, max: 50, step: 0.5 }, P.thick(2.6),
-    { key: 'pattern', label: 'Front pattern', type: 'select', options: [['phase', 'Phase grating'], ['pixels', 'Pixel grid'], ['none', 'Plain']] }],
-  variants: [{ name: 'Digital micromirror device (DMD)', abbr: 'DMD', props: { pattern: 'pixels' }, keywords: 'dmd micromirror' }],
+    { key: 'pattern', label: 'Front pattern', type: 'select', options: [['phase', 'Phase grating'], ['pixels', 'Pixel grid'], ['none', 'Plain']] },
+    { key: 'transmit', label: 'Transmissive', type: 'bool' }],
+  variants: [{ name: 'Digital micromirror device (DMD)', abbr: 'DMD', props: { pattern: 'pixels' }, keywords: 'dmd micromirror' },
+    { name: 'Transmissive SLM', props: { transmit: true, t: 1.4 }, keywords: 'transmissive slm lcd phase mask' }],
   snap: 'mirror', labelPos: [0, 8],
   bbox: p => [-0.5, -p.w / 2, p.t, p.w / 2],
   draw(p, S) {
+    if (p.transmit) {
+      let t = H.rect(S, -p.t / 2, -p.w / 2, p.t, p.w, S.fill('glass'), 'rx="0.2"');
+      for (let i = 0; i < 10; i++) t += `<rect x="${n(-p.t / 2 + 0.25)}" y="${n(-p.w / 2 + i * p.w / 10)}" width="${n(p.t - 0.5)}" height="${n(p.w / 10)}" fill="${U.mix('#2a3b55', '#c9d6ea', (i % 4) / 3)}" fill-opacity="0.55" stroke="none"/>`;
+      return t + H.rect(S, -p.t / 2 - 0.4, -p.w / 2 - 0.6, p.t + 0.8, 0.6, S.fill('dark'));
+    }
     let s = H.rect(S, 0, -p.w / 2, p.t, p.w, S.fill('dark'), 'rx="0.3"');
     s += H.sheen(S, 0, -p.w / 2, p.t, p.w * 0.4);
     const k = 10, dy = p.w / k;
@@ -1688,8 +2016,8 @@ lib.register({
     }
     return s + face + H.line(S, 0, -p.w / 2, 0, p.w / 2, '', 1.2);
   },
-  optics: p => [{ kind: 'mirror', a: [0, -p.w / 2], b: [0, p.w / 2], R: p.R }],
-  solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: 'dark' }, { kind: 'box', x: [-0.12, 0], y: [-p.w / 2 + 0.5, p.w / 2 - 0.5], z: [bh - p.w * 0.35, bh + p.w * 0.35], mat: 'mirror' }],
+  optics: p => [{ kind: p.transmit ? 'pass' : 'mirror', a: [0, -p.w / 2], b: [0, p.w / 2], R: p.R }],
+  solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: p.transmit ? { color: '#9fb0c6', alpha: 0.55 } : 'dark' }, { kind: 'box', x: [-0.12, 0], y: [-p.w / 2 + 0.5, p.w / 2 - 0.5], z: [bh - p.w * 0.35, bh + p.w * 0.35], mat: 'mirror' }],
   mount: true,
 });
 
@@ -2263,6 +2591,457 @@ lib.register({
 
 </script>
 <script>
+/* js/components/vertical.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/vertical.js
+   Beams that leave the table plane.
+
+   • Fold mirror (up / down): a 45° mirror that sends a beam up a
+     microscope tower or down to the table. Lenses, objectives,
+     samples and detectors whose optical axis is set to vertical
+     (Properties ▸ Position ▸ Optical axis) are met on the way.
+   • Periscope: changes beam height and optionally direction.
+
+   In the top view a beam going up is marked ⊙, one going down ⊗,
+   the standard notation for "out of / into the page".
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
+
+/* ⊙ (towards the viewer) or ⊗ (away) */
+H.axisMark = (S, x, y, r, up, color) => {
+  const c = color || S.ink, w = Math.max(0.12, S.lw * 0.9);
+  let s = `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}" fill="#ffffff" fill-opacity="0.9" stroke="${c}" stroke-width="${n(w)}"/>`;
+  if (up) s += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r * 0.32)}" fill="${c}"/>`;
+  else { const k = r * 0.62; s += `<path d="M ${n(x - k)} ${n(y - k)} L ${n(x + k)} ${n(y + k)} M ${n(x - k)} ${n(y + k)} L ${n(x + k)} ${n(y - k)}" stroke="${c}" stroke-width="${n(w)}"/>`; }
+  return s;
+};
+
+lib.register({
+  type: 'vfold', name: 'Fold mirror (up / down)', abbr: 'FM', category: 'Mirrors & splitters', vertical: false,
+  keywords: 'fold mirror up down vertical tower microscope periscope 45 turning dichroic',
+  defaults: { d: 8, dir: 'up', mode: 'mirror', R: 0.5, edge: 550, foldMode: 'longpass' },
+  params: [lib.P.diameter(),
+    { key: 'dir', label: 'Sends the beam', type: 'select', options: [['up', 'Up (out of the table plane)'], ['down', 'Down (towards the table)']] },
+    { key: 'mode', label: 'Coating', type: 'select', options: [['mirror', 'Mirror'], ['dichroic', 'Dichroic'], ['splitter', 'Beam splitter']] },
+    { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode === 'splitter' },
+    { key: 'foldMode', label: 'Transmits', type: 'select', options: [['longpass', 'Long wavelengths'], ['shortpass', 'Short wavelengths']], show: p => p.mode === 'dichroic' },
+    { key: 'edge', label: 'Edge wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 3000, step: 1, show: p => p.mode === 'dichroic' }],
+  hint: 'Beam arrives from the arrow side. Objects stacked above (or below) it need a vertical optical axis and a height z.',
+  snap: 'face', mount: true, labelPos: [0, 7],
+  bbox: p => [-p.d * 0.36, -p.d / 2, p.d * 0.36 + 2.2, p.d / 2],
+  draw(p, S) {
+    const r = p.d / 2, hw = p.d * 0.36;
+    const fill = p.mode === 'dichroic' ? U.lighten(U.wavelengthColor(p.edge), 0.55) : S.fill('mirror');
+    let s = `<rect x="${n(-hw)}" y="${n(-r)}" width="${n(2 * hw)}" height="${n(2 * r)}" rx="${n(hw * 0.9)}" fill="${fill}" ${H.stroke(S)}/>`;
+    s += H.sheen(S, -hw, -r, 2 * hw, r * 0.8, hw * 0.9);
+    // tilt cue: the near edge of the 45° mirror drawn heavier
+    s += H.line(S, hw * 0.7, -r * 0.85, hw * 0.7, r * 0.85, '', 1.8);
+    s += H.axisMark(S, 0, 0, Math.min(1.4, hw * 0.55), p.dir === 'up');
+    s += H.arrowGlyph(S, hw + 1.1, 0, 2.2);
+    return s;
+  },
+  optics: p => [{ kind: 'vfold', a: [0, -p.d / 2], b: [0, p.d / 2], port: p.dir === 'up' ? 1 : -1, mode: p.mode, R: p.R, edge: p.edge, foldMode: p.foldMode }],
+  solid: (p, bh) => [{ kind: 'disk3', c: [0, 0, bh], nrm: [1, 0, p.dir === 'up' ? 1 : -1], r: p.d / 2, t: 1.2, mat: p.mode === 'dichroic' ? { color: U.lighten(U.wavelengthColor(p.edge), 0.35), alpha: 0.65 } : 'mirror' }],
+});
+
+lib.register({
+  type: 'periscope', name: 'Periscope', abbr: 'PS', category: 'Mirrors & splitters', vertical: false,
+  keywords: 'periscope beam height raise lower elevate two mirrors',
+  defaults: { s: 7, rise: 12, turn: 'straight' },
+  params: [{ key: 'rise', label: 'Height change', type: 'number', unit: 'mm', min: -60, max: 60, step: 0.5, hint: 'downstream optics need the new height z' },
+    { key: 'turn', label: 'Output direction', type: 'select', options: [['straight', 'Straight on'], ['left', 'Turn left'], ['right', 'Turn right'], ['back', 'Back (U-turn)']] },
+    { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 3, max: 30, step: 0.5 }],
+  hint: 'The beam enters the side facing the source and leaves at height z + rise. Optics placed on the new beam take its height automatically.',
+  snap: 'perp', labelPos: [0, 7.5],
+  bbox: p => [-p.s / 2, -p.s / 2, p.s / 2, p.s / 2],
+  draw(p, S) {
+    const h = p.s / 2;
+    let s = H.rect(S, -h, -h, p.s, p.s, S.shaded ? S.fill('metal') : '#eef0f3', 'rx="0.8"');
+    s += H.sheen(S, -h, -h, p.s, p.s * 0.4, 0.8);
+    // lower mirror (input) and upper mirror (output), offset as in a perspective sketch
+    s += H.line(S, -h * 0.55, -h * 0.55, h * 0.1, h * 0.1, '', 2.2);
+    s += H.line(S, -h * 0.1, -h * 0.1, h * 0.55, h * 0.55, '', 1.2, S.shaded ? '#6b7480' : '#9aa1ab');
+    s += H.axisMark(S, 0, 0, Math.min(1.2, h * 0.36), (p.rise || 0) >= 0);
+    const ang = { straight: 0, left: -90, right: 90, back: 180 }[p.turn] || 0;
+    const v = U.v.fromAngle(ang);
+    s += `<g transform="rotate(${ang})">${H.arrowGlyph(S, h + 1.4, 0, 2.2)}</g>`;
+    void v;
+    return s;
+  },
+  optics: p => [{ kind: 'periscope', a: [-p.s / 2, -p.s / 2], b: [-p.s / 2, p.s / 2] }],
+  solid: (p, bh) => {
+    const rise = p.rise || 0, ang = U.rad({ straight: 0, left: -90, right: 90, back: 180 }[p.turn] || 0);
+    const o = [Math.cos(ang), Math.sin(ang)];
+    return [
+      { kind: 'disk3', c: [0, 0, bh], nrm: [-1, 0, Math.sign(rise) || 1], r: p.s * 0.38, t: 0.9, mat: 'mirror' },
+      { kind: 'disk3', c: [0, 0, bh + rise], nrm: [o[0], o[1], -(Math.sign(rise) || 1)], r: p.s * 0.38, t: 0.9, mat: 'mirror' },
+      { kind: 'vcyl', cx: 0, cy: p.s * 0.5, r: 0.6, z: [0, bh + Math.max(0, rise) + p.s * 0.3], mat: 'post' },
+      { kind: 'box', x: [-p.s * 0.45, p.s * 0.45], y: [p.s * 0.42, p.s * 0.55], z: [bh - p.s * 0.4, bh + Math.max(0, rise) + p.s * 0.3], mat: 'anod' },
+    ];
+  },
+});
+})();
+
+</script>
+<script>
+/* js/components/photonics.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/photonics.js
+   Resonators and integrated photonics, plus beam diagnostics:
+   Fabry–Pérot cavity, ring resonator / waveguide chips, beam
+   profiler, off-axis parabolic mirror, and the custom component.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, P = lib.P;
+const spectral = [
+  { key: 'lam0', label: 'Resonant wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 0.1 },
+  { key: 'fsr', label: 'Free spectral range', type: 'number', unit: 'nm', min: 0.001, max: 500, step: 0.1 },
+  { key: 'detune', label: 'Detuning (fraction of FSR)', type: 'number', min: -10, max: 10, step: 0.01, animatable: true, hint: 'animate to scan the resonance' },
+];
+
+/* ---------- Fabry–Pérot cavity ---------- */
+lib.register({
+  type: 'cavity', name: 'Optical cavity (Fabry–Pérot)', abbr: 'FP', category: 'Modulators & nonlinear',
+  keywords: 'cavity resonator fabry perot etalon interferometer finesse enhancement',
+  defaults: { L: 12, d: 8, R1: 0.95, R2: 0.95, lam0: 1064, fsr: 1, detune: 0 },
+  params: [{ key: 'L', label: 'Mirror spacing (drawn)', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 }, P.diameter(),
+    { key: 'R1', label: 'Input mirror R', type: 'range', min: 0, max: 0.9999, step: 0.001 },
+    { key: 'R2', label: 'Output mirror R', type: 'range', min: 0, max: 0.9999, step: 0.001 }, ...spectral],
+  hint: 'Transmission follows the Airy function: full transmission on resonance, reflection off resonance.',
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-p.L / 2 - 1.5, -p.d / 2, p.L / 2 + 1.5, p.d / 2],
+  draw(p, S) {
+    const h = p.L / 2, r = p.d / 2, sag = Math.min(0.9, p.d * 0.1);
+    let s = `<rect x="${n(-h)}" y="${n(-r * 0.75)}" width="${n(p.L)}" height="${n(r * 1.5)}" fill="${S.shaded ? '#eef2f7' : '#f5f7fa'}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}" stroke-dasharray="${n(S.lw * 3)} ${n(S.lw * 2)}"/>`;
+    s += `<path d="M ${n(-h)} ${n(-r)} Q ${n(-h + 2 * sag)} 0 ${n(-h)} ${n(r)} L ${n(-h - 1.5)} ${n(r)} L ${n(-h - 1.5)} ${n(-r)} Z" fill="${S.fill('mirror')}" ${H.stroke(S)}/>`;
+    s += `<path d="M ${n(h)} ${n(-r)} Q ${n(h - 2 * sag)} 0 ${n(h)} ${n(r)} L ${n(h + 1.5)} ${n(r)} L ${n(h + 1.5)} ${n(-r)} Z" fill="${S.fill('mirror')}" ${H.stroke(S)}/>`;
+    // standing-wave cue
+    let d = '';
+    for (let i = 0; i <= 48; i++) { const x = -h + 0.4 + (p.L - 0.8) * i / 48; d += (i ? ' L ' : 'M ') + n(x) + ' ' + n(Math.sin(i / 48 * Math.PI * 6) * r * 0.35); }
+    return s + `<path d="${d}" fill="none" stroke="${U.wavelengthColor(p.lam0)}" stroke-width="${n(S.lw * 1.1)}" stroke-opacity="0.8"/>`;
+  },
+  optics: p => [{ kind: 'cavity', a: [-p.L / 2, -p.d / 2], b: [-p.L / 2, p.d / 2], span: p.L }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2 - 1.5, -p.L / 2], r: [p.d / 2, p.d / 2], mat: 'mirror' }, { kind: 'cyl', x: [p.L / 2, p.L / 2 + 1.5], r: [p.d / 2, p.d / 2], mat: 'mirror' }, { kind: 'cyl', x: [-p.L / 2, p.L / 2], r: [p.d * 0.18, p.d * 0.18], mat: { color: '#c8d3e0', alpha: 0.25 } }],
+});
+
+/* ---------- ring resonator / waveguide chip ---------- */
+lib.register({
+  type: 'ringchip', name: 'Ring resonator chip', abbr: 'MRR', category: 'Modulators & nonlinear',
+  keywords: 'ring resonator microring photonic chip integrated waveguide silicon nitride add drop',
+  defaults: { w: 18, h: 9, ring: true, drop: true, kappa: 0.1, loss: 0.98, lam0: 1550, fsr: 4, detune: 0, T: 0.9 },
+  params: [{ key: 'ring', label: 'Ring resonator', type: 'bool' },
+    { key: 'drop', label: 'Drop port (add–drop ring)', type: 'bool', show: p => p.ring },
+    { key: 'kappa', label: 'Power coupling κ', type: 'range', min: 0.001, max: 1, step: 0.001, show: p => p.ring },
+    { key: 'loss', label: 'Round-trip amplitude a', type: 'range', min: 0, max: 1, step: 0.001, show: p => p.ring },
+    { key: 'T', label: 'Waveguide transmission', type: 'range', min: 0, max: 1, step: 0.01, show: p => !p.ring },
+    ...spectral.map(q => Object.assign({}, q, { show: p => p.ring })),
+    { key: 'w', label: 'Chip width', type: 'number', unit: 'mm', min: 4, max: 80, step: 0.5 }, { key: 'h', label: 'Chip height', type: 'number', unit: 'mm', min: 3, max: 60, step: 0.5 }],
+  variants: [{ name: 'Waveguide chip', abbr: 'WG', props: { ring: false }, keywords: 'waveguide chip photonic integrated straight' }],
+  hint: 'Light enters the left facet. Through port leaves the right facet; the drop port leaves the lower-left facet.',
+  snap: 'perp', labelPos: [0, 8],
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  draw(p, S) {
+    const w = p.w, h = p.h, y0 = -h * 0.22, y1 = h * 0.3, R = Math.min(h * 0.22, w * 0.14);
+    let s = H.rect(S, -w / 2, -h / 2, w, h, S.shaded ? 'url(#rbx-wafer)' : '#d9d6e6', 'rx="0.4"');
+    s += H.sheen(S, -w / 2, -h / 2, w, h * 0.35, 0.4);
+    const wg = S.shaded ? '#f4f6ff' : '#5b5f8a', ww = n(Math.max(0.25, S.lw * 1.6));
+    s += `<line x1="${n(-w / 2)}" y1="${n(y0)}" x2="${n(w / 2)}" y2="${n(y0)}" stroke="${wg}" stroke-width="${ww}"/>`;
+    if (p.ring) {
+      s += `<circle cx="0" cy="${n(y0 + R + 0.35)}" r="${n(R)}" fill="none" stroke="${wg}" stroke-width="${ww}"/>`;
+      if (p.drop) s += `<line x1="${n(-w / 2)}" y1="${n(y0 + 2 * R + 0.7)}" x2="${n(w * 0.25)}" y2="${n(y0 + 2 * R + 0.7)}" stroke="${wg}" stroke-width="${ww}"/>`;
+    }
+    void y1;
+    return s;
+  },
+  optics: p => {
+    const y0 = -p.h * 0.22, R = Math.min(p.h * 0.22, p.w * 0.14);
+    return [{ kind: 'ring', a: [-p.w / 2, y0 - 1.2], b: [-p.w / 2, y0 + 1.2], span: p.w, dropPort: p.ring && p.drop ? { o: [-p.w / 2 - 0.05, y0 + 2 * R + 0.7], d: [-1, 0] } : null }]
+      .concat([{ kind: 'absorb', a: [-p.w / 2, -p.h / 2], b: [p.w / 2, -p.h / 2] }, { kind: 'absorb', a: [-p.w / 2, p.h / 2], b: [p.w / 2, p.h / 2] }]);
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.w / 2, p.w / 2], y: [-p.h / 2, p.h / 2], z: [bh - 0.6, bh + 0.1], mat: { color: '#8e8aa3' } }, { kind: 'box', x: [-p.w / 2, p.w / 2], y: [-p.h / 2, p.h / 2], z: [0, bh - 0.6], mat: 'anod' }],
+  vertical: false,
+});
+
+/* ---------- beam profiler ---------- */
+lib.register({
+  type: 'profiler', name: 'Beam profiler', abbr: 'BP', category: 'Detectors', labelTemplate: 'Beam profiler',
+  keywords: 'beam profiler camera spot size m2 waist measurement',
+  defaults: { L: 9, H: 9 },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  hint: 'With the Gaussian beam model, the inspector reports the beam radius here.',
+  snap: 'perp', labelPos: [0, 7.5],
+  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.H / 2, p.L, p.H, S.fill('dark'), 'rx="0.7"') + H.sheen(S, -p.L / 2, -p.H / 2, p.L, p.H * 0.45, 0.7);
+    s += `<rect x="${n(-p.L / 2 - 0.1)}" y="${n(-p.H * 0.3)}" width="0.5" height="${n(p.H * 0.6)}" fill="${S.shaded ? 'url(#rbx-sensor)' : '#6d7b8f'}"/>`;
+    let d = '';
+    for (let i = 0; i <= 30; i++) { const y = -p.H * 0.3 + p.H * 0.6 * i / 30, x = Math.exp(-Math.pow((i - 15) / 6, 2)) * p.L * 0.45; d += (i ? ' L ' : 'M ') + n(-p.L * 0.2 + x) + ' ' + n(y); }
+    return s + `<path d="${d}" fill="none" stroke="#ffd166" stroke-width="${n(S.lw * 1.2)}"/>`;
+  },
+  optics: p => H.boxAbsorb(-p.L / 2, -p.H / 2, p.L / 2, p.H / 2),
+  solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh - p.H / 2, bh + p.H / 2], mat: 'dark' }],
+  mount: true, postR: 1,
+});
+
+/* ---------- off-axis parabolic mirror ---------- */
+lib.register({
+  type: 'oap', name: 'Off-axis parabolic mirror', abbr: 'OAP', category: 'Mirrors & splitters',
+  keywords: 'off axis parabolic mirror oap focusing reflective achromatic',
+  defaults: { d: 9, f: 100, R: 1 },
+  params: [P.diameter(9), { key: 'f', label: 'Reflected focal length', type: 'number', unit: 'mm', min: 1, max: 5000, step: 1 }, { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 }],
+  hint: 'Focuses a collimated beam at 90° without chromatic aberration.',
+  snap: 'mirror', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-0.2, -p.d / 2, p.d * 0.6, p.d / 2],
+  draw(p, S) {
+    const r = p.d / 2;
+    let s = `<path d="M 0 ${n(-r)} Q ${n(r * 0.55)} 0 0 ${n(r)} L ${n(p.d * 0.6)} ${n(r * 0.8)} L ${n(p.d * 0.6)} ${n(-r * 1.0)} Z" fill="${S.fill('metal')}" ${H.stroke(S)}/>`;
+    s += H.sheen(S, 0, -r, p.d * 0.6, r * 0.8);
+    return s + `<path d="M 0 ${n(-r)} Q ${n(r * 0.55)} 0 0 ${n(r)}" fill="none" ${H.stroke(S, 2)}/>`;
+  },
+  optics: p => [{ kind: 'mirror', a: [0, -p.d / 2], b: [0, p.d / 2], R: p.R, f: p.f }],
+  solid: (p, bh) => [{ kind: 'box', x: [0, p.d * 0.6], y: [-p.d / 2, p.d / 2], z: [bh - p.d / 2, bh + p.d / 2], mat: 'metal' }],
+});
+
+/* ---------- custom component (your own drawing or photo) ---------- */
+const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['splitter', 'Beam splitter'], ['lens', 'Lens'], ['absorb', 'Detector / block'], ['filter', 'Filter (band-pass)'], ['pass', 'Transparent (passes light)'], ['sample', 'Sample (can emit)'], ['source', 'Light source']];
+lib.register({
+  type: 'custom', name: 'Custom component', abbr: 'X', category: 'Samples & mechanics',
+  keywords: 'custom import svg png photo own drawing user component',
+  defaults: { href: '', svg: '', vb: null, w: 12, h: 8, behaviour: 'none', R: 0.5, f: 100, lambda: 532, center: 532, width: 20, T: 0.95, emit: false, emitLambda: 560, emitFrac: 0.5, power: 10, beamWidth: 0.7, title: 'Custom' },
+  params: [{ key: 'href', label: 'Drawing or photo (SVG stays vector)', type: 'image' },
+    { key: 'title', label: 'Name', type: 'text' },
+    { key: 'behaviour', label: 'Optical behaviour', type: 'select', options: BEHAVIOURS },
+    { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.behaviour === 'splitter' },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', step: 1, show: p => p.behaviour === 'lens' },
+    { key: 'center', label: 'Pass-band centre', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.behaviour === 'filter' },
+    { key: 'width', label: 'Bandwidth', type: 'number', unit: 'nm', min: 0.1, max: 2000, step: 0.5, show: p => p.behaviour === 'filter' },
+    { key: 'emit', label: 'Emits signal', type: 'bool', show: p => p.behaviour === 'sample' },
+    { key: 'emitLambda', label: 'Signal wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.behaviour === 'sample' && p.emit },
+    { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.behaviour === 'source' },
+    { key: 'power', label: 'Power', type: 'number', unit: 'mW', min: 0, step: 0.1, show: p => p.behaviour === 'source' },
+    { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 }],
+  hint: 'The optical surface runs vertically through the centre of the drawing; beams travel left to right in its own frame. Save it to “My components” to reuse it.',
+  resizable: true, keepAspect: true, snap: 'perp', mount: false, labelPos: [0, 7],
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  draw(p, S, obj) {
+    if (p.svg && p.vb) {
+      const k = Math.min(p.w / p.vb[2], p.h / p.vb[3]);
+      return `<g transform="translate(${n(-p.vb[2] * k / 2)} ${n(-p.vb[3] * k / 2)}) scale(${n(k)}) translate(${n(-p.vb[0])} ${n(-p.vb[1])})">${p.svg}</g>`;
+    }
+    if (p.href) return `<image href="${U.esc(p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" preserveAspectRatio="none"/>`;
+    return H.rect(S, -p.w / 2, -p.h / 2, p.w, p.h, '#f4f5f7', 'rx="0.8" stroke-dasharray="1 0.7"') + H.text(S, 0, 0, p.title || 'Custom', { size: Math.min(S.fs, p.h * 0.3), color: '#6b7280' });
+  },
+  optics(p) {
+    const seg = { a: [0, -p.h / 2], b: [0, p.h / 2] };
+    switch (p.behaviour) {
+      case 'mirror': return [Object.assign({ kind: 'mirror', R: 1 }, seg)];
+      case 'splitter': return [Object.assign({ kind: 'splitter', R: p.R }, seg)];
+      case 'lens': return [Object.assign({ kind: 'lens', f: p.f }, seg)];
+      case 'absorb': return H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2);
+      case 'filter': return [Object.assign({ kind: 'filter', mode: 'bandpass', center: p.center, width: p.width, T: p.T }, seg)];
+      case 'pass': return [Object.assign({ kind: 'pass' }, seg)];
+      case 'sample': return [Object.assign({ kind: 'sample', T: 0, emit: p.emit, emitLambda: p.emitLambda, emitFrac: p.emitFrac, emitDir: 'back' }, seg)];
+      case 'source': return H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2);
+      default: return [];
+    }
+  },
+  source: p => p.behaviour === 'source' ? [{ o: [p.w / 2 + 0.05, 0], d: [1, 0], lambda: p.lambda, P: p.power, E: RNBX.optics.scaleJ(RNBX.optics.jones('H'), Math.sqrt(p.power)), w: (p.beamWidth || 0.7) / 2, dw: 0 }] : [],
+  solid: (p, bh) => [{ kind: 'box', x: [-Math.min(p.w, 3) / 2, Math.min(p.w, 3) / 2], y: [-p.w / 2, p.w / 2], z: [0, bh + p.h / 2], mat: 'body' }],
+});
+
+/* Clean an uploaded SVG so it can be embedded inline (vector in every export). */
+lib.importSvg = (text, idPrefix) => {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const root = doc.documentElement;
+  if (!root || root.nodeName.toLowerCase() !== 'svg') throw new Error('Not an SVG file');
+  root.querySelectorAll('script, foreignObject, iframe, object, embed').forEach(e => e.remove());
+  root.querySelectorAll('*').forEach(e => [...e.attributes].forEach(a => {
+    if (/^on/i.test(a.name) || (/href$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) e.removeAttribute(a.name);
+  }));
+  let vb = (root.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+  if (vb.length !== 4 || vb.some(v => !isFinite(v))) vb = [0, 0, parseFloat(root.getAttribute('width')) || 100, parseFloat(root.getAttribute('height')) || 100];
+  let inner = [...root.childNodes].map(c => new XMLSerializer().serializeToString(c)).join('');
+  // keep ids unique inside the figure
+  inner = inner.replace(/\bid="([^"]+)"/g, `id="${idPrefix}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${idPrefix}$1)`).replace(/href="#([^"]+)"/g, `href="#${idPrefix}$1"`);
+  inner = inner.replace(/\sxmlns(:\w+)?="[^"]*"/g, '');
+  return { svg: inner, vb };
+};
+})();
+
+</script>
+<script>
+/* js/components/plot.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/plot.js
+   Data plot panel, so a setup (panel a) and its data (panel b,
+   e.g. a Raman spectrum) can sit in one figure. Drawn as plain
+   vector SVG with editable text, like the rest of the figure.
+
+   Data come from CSV / TXT files (including RNSpectraX's
+   "Plotted CSV"), pasted text, or straight from RNSpectraX
+   via its "→ RNBeamX" button.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, n = lib.H.n;
+const PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#000000'];
+
+/* ---------- data import ---------- */
+const DataIO = RNBX.plotData = {};
+DataIO.parse = text => {
+  const rows = String(text).split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^[#%]/.test(l));
+  if (!rows.length) throw new Error('No data found');
+  const split = l => l.split(/\s*[,;\t]\s*|\s+/).filter(x => x !== '');
+  let header = null;
+  const first = split(rows[0]);
+  if (first.some(v => !isFinite(parseFloat(v)))) { header = first; rows.shift(); }
+  const data = rows.map(split).map(r => r.map(v => parseFloat(v)));
+  const ncol = Math.max(...data.map(r => r.length));
+  if (ncol < 2) throw new Error('Need at least two columns (x, y)');
+  const col = j => data.map(r => r[j]);
+  const series = [];
+  // RNSpectraX "Plotted CSV": name__X, name__Y (+ __Yerr / __Xerr) column pairs
+  if (header && header.some(h => /__X$/.test(h))) {
+    header.forEach((h, j) => {
+      if (!/__X$/.test(h)) return;
+      const name = h.replace(/__X$/, ''), jy = header.indexOf(name + '__Y');
+      if (jy < 0) return;
+      const xs = col(j), ys = col(jy), x = [], y = [];
+      xs.forEach((v, i) => { if (isFinite(v) && isFinite(ys[i])) { x.push(v); y.push(ys[i]); } });
+      series.push({ name, x, y });
+    });
+  } else {
+    const xs = col(0);
+    for (let j = 1; j < ncol; j++) {
+      const ys = col(j), x = [], y = [];
+      xs.forEach((v, i) => { if (isFinite(v) && isFinite(ys[i])) { x.push(v); y.push(ys[i]); } });
+      if (x.length) series.push({ name: header && header[j] ? header[j] : 'Series ' + j, x, y });
+    }
+  }
+  if (!series.length) throw new Error('No numeric x–y columns found');
+  return { series, xlabel: header && !header.some(h => /__X$/.test(h)) ? header[0] : '', ylabel: '' };
+};
+/* Plotly-style HTML in axis titles → RNBeamX text markup */
+DataIO.fromHtml = t => String(t || '').replace(/<sup>(.*?)<\/sup>/gi, '^{$1}').replace(/<sub>(.*?)<\/sub>/gi, '_{$1}').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+/* data handed over by RNSpectraX (same site → shared browser storage) */
+DataIO.HANDOFF_KEY = 'rnfamily_handoff';
+DataIO.readHandoff = () => {
+  const h = U.store.get(DataIO.HANDOFF_KEY, null);
+  if (!h || !Array.isArray(h.series) || !h.series.length) return null;
+  return { series: h.series.map(s => ({ name: s.name, x: s.x, y: s.y, color: s.color, dash: s.dash })), xlabel: DataIO.fromHtml(h.xlabel), ylabel: DataIO.fromHtml(h.ylabel), xreverse: !!h.xreverse, title: h.title, time: h.time };
+};
+DataIO.apply = (obj, d) => {
+  obj.props.series = d.series.map((s, i) => ({ name: s.name || 'Series ' + (i + 1), x: s.x, y: s.y, color: s.color || PALETTE[i % PALETTE.length], dash: s.dash || 'solid' }));
+  if (d.xlabel) obj.props.xlabel = d.xlabel;
+  if (d.ylabel) obj.props.ylabel = d.ylabel;
+  if (d.xreverse != null) obj.props.xreverse = d.xreverse;
+};
+
+/* ---------- axes ---------- */
+const niceStep = (span, target) => {
+  const raw = span / Math.max(1, target), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+};
+const ticks = (a, b, target) => {
+  const st = niceStep(Math.abs(b - a) || 1, target), out = [];
+  for (let v = Math.ceil(Math.min(a, b) / st) * st; v <= Math.max(a, b) + st * 1e-6; v += st) out.push(Math.abs(v) < st * 1e-9 ? 0 : v);
+  return { st, out };
+};
+const fmtTick = (v, st) => { const d = Math.max(0, -Math.floor(Math.log10(st) + 1e-9)); return Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1) : v.toFixed(d); };
+/* keep path size sane: min–max decimation into ≤ N buckets */
+const decimate = (x, y, N = 900) => {
+  if (x.length <= N * 2) return x.map((v, i) => [v, y[i]]);
+  const out = [], k = x.length / N;
+  for (let b = 0; b < N; b++) {
+    let lo = Infinity, hi = -Infinity, il = 0, ih = 0;
+    for (let i = Math.floor(b * k); i < Math.min(x.length, Math.floor((b + 1) * k)); i++) { if (y[i] < lo) { lo = y[i]; il = i; } if (y[i] > hi) { hi = y[i]; ih = i; } }
+    if (il <= ih) out.push([x[il], y[il]], [x[ih], y[ih]]); else out.push([x[ih], y[ih]], [x[il], y[il]]);
+  }
+  return out;
+};
+
+lib.register({
+  type: 'plot', name: 'Data plot', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
+  keywords: 'plot graph spectrum data chart panel csv rnspectrax raman curve',
+  defaults: {
+    w: 70, h: 46, series: [], xlabel: 'Raman shift (cm^{−1})', ylabel: 'Intensity (a.u.)', xmin: '', xmax: '', ymin: '', ymax: '',
+    xreverse: false, yNumbers: true, legend: true, legendPos: 'tr', frame: 'box', fontSize: 7, lineWidth: 0.8, offset: 0, ticksIn: true,
+  },
+  params: [
+    { key: 'series', label: 'Data', type: 'series' },
+    { key: 'xlabel', label: 'x-axis title', type: 'text' }, { key: 'ylabel', label: 'y-axis title', type: 'text' },
+    { key: 'xmin', label: 'x min', type: 'text', placeholder: 'auto' }, { key: 'xmax', label: 'x max', type: 'text', placeholder: 'auto' },
+    { key: 'ymin', label: 'y min', type: 'text', placeholder: 'auto' }, { key: 'ymax', label: 'y max', type: 'text', placeholder: 'auto' },
+    { key: 'offset', label: 'Stack offset (fraction of range)', type: 'range', min: 0, max: 1.5, step: 0.01, hint: 'spreads spectra vertically' },
+    { key: 'xreverse', label: 'Reverse x axis', type: 'bool' }, { key: 'yNumbers', label: 'y tick numbers', type: 'bool', hint: 'off for a.u.' },
+    { key: 'legend', label: 'Legend', type: 'bool' },
+    { key: 'legendPos', label: 'Legend position', type: 'select', options: [['tr', 'Top right'], ['tl', 'Top left'], ['br', 'Bottom right'], ['bl', 'Bottom left']], show: p => p.legend },
+    { key: 'frame', label: 'Axes', type: 'select', options: [['box', 'Box'], ['L', 'Left and bottom']] },
+    { key: 'ticksIn', label: 'Ticks inside', type: 'bool' },
+    { key: 'fontSize', label: 'Text size', type: 'number', unit: 'pt', min: 4, max: 24, step: 0.5 },
+    { key: 'lineWidth', label: 'Line weight', type: 'number', unit: 'pt', min: 0.2, max: 4, step: 0.05 },
+    { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 15, max: 300, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 10, max: 300, step: 0.5 },
+  ],
+  resizable: true,
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  draw(p, S) {
+    const fs = U.pt2mm(p.fontSize), lw = U.pt2mm(p.lineWidth), ink = RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : '#111111', axw = U.pt2mm(0.6);
+    const series = (p.series || []).filter(s => s.x && s.x.length);
+    let xs = [], ys = [];
+    const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
+    const off = series.length ? p.offset * Math.max(...series.map(range)) : 0;
+    series.forEach((s, i) => { xs = xs.concat([Math.min(...s.x), Math.max(...s.x)]); ys = ys.concat([Math.min(...s.y) + i * off, Math.max(...s.y) + i * off]); });
+    if (!series.length) { xs = [0, 1]; ys = [0, 1]; }
+    const num = (v, d) => (v === '' || v == null || !isFinite(parseFloat(v)) ? d : parseFloat(v));
+    let x0 = num(p.xmin, Math.min(...xs)), x1 = num(p.xmax, Math.max(...xs));
+    let y0 = num(p.ymin, Math.min(...ys)), y1 = num(p.ymax, Math.max(...ys));
+    if (p.ymin === '' && p.ymax === '') { const pad = (y1 - y0 || 1) * 0.06; y0 -= pad; y1 += pad; }
+    if (x1 === x0) x1 = x0 + 1; if (y1 === y0) y1 = y0 + 1;
+    const xt = ticks(x0, x1, Math.max(3, Math.round(p.w / 14))), yt = ticks(y0, y1, Math.max(3, Math.round(p.h / 10)));
+    const yLabW = p.yNumbers ? Math.max(...yt.out.map(v => RNBX.text.measure(fmtTick(v, yt.st), fs))) + 1.2 : 0.5;
+    const L = -p.w / 2 + fs * 2.1 + yLabW, R = p.w / 2 - 1.2, T = -p.h / 2 + 1.2, B = p.h / 2 - fs * 2.6;
+    const X = v => p.xreverse ? R - (v - x0) / (x1 - x0) * (R - L) : L + (v - x0) / (x1 - x0) * (R - L);
+    const Y = v => B - (v - y0) / (y1 - y0) * (B - T);
+    const tk = fs * 0.4 * (p.ticksIn ? -1 : 1);
+    let s = `<g font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}">`;
+    const cid = 'rbx-plotclip-' + Math.round((p.w + p.h) * 1000 + series.length);
+    s += `<defs><clipPath id="${cid}"><rect x="${n(L)}" y="${n(T)}" width="${n(R - L)}" height="${n(B - T)}"/></clipPath></defs>`;
+    // data
+    s += `<g clip-path="url(#${cid})">`;
+    series.forEach((sr, i) => {
+      const pts = decimate(sr.x, sr.y);
+      const d = 'M ' + pts.map(q => n(X(q[0])) + ' ' + n(Y(q[1] + i * off))).join(' L ');
+      const dash = sr.dash === 'dash' ? `stroke-dasharray="${n(lw * 5)} ${n(lw * 3)}"` : sr.dash === 'dot' ? `stroke-dasharray="${n(lw)} ${n(lw * 2.5)}"` : '';
+      s += `<path d="${d}" fill="none" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw)}" stroke-linejoin="round" stroke-linecap="round" ${dash}/>`;
+    });
+    s += '</g>';
+    // axes
+    s += p.frame === 'box' ? `<rect x="${n(L)}" y="${n(T)}" width="${n(R - L)}" height="${n(B - T)}" fill="none" stroke="${ink}" stroke-width="${n(axw)}"/>`
+      : `<path d="M ${n(L)} ${n(T)} L ${n(L)} ${n(B)} L ${n(R)} ${n(B)}" fill="none" stroke="${ink}" stroke-width="${n(axw)}"/>`;
+    xt.out.forEach(v => { if (v < Math.min(x0, x1) - 1e-12 || v > Math.max(x0, x1) + 1e-12) return; const x = X(v); s += `<line x1="${n(x)}" y1="${n(B)}" x2="${n(x)}" y2="${n(B + tk)}" stroke="${ink}" stroke-width="${n(axw)}"/><text x="${n(x)}" y="${n(B + fs * 1.05)}" text-anchor="middle">${U.esc(fmtTick(v, xt.st))}</text>`; });
+    yt.out.forEach(v => { if (v < y0 - 1e-12 || v > y1 + 1e-12) return; const y = Y(v); s += `<line x1="${n(L)}" y1="${n(y)}" x2="${n(L - tk)}" y2="${n(y)}" stroke="${ink}" stroke-width="${n(axw)}"/>` + (p.yNumbers ? `<text x="${n(L - fs * 0.45)}" y="${n(y + fs * 0.35)}" text-anchor="end">${U.esc(fmtTick(v, yt.st))}</text>` : ''); });
+    s += `<text x="${n((L + R) / 2)}" y="${n(B + fs * 2.3)}" text-anchor="middle">${RNBX.text.markup(p.xlabel, fs)}</text>`;
+    s += `<text transform="translate(${n(-p.w / 2 + fs * 0.85)} ${n((T + B) / 2)}) rotate(-90)" text-anchor="middle">${RNBX.text.markup(p.ylabel, fs)}</text>`;
+    // legend
+    if (p.legend && series.length > 1) {
+      const fl = fs * 0.9, rowH = fl * 1.3, wL = Math.max(...series.map(q => RNBX.text.measure(q.name, fl))) + fl * 2.6;
+      const lx = p.legendPos[1] === 'r' ? R - wL - 1 : L + 1, ly = p.legendPos[0] === 't' ? T + 1 : B - 1 - series.length * rowH;
+      series.forEach((sr, i) => {
+        const yy = ly + (i + 0.5) * rowH;
+        s += `<line x1="${n(lx)}" y1="${n(yy)}" x2="${n(lx + fl * 1.8)}" y2="${n(yy)}" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw * 1.4)}"/><text x="${n(lx + fl * 2.3)}" y="${n(yy + fl * 0.35)}" font-size="${n(fl)}">${U.esc(sr.name)}</text>`;
+      });
+    }
+    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">Import data in the inspector</text>`;
+    return s + '</g>';
+  },
+});
+})();
+
+</script>
+<script>
 /* js/components/annotations.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — components/annotations.js
@@ -2289,7 +3068,7 @@ H.arrowHead = (x, y, a, size, color) => {
 lib.worldBox = obj => {
   const def = lib.get(obj.type);
   if (!def || !def.bbox) return [obj.x, obj.y, obj.x, obj.y];
-  const b = def.bbox(obj.props);
+  const b = lib.objBox(obj);
   const pts = [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].map(p => U.toWorld(obj, p));
   return [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
 };
@@ -2578,6 +3357,55 @@ ann({
   },
 });
 
+/* ---------- interference fringes linked to a detector ---------- */
+ann({
+  type: 'fringes', name: 'Interference fringes', keywords: 'interference fringes rings pattern michelson mach zehnder visibility phase',
+  defaults: { detector: '', pattern: 'rings', size: 14, density: 5, color: '', showValue: true, frame: true },
+  params: [
+    { key: 'detector', label: 'Detector', type: 'select', options: () => [['', '— choose —']].concat(RNBX.state.doc.objects.filter(o => { const d = lib.get(o.type); return d && d.category === 'Detectors'; }).map(o => [o.id, (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props) : lib.get(o.type).name)])) },
+    { key: 'pattern', label: 'Pattern', type: 'select', options: [['rings', 'Circular (Michelson / tilt-free)'], ['lines', 'Straight (slight tilt)']] },
+    { key: 'density', label: 'Fringe density', type: 'number', min: 0.5, max: 40, step: 0.5 },
+    { key: 'size', label: 'Size', type: 'number', unit: 'mm', min: 3, max: 100, step: 0.5 },
+    { key: 'color', label: 'Colour (blank = wavelength)', type: 'color', allowEmpty: true },
+    { key: 'showValue', label: 'Show Δφ and visibility', type: 'bool' }, { key: 'frame', label: 'Frame', type: 'bool' }],
+  hint: 'Shows the pattern a camera would see at the linked detector. Animate a mirror’s piezo displacement to make the fringes move.',
+  bbox: p => [-p.size / 2, -p.size / 2, p.size / 2, p.size / 2 + (p.showValue ? 3.2 : 0)],
+  draw(p, S, obj) {
+    const R = p.size / 2, h = S.trace && p.detector ? S.trace.hits[p.detector] : null;
+    const I = h && h.interf;
+    let s = '';
+    if (!I) {
+      s += `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}" fill="#f1f3f5" stroke="#9aa1ab" stroke-width="0.2" stroke-dasharray="1 0.8"/>`;
+      return s + H.text(S, 0, 0, p.detector ? 'No interfering beams here' : 'Link a detector', { size: Math.min(2.2, R / 4), color: '#6b7280' });
+    }
+    const col = p.color || lib.colorOf(S.doc, I.lambda);
+    const a = Math.sqrt(I.I1), b = Math.sqrt(I.I2), Imax = (a + b) * (a + b) || 1;
+    const val = x => (I.I1 + I.I2 + 2 * a * b * I.overlap * Math.cos(I.dphi + x)) / Imax;
+    const cid = 'rbx-fr-' + (obj ? obj.id : 'x');
+    s += `<defs><clipPath id="${cid}">${p.pattern === 'rings' ? `<circle cx="0" cy="0" r="${n(R)}"/>` : `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}"/>`}</clipPath></defs><g clip-path="url(#${cid})">`;
+    if (p.pattern === 'rings') {
+      const N = 64;
+      for (let i = N; i >= 1; i--) {
+        const r = R * i / N, ph = Math.PI * p.density * Math.pow(i / N, 2) * 2;
+        s += `<circle cx="0" cy="0" r="${n(r)}" fill="${U.mix('#000000', col, U.clamp(val(ph), 0, 1))}"/>`;
+      }
+    } else {
+      const N = 72, w = 2 * R / N;
+      for (let i = 0; i < N; i++) {
+        const x = -R + (i + 0.5) * w, ph = 2 * Math.PI * p.density * (x / (2 * R));
+        s += `<rect x="${n(-R + i * w)}" y="${n(-R)}" width="${n(w + 0.02)}" height="${n(2 * R)}" fill="${U.mix('#000000', col, U.clamp(val(ph), 0, 1))}"/>`;
+      }
+    }
+    s += '</g>';
+    if (p.frame) s += p.pattern === 'rings' ? `<circle cx="0" cy="0" r="${n(R)}" fill="none" stroke="${S.ink}" stroke-width="${n(S.lw)}"/>` : `<rect x="${n(-R)}" y="${n(-R)}" width="${n(2 * R)}" height="${n(2 * R)}" fill="none" stroke="${S.ink}" stroke-width="${n(S.lw)}"/>`;
+    if (p.showValue) {
+      const deg = ((U.deg(I.dphi) % 360) + 360) % 360;
+      s += `<text x="0" y="${n(R + 2.4)}" font-family="${U.esc(S.font)}" font-size="${n(S.fs * 0.85)}" fill="${RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : S.ink}" text-anchor="middle">${RNBX.text.markup(`Δφ = ${U.fmt(deg, 0)}° · V = ${U.fmt(I.vis, 2)}`)}</text>`;
+    }
+    return s;
+  },
+});
+
 /* ================= Graphical-abstract elements ================= */
 const ga = cfg => lib.register(Object.assign({ category: 'Graphical abstract', annotation: true, autoLabel: false, abbr: '' }, cfg));
 ga({
@@ -2822,10 +3650,42 @@ B.opacity = (doc, seg) => {
   return base * (0.3 + 0.7 * Math.pow(f, 0.45));
 };
 
-/* Envelope polygons for a segment. Splits at a focus so the beam
-   pinches to a waist instead of inverting. */
+/* drawing context: figure scale and Gaussian width exaggeration */
+B.ctx = { scale: 10, gMag: 10 };
+B.setContext = doc => { B.ctx = { scale: doc.style.scale || 10, gMag: doc.style.gaussMag || 10 }; };
+
+/* drawn half-width at distance s along a segment */
+B.hw = (seg, s) => {
+  if (seg.q0) {
+    const c = B.ctx, q = { re: seg.q0.re + s * c.scale, im: seg.q0.im };
+    const w = RNBX.optics.qRadius(q, seg.lambda * 1e-6, seg.M2, seg.nmed);
+    return U.clamp(w * c.gMag / c.scale, WMIN, 60);
+  }
+  return Math.max(WMIN, Math.abs(seg.w0 + seg.dw * s));
+};
+
+/* Envelope polygons for a segment. Geometric beams split at a
+   focus so they pinch to a waist; Gaussian beams are sampled
+   along the hyperbolic profile. */
 B.envelope = (seg, wScale = 1) => {
   const d = V.norm(V.sub(seg.b, seg.a)), p = V.perp(d);
+  if (seg.q0) {
+    const L = seg.len, cuts = [];
+    const N = 18;
+    for (let i = 0; i <= N; i++) cuts.push(L * i / N);
+    const sw = -seg.q0.re / B.ctx.scale;
+    if (sw > 0 && sw < L) cuts.push(sw);
+    cuts.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const s0 = cuts[i], s1 = cuts[i + 1];
+      if (s1 - s0 < 1e-6) continue;
+      const h0 = B.hw(seg, s0) * wScale, h1 = B.hw(seg, s1) * wScale;
+      const A = V.add(seg.a, V.mul(d, s0)), Bp = V.add(seg.a, V.mul(d, s1));
+      out.push({ A, B: Bp, h0, h1, pts: [V.add(A, V.mul(p, h0)), V.add(Bp, V.mul(p, h1)), V.sub(Bp, V.mul(p, h1)), V.sub(A, V.mul(p, h0))] });
+    }
+    return out;
+  }
   const w0 = seg.w0 * wScale, dw = seg.dw * wScale, L = seg.len;
   const pieces = [];
   const sF = Math.abs(dw) > 1e-9 ? -w0 / dw : -1;
@@ -2842,7 +3702,10 @@ B.envelope = (seg, wScale = 1) => {
 };
 const poly = pts => 'M ' + pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ') + ' Z';
 
-B.isCollimated = seg => Math.abs(seg.dw * seg.len) < 0.02;
+B.isCollimated = seg => {
+  if (seg.q0) { const a = B.hw(seg, 0), b = B.hw(seg, seg.len / 2), c = B.hw(seg, seg.len); return Math.max(a, b, c) - Math.min(a, b, c) < 0.015; }
+  return Math.abs(seg.dw * seg.len) < 0.02;
+};
 
 /* glow halo layers drawn beneath the core beam */
 const GLOW = [[5.5, 0.06], [3.2, 0.11], [1.9, 0.2]];
@@ -2856,7 +3719,7 @@ B.groups = segs => {
   const canon = s => (s.a[0] < s.b[0] - 1e-6) || (Math.abs(s.a[0] - s.b[0]) <= 1e-6 && s.a[1] <= s.b[1]);
   const key = s => { const c = canon(s), p = c ? [s.a, s.b] : [s.b, s.a]; return [p[0][0], p[0][1], p[1][0], p[1][1]].map(v => Math.round(v * 50)).join(','); };
   const by = new Map();
-  segs.forEach(s => { if (s.len < 1e-4) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
+  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
   const out = new Map();
   by.forEach(list => {
     const ls = [...new Set(list.map(s => s.lambda))];
@@ -2875,11 +3738,18 @@ B.draw2D = (trace, doc, opt = {}) => {
   const lineMode = st.beamStyle === 'line';
   const dark = RNBX.isDarkPage(doc.page);
   const glow = st.beamGlow || opt.forceGlow;
+  B.setContext(doc);
   const groups = B.groups(segs);
   let halo = '', core = '', deco = '';
   const lineW = Math.max(0.2, st.beamWidth * 0.5);
   for (const seg of segs) {
-    if (seg.len < 1e-4) continue;
+    if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ghost) {
+      // ghost reflections: thin dashed lines, as reviewers expect to see them
+      const w = Math.max(0.12, (lineMode ? lineW : 2 * B.hw(seg, 0)) * 0.45);
+      core += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.max(0.35, B.opacity(doc, seg)))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 4)} ${n(w * 3)}"/>`;
+      continue;
+    }
     const g = groups.get(seg);
     if (g && g.skip) continue;
     const col = B.color(doc, seg), op = B.opacity(doc, seg);
@@ -2897,7 +3767,7 @@ B.draw2D = (trace, doc, opt = {}) => {
         core += `<path d="${poly(band)}" fill="${coreCol}" fill-opacity="${n(op)}" stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="0.02"/>`;
       }
     } else if (lineMode || B.isCollimated(seg)) {
-      const w = (lineMode ? lineW : Math.max(WMIN * 2, 2 * Math.abs(seg.w0))) * k;
+      const w = (lineMode ? lineW : 2 * B.hw(seg, 0)) * k;
       const geo = `x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}"`;
       if (glow) GLOW.forEach(([kk, a]) => { halo += `<line ${geo} stroke="${col}" stroke-opacity="${n(a * op)}" stroke-width="${n(w * kk + 0.6)}" stroke-linecap="round"/>`; });
       core += `<line ${geo} stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
@@ -2910,8 +3780,9 @@ B.draw2D = (trace, doc, opt = {}) => {
         core += `<path d="${d}" fill="${coreCol}" fill-opacity="${n(op * 0.88)}" stroke="none"/>`;
       }
     }
-    if (st.beamArrows && seg.kind === 'beam' && seg.len > 9 && !(g && g.i > 0)) deco += B.arrow(seg, g ? '#555b66' : col, op, lineMode ? lineW : 2 * Math.abs(seg.w0 + seg.dw * seg.len / 2));
+    if (st.beamArrows && seg.kind === 'beam' && seg.len > 9 && !(g && g.i > 0)) deco += B.arrow(seg, g ? '#555b66' : col, op, lineMode ? lineW : 2 * B.hw(seg, seg.len / 2));
     if (st.polarization && seg.kind === 'beam' && seg.len > 7 && !g) deco += B.polMarker(seg, col, doc);
+    if (st.waistLabels && seg.q0 && seg.kind === 'beam' && !(g && g.i > 0)) deco += B.waistLabel(seg, doc);
   }
   let flow = '';
   if (opt.time != null && B.hasMotion(doc, segs, opt.motion)) flow = B.flow2D(trace, doc, opt.time, lineMode ? lineW : null, opt.motion);
@@ -2922,6 +3793,21 @@ B.draw2D = (trace, doc, opt = {}) => {
    show their pulses whenever the animation is actually running */
 B.hasMotion = (doc, segs, motion) => doc.animation.flow || doc.animation.pulses || (motion && segs.some(s => s.pulsed));
 B.isPulsed = (doc, seg, motion) => doc.animation.pulses || (seg.pulsed && (motion || doc.animation.flow));
+
+/* "2w₀ = 12 µm" at a Gaussian focus that lies inside the segment */
+B.waistLabel = (seg, doc) => {
+  const sw = -seg.q0.re / B.ctx.scale;
+  if (!(sw > 0.5 && sw < seg.len - 0.5)) return '';
+  const info = RNBX.optics.qWaistInfo(seg.q0, seg.lambda * 1e-6, seg.M2, seg.nmed);
+  const um = 2 * info.w0 * 1000;
+  const txt = um >= 1000 ? `2w₀ = ${U.fmt(um / 1000, 2)} mm` : `2w₀ = ${U.fmt(um, um < 10 ? 2 : 1)} µm`;
+  const d = V.norm(V.sub(seg.b, seg.a)), p = V.perp(d), at = V.add(seg.a, V.mul(d, sw));
+  const off = B.hw(seg, sw) + 1.6, q = V.sub(at, V.mul(p[1] > 0 ? p : V.mul(p, -1), off));
+  const fs = U.pt2mm(Math.max(5, (doc.style.fontSizePt || 7) - 1));
+  const ink = RNBX.isDarkPage(doc.page) ? '#e8ecf2' : '#333';
+  return `<text x="${n(q[0])}" y="${n(q[1])}" font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="middle">${RNBX.text.markup(txt, fs)}</text>` +
+    `<line x1="${n(at[0])}" y1="${n(at[1])}" x2="${n(q[0])}" y2="${n(q[1] + fs * 0.35)}" stroke="${ink}" stroke-width="0.12" stroke-dasharray="0.4 0.4"/>`;
+};
 
 B.arrow = (seg, col, op, w) => {
   const d = V.norm(V.sub(seg.b, seg.a)), m = V.add(seg.a, V.mul(d, seg.len * 0.5));
@@ -2966,17 +3852,17 @@ B.flow2D = (trace, doc, t, lineW, motion) => {
   const dark = RNBX.isDarkPage(doc.page);
   let s = '';
   for (const seg of trace.segments) {
-    if (seg.len < 0.05) continue;
+    if (seg.len < 0.05 || seg.vertical || seg.ghost) continue;
     const pulsed = B.isPulsed(doc, seg, motion);
     if (!pulsed && !an.flow) continue;
     const col = B.color(doc, seg), d = V.norm(V.sub(seg.b, seg.a));
-    const wMid = lineW || Math.max(0.25, 2 * Math.abs(seg.w0 + seg.dw * seg.len / 2));
+    const wMid = lineW || Math.max(0.25, 2 * B.hw(seg, seg.len / 2));
     if (pulsed) {
       const spacing = 14, plen = Math.max(1.6, wMid * 2.2);
       let u = ((v * t - seg.s0) % spacing + spacing) % spacing;
       for (; u < seg.len; u += spacing) {
         const c = V.add(seg.a, V.mul(d, u));
-        const w = Math.max(0.3, lineW || 2 * Math.abs(seg.w0 + seg.dw * u)) * 1.25;
+        const w = Math.max(0.3, lineW || 2 * B.hw(seg, u)) * 1.25;
         const a = V.sub(c, V.mul(d, Math.min(plen / 2, u))), b = V.add(c, V.mul(d, Math.min(plen / 2, seg.len - u)));
         const g = `x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}"`;
         s += `<line ${g} stroke="${col}" stroke-opacity="0.35" stroke-width="${n(w * 3)}" stroke-linecap="round"/>`;
@@ -3028,14 +3914,19 @@ R.label = (obj, doc, x, y, interactive) => {
   const col = obj.label.color || R.labelColor(doc);
   const y0 = y - (lines.length - 1) * fs * 0.6;
   const body = lines.map((l, i) => `<text x="${n(x)}" y="${n(y0 + i * fs * 1.2)}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(l, fs)}</text>`).join('');
-  return `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
+  let lead = '';
+  if (obj.label.leader && RNBX.labels) {
+    const sz = RNBX.labels.size(obj, doc);
+    lead = RNBX.labels.leader(lib.worldBox(obj), [x - sz.w / 2, y - sz.h / 2, x + sz.w / 2, y + sz.h / 2], RNBX.isDarkPage(doc.page) ? '#c9d1dc' : '#4b5563', n(Math.max(0.12, U.pt2mm(doc.style.lineWidthPt || 0.5) * 0.7)));
+  }
+  return lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
 };
 
 R.object2D = (obj, S, interactive) => {
   const def = lib.get(obj.type);
   if (!def || !def.draw) return '';
   let inner = '';
-  try { inner = def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
+  try { inner = RNBX.isVertical(obj) ? lib.topView(obj, S) : def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
   const op = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
   return `<g ${interactive ? `data-id="${obj.id}"` : ''} transform="${R.transform(obj)}"${op}>${inner}</g>`;
 };
@@ -3081,6 +3972,7 @@ R.build = (srcDoc, opt = {}) => {
   const trace = RNBX.trace(doc);
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
+  S.trace = trace;
   const I = !!opt.interactive;
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
 
@@ -3214,6 +4106,18 @@ function cylX(x0, x1, r0, r1, cy, cz) {
   for (let i = 0; i < SEG; i++) { const j = (i + 1) % SEG; faces.push([A[i], A[j], B[j], B[i]]); }
   return faces;
 }
+/* disc of radius r and thickness t, centred at c, axis along a (any direction) */
+function diskAxis(c, a, r, t, seg = 22) {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1, ax = a.map(v => v / l);
+  const ref = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const cr = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  let u = cr(ax, ref); const ul = Math.hypot(...u); u = u.map(v => v / ul);
+  const v = cr(ax, u);
+  const ring = off => { const out = []; for (let i = 0; i < seg; i++) { const th = i / seg * 2 * Math.PI, co = Math.cos(th) * r, si = Math.sin(th) * r; out.push([0, 1, 2].map(k => c[k] + ax[k] * off + u[k] * co + v[k] * si)); } return out; };
+  const A = ring(-t / 2), B = ring(t / 2), faces = [A.slice().reverse(), B];
+  for (let i = 0; i < seg; i++) { const j = (i + 1) % seg; faces.push([A[i], A[j], B[j], B[i]]); }
+  return faces;
+}
 function vcyl(cx, cy, r, z0, z1, seg = 16) {
   const ring = z => { const a = []; for (let i = 0; i < seg; i++) { const t = i / seg * 2 * Math.PI; a.push([cx + r * Math.cos(t), cy + r * Math.sin(t), z]); } return a; };
   const A = ring(z0), B = ring(z1), faces = [A.slice().reverse(), B];
@@ -3249,14 +4153,20 @@ R3.objectFaces = (obj, doc) => {
   const def = lib.get(obj.type), bh = doc.view3d.beamHeight || 6, s = obj.scale || 1;
   const parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
   const out = [];
-  const zmap = z => Math.max(0, bh + (z - bh) * s);
-  const W = (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
+  const zc = bh + (obj.z || 0);
+  const vert = RNBX.isVertical(obj), dir = obj.axis === 'down' ? -1 : 1;
+  const zmap = z => Math.max(0, zc + (z - bh) * s);
+  // vertical-axis parts: the local optical axis (+x) becomes the world z axis
+  const W = vert
+    ? (p) => { const w = U.toWorld(obj, [p[2] - bh, p[1]]); return [w[0], w[1], zc + p[0] * s * dir]; }
+    : (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
   let r0max = 0;
   for (const part of parts) {
     let faces;
     switch (part.kind) {
       case 'cyl': faces = cylX(part.x[0], part.x[1], part.r[0], part.r[1], part.cy || 0, part.cz == null ? bh : part.cz); r0max = Math.max(r0max, part.r[0], part.r[1]); break;
       case 'vcyl': faces = vcyl(part.cx, part.cy, part.r, part.z[0], part.z[1], 28); break;
+      case 'disk3': faces = diskAxis(part.c, part.nrm, part.r, part.t || 1); r0max = Math.max(r0max, part.r); break;
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }
@@ -3269,11 +4179,14 @@ R3.objectFaces = (obj, doc) => {
       out.push({ pts: f, n: nrm, m: mat(part.mat), part, decal: !!part.decal });
     }
   }
-  // post + base for mounted optics
+  void r0max;
+  // post + base for mounted optics (a side rod for optics lying flat in a tower)
   if (def.mount && !def.noPost && doc.view3d.posts !== false) {
-    const top = Math.max(0, bh - r0max * s - 0.2);
+    let zmin = Infinity, rad = 0;
+    out.forEach(f => f.pts.forEach(q => { zmin = Math.min(zmin, q[2]); rad = Math.max(rad, Math.hypot(q[0] - obj.x, q[1] - obj.y)); }));
     const pr = (def.postR || 0.6) * s;
-    const c = U.toWorld(obj, [0, 0]);
+    const c = vert ? U.toWorld(obj, [0, rad + pr + 0.3]) : U.toWorld(obj, [0, 0]);
+    const top = vert ? zc + 0.5 : Math.max(0, zmin - 0.1);
     const add = (faces, m) => {
       const cen = [c[0], c[1], top / 2];
       faces.forEach(f => {
@@ -3340,6 +4253,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
   const items = [];
   let shadows = '';
   let labels = '';
+  const dark3 = RNBX.isDarkPage(doc.page);
   for (const obj of doc.objects) {
     const def = lib.get(obj.type);
     if (!def || obj.hidden || def.annotation || def.special) continue;
@@ -3359,7 +4273,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const faces = R3.objectFaces(obj, doc);
     if (!faces.length) continue;
     // depth of the object's optical centre
-    const c3 = cam.p(obj.x, obj.y, bh);
+    const c3 = cam.p(obj.x, obj.y, bh + (obj.z || 0));
     let zmax = 0;
     faces.forEach(f => f.pts.forEach(q => { if (q[2] > zmax) zmax = q[2]; }));
     // projected faces
@@ -3385,13 +4299,25 @@ R3.scene = (doc, trace, S, opt = {}) => {
     // label above the part
     if (obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
       const lp = cam.p(obj.x, obj.y, zmax + 2.2);
-      labels += label3d(obj, doc, lp[0] + (obj.label.dx3 || 0), lp[1] + (obj.label.dy3 || 0), I);
+      const lx = lp[0] + (obj.label.dx3 || 0), ly = lp[1] + (obj.label.dy3 || 0);
+      if (obj.label.leader3 && RNBX.labels) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        proj.forEach(q => q.sp.forEach(p2 => { x0 = Math.min(x0, p2[0]); y0 = Math.min(y0, p2[1]); x1 = Math.max(x1, p2[0]); y1 = Math.max(y1, p2[1]); }));
+        const sz = RNBX.labels.size(obj, doc);
+        const rect = [lx - sz.w / 2, ly + sz.fs * 0.32 - sz.h, lx + sz.w / 2, ly + sz.fs * 0.32];
+        labels += RNBX.labels.leader([x0, y0, x1, y1], rect, dark3 ? '#d5dbe4' : '#4b5563', 0.14);
+      }
+      labels += label3d(obj, doc, lx, ly, I);
     }
   }
 
   // beams, chunked for correct ordering against components
   const dark = RNBX.isDarkPage(doc.page);
+  RNBX.beams.setContext(doc);
   const groups = RNBX.beams.groups(trace.segments);
+  const at = (seg, u) => seg.vertical
+    ? [seg.a[0], seg.a[1], bh + seg.za + (seg.zb - seg.za) * u / (seg.len || 1)]
+    : [seg.a[0] + (seg.b[0] - seg.a[0]) * u / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * u / seg.len, bh + (seg.za || 0)];
   for (const seg of trace.segments) {
     if (seg.len < 1e-4) continue;
     const grp = groups.get(seg);
@@ -3405,11 +4331,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const steps = Math.max(1, Math.ceil(seg.len / 3));
     for (let i = 0; i < steps; i++) {
       const s0 = seg.len * i / steps, s1 = seg.len * (i + 1) / steps;
-      const a = [seg.a[0] + (seg.b[0] - seg.a[0]) * s0 / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * s0 / seg.len];
-      const b = [seg.a[0] + (seg.b[0] - seg.a[0]) * s1 / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * s1 / seg.len];
-      let pa = cam.p(a[0], a[1], bh), pb = cam.p(b[0], b[1], bh);
-      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : Math.max(0.1, 2 * Math.abs(seg.w0 + seg.dw * (s0 + s1) / 2))) * sk;
+      const a = at(seg, s0), b = at(seg, s1);
+      let pa = cam.p(a[0], a[1], a[2]), pb = cam.p(b[0], b[1], b[2]);
+      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1);
       const w = Math.max(0.12, wm * k);
+      if (seg.ghost) {
+        items.push({ z: (pa[2] + pb[2]) / 2 + 0.01, svg: `<line x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}" stroke="${col}" stroke-opacity="${n(Math.max(0.35, op))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 3)} ${n(w * 3)}"/>` });
+        continue;
+      }
       if (band) {
         const dx = pb[0] - pa[0], dy = pb[1] - pa[1], l = Math.hypot(dx, dy) || 1, off = band * w * 2;
         const ox = -dy / l * off, oy = dx / l * off;
@@ -3428,14 +4357,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
     const an = doc.animation, v = an.flowSpeed || 25;
     for (const seg of trace.segments) {
       const pulsed = RNBX.beams.isPulsed(doc, seg, opt.motion);
-      if ((!pulsed && !an.flow) || seg.len < 0.05) continue;
+      if ((!pulsed && !an.flow) || seg.len < 0.05 || seg.ghost) continue;
       const col = RNBX.beams.color(doc, seg), spacing = pulsed ? 14 : 7.7, plen = pulsed ? 2 : 2.2;
       let u = ((v * opt.time - seg.s0) % spacing + spacing) % spacing;
       for (; u < seg.len; u += spacing) {
         const a = Math.max(0, u - plen / 2), b = Math.min(seg.len, u + plen / 2);
-        const pa = cam.p(seg.a[0] + (seg.b[0] - seg.a[0]) * a / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * a / seg.len, bh);
-        const pb = cam.p(seg.a[0] + (seg.b[0] - seg.a[0]) * b / seg.len, seg.a[1] + (seg.b[1] - seg.a[1]) * b / seg.len, bh);
-        const w = Math.max(0.25, 2 * Math.abs(seg.w0 + seg.dw * u) * k) * (pulsed ? 1.4 : 0.8);
+        const A = at(seg, a), Bq = at(seg, b);
+        const pa = cam.p(A[0], A[1], A[2]), pb = cam.p(Bq[0], Bq[1], Bq[2]);
+        const w = Math.max(0.25, 2 * RNBX.beams.hw(seg, u) * k) * (pulsed ? 1.4 : 0.8);
         const g = `x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}"`;
         items.push({ z: (pa[2] + pb[2]) / 2 + 0.02, svg: `<line ${g} stroke="${col}" stroke-opacity="0.4" stroke-width="${n(w * 3)}" stroke-linecap="round"/><line ${g} stroke="#ffffff" stroke-opacity="0.92" stroke-width="${n(w)}" stroke-linecap="round"/>` });
       }
@@ -3464,6 +4393,183 @@ function label3d(obj, doc, x, y, interactive) {
   return `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" stroke="${halo}" stroke-opacity="0.6" stroke-width="${n(fs * 0.13)}" stroke-linejoin="round" paint-order="stroke">` +
     lines.map((l, i) => `<text x="${n(x)}" y="${n(y0 + i * fs * 1.2)}" text-anchor="middle">${RNBX.text.markup(l, fs)}</text>`).join('') + '</g>';
 }
+})();
+
+</script>
+<script>
+/* js/render/labels.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — render/labels.js
+   Automatic label placement.
+
+   Every component label gets a set of candidate positions around
+   its component (below, above, sides, corners, and farther out
+   with a leader line). Each candidate is scored by what it would
+   cover: other labels, components, beams and the page edge. Labels
+   are placed greedily, then refined in a few sweeps. Works in the
+   2D views (page coordinates) and in 3D (screen coordinates of the
+   projected scene). Manual positions are simply overwritten when
+   you run it, and undo restores them.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, V = U.v, lib = RNBX.lib;
+const L = RNBX.labels = {};
+
+const overlap = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+/* does segment p→q cross rectangle r? (Liang–Barsky clip) */
+const segHitsRect = (p, q, r) => {
+  let t0 = 0, t1 = 1;
+  const d = [q[0] - p[0], q[1] - p[1]];
+  const chk = (pp, qq) => { if (pp === 0) return qq >= 0; const t = qq / pp; if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; } return true; };
+  return chk(-d[0], p[0] - r[0]) && chk(d[0], r[2] - p[0]) && chk(-d[1], p[1] - r[1]) && chk(d[1], r[3] - p[1]) && t0 <= t1;
+};
+
+L.size = (obj, doc) => {
+  const fs = U.pt2mm(obj.label.size || doc.style.fontSizePt || 7);
+  const lines = RNBX.render.labelText(obj).split('\n');
+  return { w: Math.max(...lines.map(l => RNBX.text.measure(l, fs))) + 0.6, h: lines.length * fs * 1.2, fs, lines: lines.length };
+};
+
+/* candidate centres around box B for a label of size w×h */
+function candidates(B, w, h, gap) {
+  const cx = (B[0] + B[2]) / 2, cy = (B[1] + B[3]) / 2, out = [];
+  const add = (x, y, pref, far) => out.push({ x, y, pref, far });
+  [[1, 0], [2.6, 1]].forEach(([k, far]) => {
+    const g = gap * k + (far ? 3.5 : 0);
+    add(cx, B[3] + g + h / 2, 0, far);                 // below
+    add(cx, B[1] - g - h / 2, 0.4, far);               // above
+    add(B[2] + g + w / 2, cy, 0.7, far);               // right
+    add(B[0] - g - w / 2, cy, 0.7, far);               // left
+    add(B[2] + g + w / 2, B[3] + g + h / 2, 1.6, far);  // corners
+    add(B[0] - g - w / 2, B[3] + g + h / 2, 1.6, far);
+    add(B[2] + g + w / 2, B[1] - g - h / 2, 1.8, far);
+    add(B[0] - g - w / 2, B[1] - g - h / 2, 1.8, far);
+  });
+  return out;
+}
+
+/* core solver: items [{id, box, w, h, current:[x,y]}], obstacles boxes, beam lines, page */
+function solve(items, boxes, lines, page) {
+  const placed = {};
+  const cost = (it, c) => {
+    const r = [c.x - it.w / 2, c.y - it.h / 2, c.x + it.w / 2, c.y + it.h / 2];
+    let k = c.pref * 3 + (c.far ? 14 : 0);
+    // page edge
+    const out = Math.max(0, page[0] - r[0]) + Math.max(0, r[2] - page[2]) + Math.max(0, page[1] - r[1]) + Math.max(0, r[3] - page[3]);
+    k += out * 60;
+    for (const id in placed) if (id !== it.id) k += overlap(r, placed[id]) * 45;
+    for (const b of boxes) if (b.id !== it.id) k += overlap(r, b.box) * 30 + (overlap(r, b.box) > 0 ? 6 : 0);
+    for (const ln of lines) if (segHitsRect(ln[0], ln[1], r)) k += 9;
+    return { k, r };
+  };
+  const pick = it => {
+    let best = null;
+    for (const c of candidates(it.box, it.w, it.h, it.gap)) {
+      const s = cost(it, c);
+      if (!best || s.k < best.k) best = Object.assign({ c }, s);
+    }
+    placed[it.id] = best.r;
+    it.result = best.c;
+  };
+  // crowded items first: they have the fewest good options
+  items.forEach(it => { it.crowd = boxes.filter(b => b.id !== it.id && Math.hypot((b.box[0] + b.box[2]) / 2 - (it.box[0] + it.box[2]) / 2, (b.box[1] + b.box[3]) / 2 - (it.box[1] + it.box[3]) / 2) < 25).length; });
+  items.slice().sort((a, b) => b.crowd - a.crowd).forEach(pick);
+  for (let sweep = 0; sweep < 3; sweep++) items.forEach(it => { delete placed[it.id]; pick(it); });
+  return items;
+}
+
+/* ---------- 2D ---------- */
+L.arrange2D = doc => {
+  const objs = doc.objects.filter(o => !o.hidden && o.label && o.label.show && o.label.text && lib.get(o.type) && !lib.get(o.type).annotation && !lib.get(o.type).connection);
+  const boxes = doc.objects.filter(o => !o.hidden && lib.get(o.type) && !lib.get(o.type).connection && !lib.get(o.type).under)
+    .map(o => ({ id: o.id, box: lib.worldBox(o) }));
+  const tr = RNBX.trace(doc);
+  const lines = tr.segments.filter(s => !s.vertical && s.len > 0.5).map(s => [s.a, s.b]);
+  const items = objs.map(o => { const sz = L.size(o, doc); return { id: o.id, obj: o, box: lib.worldBox(o), w: sz.w, h: sz.h, gap: 1.1 }; });
+  solve(items, boxes, lines, [0.5, 0.5, doc.page.width - 0.5, doc.page.height - 0.5]);
+  items.forEach(it => {
+    it.obj.label.dx = U.round(it.result.x - it.obj.x, 2);
+    it.obj.label.dy = U.round(it.result.y - it.obj.y, 2);
+    it.obj.label.leader = !!it.result.far;
+  });
+  return items.length;
+};
+
+/* place only one object's label, leaving every other label where it is */
+L.placeOne = (doc, obj) => {
+  if (!obj.label || !obj.label.show || !obj.label.text) return;
+  const boxes = doc.objects.filter(o => !o.hidden && lib.get(o.type) && !lib.get(o.type).connection && !lib.get(o.type).under).map(o => ({ id: o.id, box: lib.worldBox(o) }));
+  // existing labels count as obstacles too
+  doc.objects.forEach(o => {
+    if (o === obj || !o.label || !o.label.show || !o.label.text || !lib.get(o.type) || lib.get(o.type).annotation) return;
+    const sz = L.size(o, doc), x = o.x + o.label.dx, y = o.y + o.label.dy;
+    boxes.push({ id: 'lab:' + o.id, box: [x - sz.w / 2, y - sz.h / 2, x + sz.w / 2, y + sz.h / 2] });
+  });
+  const lines = RNBX.trace(doc).segments.filter(s => !s.vertical && s.len > 0.5).map(s => [s.a, s.b]);
+  const sz = L.size(obj, doc);
+  const it = { id: obj.id, box: lib.worldBox(obj), w: sz.w, h: sz.h, gap: 1.1 };
+  solve([it], boxes, lines, [0.5, 0.5, doc.page.width - 0.5, doc.page.height - 0.5]);
+  obj.label.dx = U.round(it.result.x - obj.x, 2);
+  obj.label.dy = U.round(it.result.y - obj.y, 2);
+  obj.label.leader = !!it.result.far;
+};
+
+/* ---------- 3D (screen space of the projected scene) ---------- */
+L.arrange3D = doc => {
+  const cam = RNBX.render3d.camera(doc);
+  const bh = doc.view3d.beamHeight || 6;
+  const info = {};
+  doc.objects.forEach(o => {
+    const def = lib.get(o.type);
+    if (!def || o.hidden || def.annotation || def.connection || def.special) return;
+    const faces = RNBX.render3d.objectFaces(o, doc);
+    if (!faces.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zmax = 0;
+    faces.forEach(f => f.pts.forEach(q => { const s = cam.p(q[0], q[1], q[2]); x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]); x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]); zmax = Math.max(zmax, q[2]); }));
+    info[o.id] = { box: [x0, y0, x1, y1], anchor: cam.p(o.x, o.y, zmax + 2.2) };
+  });
+  const tr = RNBX.trace(doc);
+  const at = (s, u) => s.vertical ? cam.p(s.a[0], s.a[1], bh + s.za + (s.zb - s.za) * u) : cam.p(s.a[0] + (s.b[0] - s.a[0]) * u, s.a[1] + (s.b[1] - s.a[1]) * u, bh + (s.za || 0));
+  const lines = tr.segments.filter(s => s.len > 0.5).map(s => [at(s, 0), at(s, 1)]);
+  const objs = doc.objects.filter(o => info[o.id] && o.label && o.label.show && o.label.text);
+  const boxes = Object.keys(info).map(id => ({ id, box: info[id].box }));
+  const items = objs.map(o => { const sz = L.size(o, doc); return { id: o.id, obj: o, box: info[o.id].box, w: sz.w, h: sz.h, gap: 0.9, sz }; });
+  solve(items, boxes, lines, [0.5, 0.5, doc.page.width - 0.5, doc.page.height - 0.5]);
+  items.forEach(it => {
+    // label3d draws the last line's baseline at the anchor; convert rect centre → anchor
+    const a = info[it.id].anchor, fs = it.sz.fs;
+    const baseY = it.result.y + it.h / 2 - fs * 0.32;
+    it.obj.label.dx3 = U.round(it.result.x - a[0], 2);
+    it.obj.label.dy3 = U.round(baseY - a[1], 2);
+    it.obj.label.leader3 = !!it.result.far;
+  });
+  return items.length;
+};
+
+L.arrange = () => {
+  const doc = RNBX.state.doc;
+  RNBX.history.checkpoint();
+  const n = doc.style.mode === '3d' ? L.arrange3D(doc) : L.arrange2D(doc);
+  RNBX.changed();
+  RNBX.toast(n ? `Arranged ${n} label${n === 1 ? '' : 's'} (Ctrl+Z to undo)` : 'No visible labels to arrange');
+};
+
+/* leader line from a component box to its label rectangle */
+L.leader = (box, rect, color, width) => {
+  const c = [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2], b = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+  const clip = (from, to, r) => {
+    const d = [to[0] - from[0], to[1] - from[1]];
+    let t = 1;
+    [[0, r[0]], [0, r[2]], [1, r[1]], [1, r[3]]].forEach(([i, edge]) => { if (Math.abs(d[i]) > 1e-9) { const tt = (edge - from[i]) / d[i]; if (tt > 0 && tt < t) { const o = from[1 - i] + d[1 - i] * tt; if (o >= r[i === 0 ? 1 : 0] - 1e-6 && o <= r[i === 0 ? 3 : 2] + 1e-6) t = tt; } } });
+    return [from[0] + d[0] * t, from[1] + d[1] * t];
+  };
+  const p1 = clip(b, c, box), p2 = clip(c, b, rect);
+  const pad = V.mul(V.norm(V.sub(p2, p1)), 0.4);
+  const a = V.add(p1, pad), e = V.sub(p2, pad);
+  if (V.dist(a, e) < 0.8) return '';
+  return `<line x1="${U.round(a[0], 3)}" y1="${U.round(a[1], 3)}" x2="${U.round(e[0], 3)}" y2="${U.round(e[1], 3)}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/><circle cx="${U.round(a[0], 3)}" cy="${U.round(a[1], 3)}" r="${U.round(width * 1.6, 3)}" fill="${color}"/>`;
+};
 })();
 
 </script>
@@ -4191,6 +5297,79 @@ T.list.push({
   },
 });
 
+/* ---------- Microscope tower (vertical beam path) ---------- */
+T.list.push({
+  id: 'tower', name: 'Upright Raman microscope (vertical path)', desc: 'Fold mirror sends the beam up to an objective and sample above the table',
+  build() {
+    const d = base('nature-2', 183, 92, 'Upright Raman microscope', { mode: '3d' });
+    Object.assign(d.view3d, { yaw: -32, pitch: 30, zoom: 1.05, beamHeight: 6 });
+    const laser = mk('laser', 22, 58, 0, { lambda: 532, power: 20 }, 'Laser 532 nm', [0, 7]);
+    const bp = mk('filter', 42, 58, 0, { mode: 'bandpass', center: 532, width: 4 }, 'BP', [0, 7]);
+    const dm = mk('dichroic', 78, 58, 45, { edge: 550, mode: 'shortpass' }, 'DM', [8, -3]);
+    const fold = mk('vfold', 120, 58, 180, { dir: 'up' }, 'FM', [-7, 5]);
+    const obj = mk('objective', 120, 58, 0, { fd: 3, mag: '100×' }, 'Objective 100×', [14, -4], { axis: 'up', z: 16 });
+    const smp = mk('sample', 120, 58, 0, { look: 'chip', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 575, emitFrac: 0.6 }, 'Sample', [12, -9], { axis: 'up', z: 16 + 4.5 + 3 + 0.7 });
+    const lp = mk('filter', 78, 70, 90, { mode: 'longpass', edge: 545 }, 'LP', [7, 0]);
+    const spec = mk('spectrometer', 78, 82, 90, { L: 12, H: 9 }, 'Spectrometer', [18, 0]);
+    const note = mk('text', 120, 80, 0, { text: 'objective and sample stacked above the fold mirror\n(z = 16–24 mm, optical axis vertical)', size: 5.5, color: '#555555', italic: true });
+    d.objects.push(laser, bp, dm, fold, obj, smp, lp, spec, note);
+    return d;
+  },
+});
+
+/* ---------- Michelson with live fringes (interference) ---------- */
+T.list.push({
+  id: 'fringes', name: 'Michelson with live fringes (animated)', desc: 'Piezo-driven mirror; the fringe panel follows the computed phase',
+  build() {
+    const d = base('nature-15', 120, 74, 'Michelson interferometer with fringes');
+    const laser = mk('laser', 18, 42, 0, { lambda: 632.8, L: 18, H: 5.5 }, 'He–Ne 632.8 nm', [0, 7]);
+    const bs = mk('bscube', 55, 42, 0, {}, 'BS', [-6.5, 6]);
+    const m1 = mk('mirror', 55, 14, ang(UP, DN), {}, 'M1', [7, 0]);
+    const m2 = mk('mirror', 84, 42, ang(R, L), { piezo: 0 }, 'M2 (piezo)', [0, -8]);
+    const cam = mk('camera', 55, 64, 90, { L: 9, H: 8 }, 'Camera', [-11, 0]);
+    const fr = mk('fringes', 95, 62, 0, { detector: cam.id, size: 16, density: 4 });
+    const t = mk('text', 95, 50.5, 0, { text: 'camera image', size: 6, color: '#555555', italic: true });
+    d.objects.push(laser, bs, m1, m2, cam, fr, t);
+    d.animation.duration = 4;
+    const k = (tt, nm) => ({ t: tt, ease: 'linear', x: m2.x, y: m2.y, rot: m2.rot, scale: 1, opacity: 1, props: Object.assign(U.deepClone(m2.props), { piezo: nm }) });
+    d.animation.tracks[m2.id] = [k(0, 0), k(4, 632.8)];
+    return d;
+  },
+});
+
+/* ---------- Gaussian beam focusing ---------- */
+T.list.push({
+  id: 'gaussian', name: 'Gaussian beam telescope', desc: 'True waists and Rayleigh ranges (Gaussian model), labelled foci',
+  build() {
+    const d = base('nature-15', 120, 46, 'Gaussian beam telescope', { beamModel: 'gaussian', waistLabels: true, gaussMag: 10 });
+    const laser = mk('laser', 14, 22, 0, { lambda: 1064, beamWidth: 1.6, L: 16, M2: 1.1 }, 'Laser 1064 nm, M² = 1.1', [0, 7.5]);
+    const l1 = mk('lens', 34, 22, 0, { f: 200, d: 8 }, 'L1 (f = {f} mm)', [0, 7.5]);
+    const l2 = mk('lens', 64, 22, 0, { f: 100, d: 8 }, 'L2 (f = {f} mm)', [0, 7.5]);
+    const prof = mk('profiler', 104, 22, 0, {}, 'Beam profiler', [0, 7.5]);
+    d.objects.push(laser, l1, l2, prof);
+    return d;
+  },
+});
+
+/* ---------- Ring resonator (integrated photonics) ---------- */
+T.list.push({
+  id: 'ring', name: 'Microring resonator scan (animated)', desc: 'Tunable laser through an add–drop ring; through and drop ports',
+  build() {
+    const d = base('nature-15', 120, 56, 'Microring resonator');
+    const laser = mk('laser', 16, 25, 0, { lambda: 1550, L: 16, power: 1 }, 'Tunable laser\n1550 nm', [0, 8]);
+    const chip = mk('ringchip', 60, 25 + 0.22 * 9, 0, { w: 18, h: 9, drop: true, kappa: 0.08, loss: 0.99, lam0: 1550, fsr: 4, detune: 0 }, 'Si₃N₄ microring', [0, -8.5]);
+    const pd1 = mk('pd', 94, 25, 0, {}, 'PD (through)', [0, 6]);
+    const yDrop = chip.y + (-0.22 * 9 + 2 * Math.min(0.22 * 9, 18 * 0.14) + 0.7);
+    const m = mk('mirror', 38, yDrop, ang(L, DN), {}, 'M', [-6, 0]);
+    const pd2 = mk('pd', 38, 46, 90, {}, 'PD (drop)', [11, 0]);
+    d.objects.push(laser, chip, pd1, m, pd2);
+    d.animation.duration = 6;
+    const k = (tt, det) => ({ t: tt, ease: 'linear', x: chip.x, y: chip.y, rot: 0, scale: 1, opacity: 1, props: Object.assign(U.deepClone(chip.props), { detune: det }) });
+    d.animation.tracks[chip.id] = [k(0, -0.5), k(6, 0.5)];
+    return d;
+  },
+});
+
 /* ---------- Graphical abstract: SHG in 3D ---------- */
 T.list.push({
   id: 'ga-shg', name: 'Graphical abstract · SHG in 3D', desc: 'Dark 3D table, glowing beams, orbiting camera animation',
@@ -4215,6 +5394,79 @@ T.list.push({
     return d;
   },
 });
+})();
+
+</script>
+<script>
+/* js/io/styles.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — io/styles.js
+   One-click figure styles, plus your own "house style": save the
+   current look under a name, export it as a small .json file and
+   share it with your group so every figure matches.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state;
+const St = RNBX.styles = {};
+const KEY = 'rnbx_house_styles';
+
+/* style keys that define a look (page size and content are never touched) */
+St.KEYS = ['mode', 'lineWidthPt', 'outline', 'font', 'fontSizePt', 'labelColor', 'showLabels', 'beamStyle', 'beamWidth', 'beamGlow', 'beamArrows', 'beamFade', 'beamOpacity', 'colorMode', 'polarization', 'fiberColor', 'wireColor', 'beamModel', 'gaussMag', 'waistLabels', 'ghosts'];
+
+St.BUILTIN = [
+  { id: 'lineart', name: 'Classic line art', desc: 'Optics Express / Optics Letters look: flat parts, uniform beams with arrows',
+    style: { mode: 'schematic', beamStyle: 'line', beamArrows: true, beamGlow: false, lineWidthPt: 0.5, fontSizePt: 7, font: 'Arial, Helvetica, sans-serif', colorMode: 'physical', beamWidth: 0.6 } },
+  { id: 'nature', name: 'High-impact journal', desc: 'Shaded parts, true beam widths, 7 pt Arial: the Nature Photonics look',
+    style: { mode: 'shaded', beamStyle: 'envelope', beamArrows: false, beamGlow: false, lineWidthPt: 0.5, fontSizePt: 7, font: 'Arial, Helvetica, sans-serif', colorMode: 'physical', beamWidth: 0.7, beamFade: true } },
+  { id: 'render3d', name: '3D rendered', desc: 'Optical table, posts and glowing beams for covers and abstracts',
+    style: { mode: '3d', beamGlow: true, beamStyle: 'envelope', fontSizePt: 7, lineWidthPt: 0.5 } },
+  { id: 'mono', name: 'Monochrome print', desc: 'Black beams with arrows for black-and-white printing',
+    style: { mode: 'schematic', colorMode: 'mono', beamStyle: 'line', beamArrows: true, beamGlow: false, lineWidthPt: 0.5, fontSizePt: 7, beamWidth: 0.45 } },
+  { id: 'safe', name: 'Colour-blind safe', desc: 'Okabe–Ito beam colours with wavelength-ordered hues',
+    style: { colorMode: 'safe' } },
+  { id: 'talk', name: 'Presentation', desc: 'Large text, heavier lines and glowing beams that read from the back of a room',
+    style: { mode: 'shaded', fontSizePt: 14, lineWidthPt: 1, beamWidth: 1.4, beamGlow: true, beamArrows: false } },
+  { id: 'dark', name: 'Dark graphical abstract', desc: 'Deep-navy page, 3D table and glow', page: { background: 'dark' },
+    style: { mode: '3d', beamGlow: true, fontSizePt: 8 } },
+];
+
+St.house = () => U.store.get(KEY, []);
+St.all = () => St.BUILTIN.concat(St.house().map(h => Object.assign({ house: true }, h)));
+
+St.apply = id => {
+  const p = St.all().find(x => x.id === id);
+  if (!p) return;
+  RNBX.history.checkpoint();
+  Object.assign(S.doc.style, p.style);
+  if (p.page) Object.assign(S.doc.page, p.page);
+  RNBX.emit('styleMode', S.doc.style.mode);
+  RNBX.changed();
+  RNBX.menus && RNBX.menus.syncTools();
+  RNBX.inspector.build();
+  RNBX.toast('Style: ' + p.name);
+};
+St.current = () => { const o = {}; St.KEYS.forEach(k => { if (S.doc.style[k] !== undefined) o[k] = S.doc.style[k]; }); return o; };
+St.saveHouse = name => {
+  const list = St.house();
+  list.push({ id: 'h' + U.uid(), name, desc: 'Your saved style', style: St.current(), page: { background: S.doc.page.background, bg: S.doc.page.bg, bg2: S.doc.page.bg2 } });
+  U.store.set(KEY, list);
+};
+St.removeHouse = id => U.store.set(KEY, St.house().filter(h => h.id !== id));
+St.exportHouse = () => {
+  const data = { app: 'RNBeamX', kind: 'house-style', styles: St.house().length ? St.house() : [{ id: 'h' + U.uid(), name: 'My group style', style: St.current() }] };
+  U.download(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }), 'rnbeamx-house-style.json');
+};
+St.importHouse = file => file.text().then(t => {
+  const d = JSON.parse(t);
+  const list = (d.styles || []).filter(x => x && x.style);
+  if (!list.length) throw new Error('No styles in this file');
+  const mine = St.house();
+  list.forEach(x => mine.push(Object.assign({}, x, { id: 'h' + U.uid() })));
+  U.store.set(KEY, mine);
+  RNBX.toast(`Imported ${list.length} style${list.length > 1 ? 's' : ''}`);
+  RNBX.inspector.build();
+}).catch(e => RNBX.toast(e.message || 'Could not read the style file', 'error'));
 })();
 
 </script>
@@ -4380,6 +5632,10 @@ const NS = 'http://www.w3.org/2000/svg';
 
 let svg, figure, overlay, vb = { x: -10, y: -10, w: 200, h: 120 };
 let drag = null, spaceDown = false, lastBuild = null, hoverId = null;
+/* touch state: active fingers, pinch gesture, long-press timer */
+const touches = new Map();
+let pinch = null, longPress = null;
+C.pointerType = 'mouse';
 
 const pxPerMm = () => svg.clientWidth / vb.w;
 const MM_PX = 96 / 25.4;
@@ -4453,7 +5709,7 @@ const isPageSpace = obj => { const d = lib.get(obj.type); return d && (d.annotat
 function localBox(obj) {
   const def = lib.get(obj.type);
   if (!def || !def.bbox) return [-2, -2, 2, 2];
-  try { return def.bbox(obj.props, obj, S.doc); } catch (e) { return [-2, -2, 2, 2]; }
+  try { return lib.objBox(obj, S.doc); } catch (e) { return [-2, -2, 2, 2]; }
 }
 function boxPath(obj) {
   const b = localBox(obj);
@@ -4488,7 +5744,7 @@ function drawOverlay() {
     const o = sel[0], def = lib.get(o.type);
     if (!def.connection && !(space3d && !isPageSpace(o)) && !o.locked) {
       const b = localBox(o), s = o.scale || 1;
-      const hr = 5 * k;
+      const hr = (C.pointerType === 'touch' ? 11 : 5) * k;
       const canRotate = !(def.handles) && o.type !== 'legend';
       if (canRotate) {
         const top = U.toWorld(o, [(b[0] + b[2]) / 2, b[1] - 0.6 / s]);
@@ -4544,9 +5800,46 @@ const traceWithout = ids => {
 const snapGrid = v => { const g = S.ui.gridSize || 2.5; return Math.round(v / g) * g; };
 
 /* ---------- pointer handling ---------- */
+function startPinch() {
+  const pts = [...touches.values()];
+  const r = svg.getBoundingClientRect();
+  const mid = [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
+  pinch = { d0: Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1, vb0: Object.assign({}, vb), w0: [vb.x + (mid[0] - r.left) / r.width * vb.w, vb.y + (mid[1] - r.top) / r.height * vb.h] };
+}
+function movePinch() {
+  const pts = [...touches.values()];
+  if (pts.length < 2) return;
+  const r = svg.getBoundingClientRect();
+  const d = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1;
+  const mid = [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
+  vb.w = U.clamp(pinch.vb0.w * pinch.d0 / d, 4, 4000);
+  vb.h = vb.w * (r.height / Math.max(1, r.width));
+  vb.x = pinch.w0[0] - (mid[0] - r.left) / r.width * vb.w;
+  vb.y = pinch.w0[1] - (mid[1] - r.top) / r.height * vb.h;
+  setVB();
+}
+const cancelLongPress = () => { if (longPress) { clearTimeout(longPress.t); longPress = null; } };
+
 function onDown(e) {
   svg.focus({ preventScroll: true });
   D.closeMenu();
+  C.pointerType = e.pointerType || 'mouse';
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) {
+      // second finger: abandon the one-finger action and start pinch / pan
+      cancelLongPress();
+      if (drag && drag.moved) { const ids = drag.ids || (drag.id ? [drag.id] : []); RNBX.anim.touch(ids); ids.forEach(id => RNBX.anim.editing.delete(id)); S.dragging = false; }
+      drag = null;
+      startPinch();
+      drawOverlay();
+      return;
+    }
+    if (touches.size > 2) return;
+    // long press opens the context menu
+    const tgt = e.target, cx = e.clientX, cy = e.clientY;
+    longPress = { x: cx, y: cy, t: setTimeout(() => { longPress = null; if (drag && drag.moved) return; drag = null; RNBX.emit('contextmenu', { target: tgt, clientX: cx, clientY: cy, preventDefault() {} }); }, 550) };
+  }
   const p = C.toPage(e.clientX, e.clientY);
   if (e.button === 1 || e.button === 2 && false || spaceDown) { startPan(e); return; }
   if (e.button !== 0) return;
@@ -4579,6 +5872,8 @@ function onDown(e) {
     return;
   }
   if (!e.shiftKey) RNBX.select([]);
+  // one finger on empty canvas pans (a marquee is awkward on touch screens)
+  if (e.pointerType === 'touch') { startPan(e); return; }
   drag = { kind: 'marquee', p0: p, p1: p, additive: e.shiftKey };
   capture(e);
 }
@@ -4619,6 +5914,11 @@ function firstMove() {
 }
 
 function onMove(e) {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (longPress && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 8) cancelLongPress();
+    if (pinch && touches.size >= 2) { movePinch(); return; }
+  }
   const p = C.toPage(e.clientX, e.clientY);
   D.$('#stCursor').textContent = `x ${U.fmt(p[0], 1)} · y ${U.fmt(p[1], 1)} mm`;
   if (!drag) {
@@ -4673,7 +5973,7 @@ function moveSelection(p, e, k) {
     if (def.snap && S.ui.snap) {
       if (!drag.snapSegs) drag.snapSegs = traceWithout([single.id]);
       const hit = C.beamSnap([single.x, single.y], drag.snapSegs, Math.max(1.2, 9 * k));
-      if (hit) { single.x = hit.q[0]; single.y = hit.q[1]; drag.snapPt = hit.q; snapped = true; drag.snapAng = hit.ang; }
+      if (hit) { single.x = hit.q[0]; single.y = hit.q[1]; single.z = hit.seg.za || 0; drag.snapPt = hit.q; snapped = true; drag.snapAng = hit.ang; }
     }
     // 2. alignment guides against other components (2D)
     if (!snapped && !space3d) {
@@ -4734,6 +6034,11 @@ function moveHandle(p, e, k) {
 }
 
 function onUp(e) {
+  if (e.pointerType === 'touch') {
+    touches.delete(e.pointerId);
+    cancelLongPress();
+    if (touches.size < 2) pinch = null;
+  }
   if (!drag) return;
   const d = drag;
   drag = null;
@@ -4812,9 +6117,11 @@ C.placeNew = (entry, p, fromDrop) => {
       const seg = open.reduce((a, b) => (b.s0 > a.s0 ? b : a));
       const d = V.norm(V.sub(seg.b, seg.a)), dist = Math.min(22, seg.len * 0.5);
       const q = V.add(seg.a, V.mul(d, dist));
-      o.x = q[0]; o.y = q[1];
+      o.x = q[0]; o.y = q[1]; o.z = seg.za || 0;
       const r = C.orientFor(def, V.angle(d)); if (r != null) o.rot = r;
+      C.avoidOverlap(o);
       RNBX.addObject(o);
+      if (!is3d() && o.label && RNBX.labels) { RNBX.labels.placeOne(S.doc, o); RNBX.changed(); }
       return o;
     }
   }
@@ -4826,11 +6133,35 @@ C.placeNew = (entry, p, fromDrop) => {
   if (def.snap) {
     const k = 1 / pxPerMm();
     const hit = C.beamSnap([o.x, o.y], C.trace ? C.trace.segments : [], fromDrop ? Math.max(2, 14 * k) : 6);
-    if (hit) { o.x = hit.q[0]; o.y = hit.q[1]; const r = C.orientFor(def, hit.ang); if (r != null) o.rot = r; }
+    if (hit) { o.x = hit.q[0]; o.y = hit.q[1]; o.z = hit.seg.za || 0; const r = C.orientFor(def, hit.ang); if (r != null) o.rot = r; }
     else if (S.ui.snap && S.ui.grid && !is3d()) { o.x = snapGrid(o.x); o.y = snapGrid(o.y); }
   } else if (S.ui.snap && S.ui.grid && !def.annotation && !is3d()) { o.x = snapGrid(o.x); o.y = snapGrid(o.y); }
+  C.avoidOverlap(o);
   RNBX.addObject(o);
+  if (!is3d() && o.label && RNBX.labels) { RNBX.labels.placeOne(S.doc, o); RNBX.changed(); }
   return o;
+};
+
+/* nudge a newly placed object along its beam (or sideways) until it
+   no longer overlaps an existing part */
+C.avoidOverlap = o => {
+  const def = lib.get(o.type);
+  if (def.annotation || def.connection) return;
+  const boxes = S.doc.objects.filter(q => !lib.get(q.type).annotation && !lib.get(q.type).connection && !lib.get(q.type).under).map(q => lib.worldBox(q));
+  const m = 1.5;   // clearance between parts
+  const hits = () => { const b = lib.worldBox(o); return boxes.some(q => b[0] - m < q[2] && b[2] + m > q[0] && b[1] - m < q[3] && b[3] + m > q[1]); };
+  if (!hits()) return;
+  const segs = C.trace ? C.trace.segments.filter(s => s.kind === 'beam' && !s.vertical) : [];
+  const on = def.snap ? C.beamSnap([o.x, o.y], segs, 0.3) : null;
+  const dir = on ? V.norm(V.sub(on.seg.b, on.seg.a)) : [1, 0];
+  const x0 = o.x, y0 = o.y;
+  for (let k = 1; k <= 24; k++) {
+    for (const sg of [1, -1]) {
+      o.x = x0 + dir[0] * 3 * k * sg; o.y = y0 + dir[1] * 3 * k * sg;
+      if (!hits()) return;
+    }
+  }
+  o.x = x0; o.y = y0;
 };
 
 /* orient the selection to the beam it sits on */
@@ -4918,9 +6249,11 @@ Pal.build = () => {
   const root = D.$('#palette'), q = D.$('#libSearch').value.trim().toLowerCase();
   root.innerHTML = '';
   const mode = S.doc.style.mode === 'schematic' ? 'schematic' : 'shaded';
-  const entries = lib.entries().filter(e => !q || (e.name + ' ' + e.keywords + ' ' + (e.def.abbr || '') + ' ' + e.category).toLowerCase().includes(q));
+  // the user's own saved components come first
+  const mine = U.store.get('rnbx_mylib', []).map(m => ({ type: 'custom', name: m.name, category: 'My components', props: m.props, def: lib.get('custom'), keywords: 'my custom', mineId: m.id }));
+  const entries = mine.concat(lib.entries()).filter(e => !q || (e.name + ' ' + e.keywords + ' ' + (e.def.abbr || '') + ' ' + e.category).toLowerCase().includes(q));
   if (!entries.length) { root.append(D.el('div', { class: 'lib-empty', text: 'No components match “' + q + '”.' })); return; }
-  lib.CATEGORIES.forEach(cat => {
+  ['My components'].concat(lib.CATEGORIES).forEach(cat => {
     const items = entries.filter(e => e.category === cat);
     if (!items.length) return;
     const isCol = !q && collapsed[cat];
@@ -4935,12 +6268,17 @@ Pal.build = () => {
         html: D.thumb(e.type, e.props, mode) + `<span>${U.esc(e.name)}</span>`,
       });
       const payload = JSON.stringify({ type: e.type, props: e.props, abbr: e.abbr, name: e.name });
+      if (e.mineId) tile.title = e.name + ' · right-click to remove';
       tile.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/rnbx', payload); ev.dataTransfer.effectAllowed = 'copy'; });
       const add = () => {
         if (e.def.tool) { RNBX.canvas.setTool(S.ui.tool === e.def.tool ? 'select' : e.def.tool); Pal.build(); return; }
         RNBX.canvas.placeNew(JSON.parse(payload), RNBX.canvas.visibleCenter(), false);
       };
       tile.addEventListener('click', add);
+      if (e.mineId) tile.addEventListener('contextmenu', ev => {
+        ev.preventDefault();
+        RNBX.dom.menu([{ label: 'Remove from My components', icon: 'trash', action: () => { U.store.set('rnbx_mylib', U.store.get('rnbx_mylib', []).filter(m => m.id !== e.mineId)); Pal.build(); } }], ev.clientX, ev.clientY);
+      });
       tile.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); add(); } });
       grid.append(tile);
     });
@@ -5030,13 +6368,68 @@ function control(param, get, set, ctx = {}) {
       sync = () => { input.value = val() == null ? '' : val(); };
       break;
     }
+    case 'series': {
+      // data editor for plot panels
+      const o = ctx.obj;
+      wrap.append(lab);
+      if (!o) return wrap;
+      const set = d => { RNBX.history.checkpoint(); RNBX.plotData.apply(o, d); RNBX.changed(); Ins.build(); };
+      const fail = e => RNBX.toast(e.message || String(e), 'error');
+      const row = el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
+        el('button', { class: 'btn small', type: 'button', text: 'Import CSV / TXT…', onclick: () => RNBX.project.pickFile('.csv,.txt,.dat,.tsv,text/plain', f => f.text().then(t => set(RNBX.plotData.parse(t))).catch(fail)) }),
+        el('button', { class: 'btn small', type: 'button', text: 'Paste…', onclick: () => {
+          const ta = el('textarea', { rows: 10, placeholder: 'x, y1, y2 …  (one row per line; a header row is optional)', style: { width: '100%', fontFamily: 'var(--mono)' } });
+          const m = D.modal({ title: 'Paste data', sub: 'Columns: x then one or more y', body: ta, foot: [el('button', { class: 'btn primary', type: 'button', text: 'Use data', onclick: () => { try { set(RNBX.plotData.parse(ta.value)); m.close(); } catch (e) { fail(e); } } })] });
+          setTimeout(() => ta.focus(), 30);
+        } }),
+        el('button', { class: 'btn small', type: 'button', text: 'From RNSpectraX', title: 'Uses the plot last sent with “→ RNBeamX” in RNSpectraX', onclick: () => { const d = RNBX.plotData.readHandoff(); if (d) set(d); else RNBX.toast('Nothing received yet: in RNSpectraX open Export ▾ and press “→ RNBeamX”, or import its Plotted CSV.'); } }));
+      wrap.append(row);
+      (o.props.series || []).forEach((sr, i) => {
+        const c = el('input', { type: 'color', value: (sr.color || '#1f77b4').slice(0, 7), oninput: () => { RNBX.history.checkpoint('sc' + o.id + i); sr.color = c.value; RNBX.changed(); } });
+        const nm = el('input', { type: 'text', value: sr.name, oninput: () => { RNBX.history.checkpoint('sn' + o.id + i); sr.name = nm.value; RNBX.changed(); } });
+        const dash = el('select', { onchange: () => { RNBX.history.checkpoint(); sr.dash = dash.value; RNBX.changed(); } }, [['solid', '—'], ['dash', '– –'], ['dot', '···']].map(q => el('option', { value: q[0], text: q[1] })));
+        dash.value = sr.dash || 'solid';
+        wrap.append(el('div', { class: 'color-row', style: { gridTemplateColumns: '34px 1fr 56px auto', marginBottom: '4px' } }, c, nm, dash,
+          D.iconBtn('trash', 'Remove series', () => { RNBX.history.checkpoint(); o.props.series.splice(i, 1); RNBX.changed(); Ins.build(); })));
+      });
+      if ((o.props.series || []).length) wrap.append(el('div', { class: 'hint', text: o.props.series.map(q => `${q.name}: ${q.x.length} points`).join(' · ') }));
+      return wrap;
+    }
     case 'image': {
       const btn = el('button', { class: 'btn small', type: 'button', text: 'Choose image…' });
-      btn.onclick = () => RNBX.project.pickFile('image/*', f => RNBX.project.readImage(f).then(({ href, aspect }) => {
-        ctx.obj && RNBX.history.checkpoint();
-        if (ctx.obj) { ctx.obj.props.href = href; ctx.obj.props.aspect = aspect; ctx.obj.props.h = U.round(ctx.obj.props.w / aspect, 2); RNBX.changed(); Ins.build(); }
-      }));
+      btn.onclick = () => RNBX.project.pickFile('image/*,.svg', f => {
+        const o = ctx.obj;
+        if (!o) return;
+        // SVG drawings for custom components are inlined so they stay vector everywhere
+        if (o.type === 'custom' && (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name))) {
+          f.text().then(txt => {
+            try {
+              const { svg, vb } = lib.importSvg(txt, 'c' + o.id + '-');
+              RNBX.history.checkpoint();
+              Object.assign(o.props, { svg, vb, href: '', h: U.round(o.props.w * vb[3] / vb[2], 2), title: f.name.replace(/\.svg$/i, '') });
+              RNBX.changed(); Ins.build();
+            } catch (e) { RNBX.toast(e.message, 'error'); }
+          });
+          return;
+        }
+        RNBX.project.readImage(f).then(({ href, aspect }) => {
+          RNBX.history.checkpoint();
+          Object.assign(o.props, { href, svg: '', vb: null, aspect, h: U.round(o.props.w / aspect, 2) });
+          RNBX.changed(); Ins.build();
+        });
+      });
       wrap.append(lab, btn);
+      if (ctx.obj && ctx.obj.type === 'custom') {
+        wrap.append(el('button', { class: 'btn small', type: 'button', style: { marginTop: '6px' }, text: 'Save to My components', onclick: () => {
+          const lib2 = U.store.get('rnbx_mylib', []);
+          const name = prompt('Name for this component:', ctx.obj.props.title || 'Custom component');
+          if (!name) return;
+          lib2.push({ id: U.uid(), name, props: Object.assign(U.deepClone(ctx.obj.props), { title: name }) });
+          U.store.set('rnbx_mylib', lib2);
+          RNBX.palette.build();
+          RNBX.toast('Saved to My components (in this browser)');
+        } }));
+      }
       return wrap;
     }
     default: { // number / wavelength
@@ -5097,7 +6490,16 @@ function readout(obj) {
     if (!fl) return el('div', { class: 'readout', text: 'No light reaches the input coupler yet.' });
     return el('div', { class: 'readout', html: 'Carries ' + Object.keys(fl).map(l => `<b>${U.fmt(Number(l), 1)} nm</b> (${fmtP(fl[l])})`).join(', ') });
   }
-  if (h) return el('div', { class: 'readout', html: `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ') });
+  if (h) {
+    let html = `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ');
+    if (h.interf) {
+      const I = h.interf, dphi = U.deg(I.dphi);
+      html += `<br><b>Interference</b> (${U.fmt(I.lambda, 1)} nm): coherent ${fmtP(h.Pcoh)} · Δφ = ${U.fmt(dphi, 1)}° · visibility ${U.fmt(I.vis, 2)}`;
+      if (I.overlap < 0.99) html += ` · polarisation overlap ${U.fmt(I.overlap, 2)}`;
+    }
+    if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
+    return el('div', { class: 'readout', html });
+  }
   if (def.category === 'Detectors') return el('div', { class: 'readout', text: 'No light reaches this detector.' });
   return null;
 }
@@ -5145,6 +6547,9 @@ function objectPanel(obj) {
     el('div', { class: 'grid2' },
       control({ key: 'rot', label: 'Rotation', type: 'number', unit: '°', step: 1 }, k => obj[k] || 0, tset),
       control({ key: 'scale', label: 'Scale', type: 'number', unit: '×', min: 0.05, max: 20, step: 0.05 }, k => obj[k] || 1, tset)),
+    ...(def.annotation ? [] : [el('div', { class: 'grid2' },
+      control({ key: 'z', label: 'Height z', type: 'number', unit: 'mm', step: 0.5, hint: 'above the beam plane' }, k => obj[k] || 0, tset),
+      lib.canVertical(obj.type) ? control({ key: 'axis', label: 'Optical axis', type: 'select', options: [['h', 'In table plane'], ['up', 'Vertical, facing up'], ['down', 'Vertical, facing down']] }, k => obj[k] || 'h', (k, v) => tset(k, v, true)) : el('span'))]),
     control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset)));
   }
   const keys = (S.doc.animation.tracks[obj.id] || []).length;
@@ -5220,6 +6625,21 @@ function docPanel() {
       control({ key: 'bg', label: 'Colour 1', type: 'color' }, k => doc.page[k], dset('page')),
       doc.page.background !== 'custom' ? control({ key: 'bg2', label: 'Colour 2', type: 'color' }, k => doc.page[k], dset('page')) : el('span'))] : [])));
 
+  // one-click looks and house styles
+  const styleSel = el('select', {}, el('option', { value: '', text: 'Apply a style…' }),
+    el('optgroup', { label: 'Built-in' }, RNBX.styles.BUILTIN.map(x => el('option', { value: x.id, text: x.name, title: x.desc }))),
+    RNBX.styles.house().length ? el('optgroup', { label: 'House styles' }, RNBX.styles.house().map(x => el('option', { value: x.id, text: x.name }))) : null);
+  styleSel.onchange = () => { if (styleSel.value) RNBX.styles.apply(styleSel.value); };
+  root.push(sec('Style presets', el('div', { class: 'field' }, styleSel),
+    el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '12px' } },
+      el('button', { class: 'btn small', type: 'button', text: 'Save as house style…', onclick: () => { const nm = prompt('Name for this style (e.g. your group name):', 'Group style'); if (nm) { RNBX.styles.saveHouse(nm); RNBX.toast('Saved house style “' + nm + '”'); Ins.build(); } } }),
+      el('button', { class: 'btn small', type: 'button', text: 'Export', title: 'Download your house styles to share with your group', onclick: () => RNBX.styles.exportHouse() }),
+      el('button', { class: 'btn small', type: 'button', text: 'Import', onclick: () => RNBX.project.pickFile('.json,application/json', f => RNBX.styles.importHouse(f)) }),
+      RNBX.styles.house().length ? el('button', { class: 'btn small ghost danger', type: 'button', text: 'Remove…', onclick: ev => {
+        const items = RNBX.styles.house().map(h => ({ label: h.name, icon: 'trash', action: () => { RNBX.styles.removeHouse(h.id); Ins.build(); } }));
+        const r = ev.currentTarget.getBoundingClientRect(); D.menu(items, r.left, r.bottom + 4);
+      } }) : null)));
+
   // style
   const st = doc.style;
   root.push(sec('Figure style',
@@ -5231,13 +6651,19 @@ function docPanel() {
     el('div', { class: 'grid2' },
       control({ key: 'labelColor', label: 'Label colour', type: 'color' }, k => st[k], dset('style')),
       control({ key: 'outline', label: 'Outline colour', type: 'color' }, k => st[k], dset('style'))),
-    control({ key: 'showLabels', label: 'Show component labels', type: 'bool' }, k => st[k], dset('style'))));
+    control({ key: 'showLabels', label: 'Show component labels', type: 'bool' }, k => st[k], dset('style')),
+    el('button', { class: 'btn small', type: 'button', style: { marginBottom: '12px' }, html: D.icon('label', 14) + ' Auto-arrange labels', title: 'Shift+L', onclick: () => RNBX.labels.arrange() })));
 
   root.push(sec('Beams',
     control({ key: 'beamStyle', label: 'Drawing', type: 'select', options: [['envelope', 'True width (focus, divergence)'], ['line', 'Uniform line (classic)']] }, k => st[k], dset('style')),
+    control({ key: 'beamModel', label: 'Beam model', type: 'select', options: [['geometric', 'Geometric cone'], ['gaussian', 'Gaussian beam (waist, Rayleigh range, M²)']] }, k => st[k] || 'geometric', dset('style', true)),
+    ...(st.beamModel === 'gaussian' ? [el('div', { class: 'grid2' },
+      control({ key: 'gaussMag', label: 'Width exaggeration', type: 'number', unit: '×', min: 0.1, max: 1000, step: 1, hint: 'drawn ÷ physical, after scale' }, k => st[k] || 10, dset('style')),
+      control({ key: 'waistLabels', label: 'Label foci (2w₀)', type: 'bool' }, k => st[k], dset('style')))] : []),
+    control({ key: 'ghosts', label: 'Surface reflections (ghosts)', type: 'select', options: [['off', 'Off'], ['uncoated', 'Uncoated glass (Fresnel)'], ['ar', 'AR-coated (0.25 % per surface)']] }, k => st[k] || 'off', dset('style')),
     control({ key: 'beamWidth', label: 'Default beam diameter', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05, hint: 'new sources' }, k => st[k], dset('style')),
     control({ key: 'beamOpacity', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01 }, k => st[k], dset('style')),
-    control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)']] }, k => st[k], dset('style')),
+    control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)'], ['mono', 'Monochrome (black)']] }, k => st[k], dset('style')),
     el('div', { class: 'grid2' },
       control({ key: 'beamGlow', label: 'Glow', type: 'bool' }, k => st[k], dset('style')),
       control({ key: 'beamArrows', label: 'Direction arrows', type: 'bool' }, k => st[k], dset('style'))),
@@ -5353,6 +6779,38 @@ A.distribute = axis => {
   RNBX.anim.touch(objs.map(o => o.id));
   RNBX.changed();
 };
+/* Add a data plot as a second panel (a: setup, b: data). Wide pages
+   get it on the right; narrow ones grow downwards. */
+A.addDataPanel = data => {
+  const doc = S.doc, W = doc.page.width, H = doc.page.height;
+  RNBX.history.checkpoint();
+  let x, y, w, h;
+  // where does the existing content end?
+  const boxes = doc.objects.filter(o => lib.get(o.type) && !lib.get(o.type).connection && o.type !== 'panel').map(o => lib.worldBox(o));
+  const right = boxes.length ? Math.max(...boxes.map(b => b[2])) : 0;
+  const free = W - right - 4;
+  if (free >= Math.max(45, W * 0.3)) {
+    // room beside the setup
+    w = Math.round(Math.min(free - 2, W * 0.45)); h = Math.round(Math.min(H * 0.8, w * 0.72)); x = W - w / 2 - 3; y = H / 2;
+  } else {
+    // no room: the page grows downwards and the plot becomes panel b below
+    w = Math.round(Math.min(W - 10, Math.max(80, W * 0.55))); h = Math.round(w * 0.6);
+    doc.page.height = H + h + 8; doc.page.preset = 'custom'; x = W / 2; y = H + 4 + h / 2;
+  }
+  const plot = RNBX.createObject('plot', x, y);
+  plot.props.w = w; plot.props.h = h;
+  if (data) RNBX.plotData.apply(plot, data);
+  doc.objects.push(plot);
+  const panels = doc.objects.filter(o => o.type === 'panel');
+  if (!panels.length) { const a = RNBX.createObject('panel', 0, 0); a.props.text = 'a'; a.x = 3; a.y = 5; doc.objects.push(a); }
+  const b = RNBX.createObject('panel', 0, 0);
+  b.props.text = 'abcdefghij'[Math.min(9, doc.objects.filter(o => o.type === 'panel').length)];
+  b.x = x - w / 2; b.y = y - h / 2 + 1; doc.objects.push(b);
+  RNBX.select([plot.id]);
+  RNBX.canvas.fit();
+  return plot;
+};
+
 /* change page size, keeping the content centred */
 A.resizePage = (w, h) => {
   const doc = S.doc, dx = (w - doc.page.width) / 2, dy = (h - doc.page.height) / 2;
@@ -5781,7 +7239,7 @@ const KEYS = [
   ['Orient to beam', 'O'], ['Free move (no snapping)', 'hold Alt'], ['Constrain to axis', 'hold Shift'], ['Duplicate', 'Ctrl+D'],
   ['Copy / paste', 'Ctrl+C / Ctrl+V'], ['Delete', 'Del / Backspace'], ['Select all', 'Ctrl+A'], ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
-  ['Grid', 'G'], ['Labels', 'L'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
+  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
   ['Play / pause', 'K'], ['Keyframe selection', 'I'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
   ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];
@@ -5790,7 +7248,7 @@ Dl.help = () => {
   D.modal({
     title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.', wide: true,
     body: [
-      el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Click any detector to see the power that reaches it.' }),
+      el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Fold mirrors and periscopes take beams off the table; Gaussian beams, Fresnel ghosts, cavities, ring resonators and interference (with piezo-driven fringes) are modelled too. Click any detector to see the power, phase and beam size that reach it.' }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),
       grid,
     ],
@@ -5839,6 +7297,8 @@ M.items = {
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
+    { label: 'Add data panel (plot)…', icon: 'plus', action: () => RNBX.arrange.addDataPanel() },
+    { label: 'Add data panel from RNSpectraX', action: () => { const d = RNBX.plotData.readHandoff(); if (d) { RNBX.arrange.addDataPanel(d); RNBX.toast('Spectrum from RNSpectraX added as panel'); } else RNBX.toast('Nothing received yet: in RNSpectraX open Export ▾ and press “→ RNBeamX”.'); } },
     { label: 'Export…', icon: 'download', key: mod + 'E', action: () => RNBX.dialogs.exporter() },
     '-',
     { label: 'Journal check', action: () => RNBX.dialogs.check() },
@@ -5867,6 +7327,7 @@ M.items = {
     { label: 'Rotate −15°', key: '⇧R', disabled: !sel(), action: () => RNBX.inspector.rotateBy(-15) },
     { label: 'Flip', icon: 'flip', key: 'F', disabled: !sel(), action: () => RNBX.inspector.flip() },
     { label: 'Orient to beam', icon: 'wand', key: 'O', disabled: !sel(), action: () => RNBX.canvas.orientToBeam() },
+    { label: 'Auto-arrange labels', icon: 'label', key: '⇧L', action: () => RNBX.labels.arrange() },
     '-',
     { label: 'Align left', icon: 'alignL', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('left') },
     { label: 'Align centres (horizontal)', icon: 'alignC', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('cx') },
@@ -5899,6 +7360,9 @@ M.syncTools = () => {
   const u = document.getElementById('tUndo'), r = document.getElementById('tRedo');
   if (u) u.disabled = !RNBX.history.undoStack.length;
   if (r) r.disabled = !RNBX.history.redoStack.length;
+  const tu = document.getElementById('tbUndo'), tr = document.getElementById('tbRedo');
+  if (tu) tu.disabled = !RNBX.history.undoStack.length;
+  if (tr) tr.disabled = !RNBX.history.redoStack.length;
   const hud = D.$('#view3dHud');
   hud.hidden = st.mode !== '3d';
   if (st.mode === '3d') { D.$('#hudYaw').value = S.doc.view3d.yaw; D.$('#hudPitch').value = S.doc.view3d.pitch; }
@@ -5954,6 +7418,29 @@ M.init = () => {
     D.menu(items, e.clientX, e.clientY);
   });
   document.addEventListener('keydown', onKey);
+  // touch toolbar: the essentials within thumb reach on tablets and phones
+  const app = D.$('#app');
+  const scrim = el('div', { class: 'drawer-scrim', onclick: () => app.classList.remove('drawer-open') });
+  app.append(scrim);
+  // narrow screens: slide-out drawer; wider screens: show / hide the docked library
+  M.toggleDrawer = force => {
+    if (innerWidth < 820) app.classList.toggle('drawer-open', force);
+    else { app.classList.remove('drawer-open'); app.classList.toggle('lib-hidden', force === undefined ? undefined : !force); setTimeout(() => RNBX.canvas.fit(), 30); }
+  };
+  const tb = D.$('#touchBar');
+  tb.append(
+    D.iconBtn('grid', 'Components', () => M.toggleDrawer()),
+    D.iconBtn('undo', 'Undo', () => RNBX.history.undo(), { id: 'tbUndo' }),
+    D.iconBtn('redo', 'Redo', () => RNBX.history.redo(), { id: 'tbRedo' }),
+    D.iconBtn('rotate', 'Rotate 15°', () => RNBX.inspector.rotateBy(15)),
+    D.iconBtn('flip', 'Flip', () => RNBX.inspector.flip()),
+    D.iconBtn('copy', 'Duplicate', () => RNBX.project.duplicate()),
+    D.iconBtn('trash', 'Delete', () => RNBX.removeObjects(S.selection.slice())),
+    D.iconBtn('key', 'Add keyframe', () => { if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } else RNBX.toast('Select an object first'); }),
+    D.iconBtn('play', 'Play / pause', () => RNBX.anim.toggle(), { id: 'tbPlay' }));
+  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); });
+  // picking a component from the drawer closes it
+  RNBX.on('selection', () => { if (app.classList.contains('drawer-open')) app.classList.remove('drawer-open'); });
   M.syncTools();
 };
 
@@ -6002,7 +7489,7 @@ function onKey(e) {
     case 'f': case 'F': RNBX.inspector.flip(); break;
     case 'o': case 'O': RNBX.canvas.orientToBeam(); break;
     case 'g': case 'G': toggleUi('grid', 'Grid'); break;
-    case 'l': case 'L': toggleStyle('showLabels', 'Labels'); break;
+    case 'l': case 'L': if (e.shiftKey) RNBX.labels.arrange(); else toggleStyle('showLabels', 'Labels'); break;
     case 'p': case 'P': toggleStyle('polarization', 'Polarisation marks'); break;
     case 't': case 'T': RNBX.timeline.toggle(); break;
     case 'k': case 'K': RNBX.anim.toggle(); break;
@@ -6060,6 +7547,12 @@ document.addEventListener('DOMContentLoaded', () => {
     RNBX.setDocument(RNBX.templates.list.find(t => t.id === tpl).build());
   } else if (!RNBX.project.restore()) {
     RNBX.changed();
+  }
+  // arriving from RNSpectraX's "→ RNBeamX": add the spectrum as a new panel
+  if (params.get('from') === 'rnspectrax') {
+    const d = RNBX.plotData.readHandoff();
+    if (d) setTimeout(() => { RNBX.arrange.addDataPanel(d); RNBX.toast('Plot from RNSpectraX added as a panel. Ctrl+Z to undo.'); }, 50);
+    history.replaceState(null, '', location.pathname);
   }
   RNBX.inspector.build();
   setTimeout(() => RNBX.canvas.fit(), 0);
