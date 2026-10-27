@@ -156,6 +156,21 @@ they sit on a stack), and **Optical response** on any block calculates the whole
 stack: the bottom slab is the substrate; ridges, arrays and sheets are left out
 and named in the readout.
 
+### Shapes
+
+For anything else (an instrument housing, a stage, a lamp, an analyte molecule),
+combine the generic parts in the *Shapes* group:
+
+| Part | Notes |
+|---|---|
+| **3D shape** | Box, cylinder (upright or lying), tube, cone, pyramid, sphere, hemisphere or wedge; width, height, depth, colour, opacity, gloss, outline and text on the front; same oblique view as the building blocks |
+| **Atom** | Shaded ball with an optional element symbol |
+| **Bond (stick)** | Single, double or triple, or dashed (e.g. a hydrogen bond); drag its end handle from atom to atom |
+| **Free polygon / path** | Any outline from x, y points in mm, straight or smoothed, open or closed, plain or shaded fill |
+
+Use **Arrange** (align, distribute, bring to front / back) and **Duplicate** to
+assemble and repeat parts; select several and move them together.
+
 ## 5b3. Optical response: calculated spectra
 
 The **multilayer stack** and the **SPR prism** (with *Sensor chip on the base*)

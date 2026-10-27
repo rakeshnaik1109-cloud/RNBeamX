@@ -18,7 +18,7 @@ state (document) ──► tracer ──► renderer (2D) / renderer3d ──►
 |---|---|---|
 | core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
 | engine | `optics.js`, `tracer.js`, `nkdata.js`, `thinfilm.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power; measured n, k tables and the transfer-matrix solver for planar films |
-| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `nanostructures`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `nanostructures`, `shapes`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
 | render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js`, `labels.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting, automatic label placement |
 | anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
 | io | `project.js`, `export.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
