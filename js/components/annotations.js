@@ -199,7 +199,6 @@ ann({
     { key: 'labelSize', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5, show: p => !!p.label },
     { key: 'labelSide', label: 'Text side', type: 'select', options: [[1, 'Above / left'], [-1, 'Below / right']], show: p => !!p.label }],
   variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' },
-    { name: 'Hydrogen bond (dashed)', category: 'Structures & molecules', keywords: 'hydrogen bond dashed interaction h-bond van der waals', props: { head: 'none', dash: true, color: '#e0302f', width: 0.9, dx: 6, dy: 0 } },
     { name: 'Process arrow with text', category: 'Graphical abstract', keywords: 'process step fabrication flow arrow text', props: { label: 'Step', width: 1.2, headSize: 2.2 } }],
   bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; const m = 0.8 + (p.label ? U.pt2mm(p.labelSize || 7) * 1.5 : 0); return [Math.min(0, p.dx, c[0]) - m, Math.min(0, p.dy, c[1]) - m, Math.max(0, p.dx, c[0]) + m, Math.max(0, p.dy, c[1]) + m]; },
   handles: p => [{ key: 'end', x: p.dx, y: p.dy }],

@@ -761,7 +761,8 @@ RNBX.normalizeDocument = doc => {
   doc.animation = Object.assign({}, fresh.animation, doc.animation);
   doc.animation.tracks = doc.animation.tracks || {};
   doc.animation.camera = doc.animation.camera || [];
-  doc.objects = (doc.objects || []).filter(o => o && o.type).map(o => {
+  // parts that no longer exist (e.g. removed from the library) are dropped
+  doc.objects = (doc.objects || []).filter(o => o && o.type && (!RNBX.lib || !RNBX.lib.get || RNBX.lib.get(o.type))).map(o => {
     const def = RNBX.lib && RNBX.lib.get(o.type);
     const props = Object.assign({}, def ? U.deepClone(def.defaults || {}) : {}, o.props || {});
     return Object.assign({ id: U.uid(), x: 0, y: 0, rot: 0, scale: 1 }, o, { props });
@@ -3414,14 +3415,12 @@ lib.register({
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — components/illustration.js
    Scientific-illustration parts for figures that are more than
-   an optical table: device cross-sections, molecules, lab
-   equipment and measurement geometry.
+   an optical table: device cross-sections, lab equipment and
+   measurement geometry.
 
    • Structures: multilayer / grating stack (conformal coatings on
      a sine, square or trapezoid grating), 3D cylinder, block.
-   • Molecules: ball-and-stick, presets or your own XYZ.
-   • Lab: hot plate, lab jack / tilt stage, thermal camera, laptop,
-     pipette, flow cell, light bulb.
+   • Lab: IR camera, laptop, pipette, flow cell, light bulb.
    • Geometry: angle marker (θ), dimension line (Λ = …), angle fan.
 
    Solid-looking parts use an oblique ("cabinet") projection: the
@@ -3432,7 +3431,7 @@ lib.register({
 (function () {
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
-const CAT_S = 'Structures & molecules', CAT_L = 'Lab & illustration';
+const CAT_S = 'Structures', CAT_L = 'Lab & illustration';
 lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Annotations'), 0, CAT_S, CAT_L);
 
 /* ---------- oblique projection kit ---------- */
@@ -3657,92 +3656,6 @@ lib.register({
   },
 });
 
-/* ================= Molecules ================= */
-const EL = {
-  H: { r: 0.31, c: '#f4f4f4' }, C: { r: 0.5, c: '#4d4d4d' }, N: { r: 0.48, c: '#3050f8' }, O: { r: 0.48, c: '#e0302f' }, F: { r: 0.42, c: '#90e050' },
-  S: { r: 0.6, c: '#e6c229' }, P: { r: 0.6, c: '#ff8000' }, Cl: { r: 0.58, c: '#1fbf1f' }, Br: { r: 0.62, c: '#a62929' }, I: { r: 0.7, c: '#940094' },
-  Si: { r: 0.6, c: '#d2b48c' }, Ag: { r: 0.72, c: '#c0c6ce' }, Au: { r: 0.72, c: '#e3b341' }, Ti: { r: 0.66, c: '#9aa1aa' }, Na: { r: 0.7, c: '#ab5cf2' },
-};
-const COV = { H: 0.31, C: 0.76, N: 0.71, O: 0.66, F: 0.57, S: 1.05, P: 1.07, Cl: 1.02, Br: 1.2, I: 1.39, Si: 1.11, Ag: 1.45, Au: 1.36, Ti: 1.6, Na: 1.66 };
-const MOLS = {
-  water: 'O 0 0 0\nH 0.757 0.586 0\nH -0.757 0.586 0',
-  ethanol: 'C 0 0 0\nC 1.52 0 0\nO 2.03 1.35 0\nH 2.98 1.30 0\nH -0.37 -1.03 0\nH -0.37 0.51 0.89\nH -0.37 0.51 -0.89\nH 1.89 -0.52 0.89\nH 1.89 -0.52 -0.89',
-  methanol: 'C 0 0 0\nO 1.43 0 0\nH 1.75 0.9 0\nH -0.36 1.03 0\nH -0.36 -0.51 0.89\nH -0.36 -0.51 -0.89',
-  co2: 'C 0 0 0\nO 1.16 0 0\nO -1.16 0 0',
-  methane: 'C 0 0 0\nH 0.63 0.63 0.63\nH -0.63 -0.63 0.63\nH -0.63 0.63 -0.63\nH 0.63 -0.63 -0.63',
-  ammonia: 'N 0 0 0\nH 0.94 0 -0.38\nH -0.47 0.81 -0.38\nH -0.47 -0.81 -0.38',
-  benzene: [...Array(6)].map((_, i) => { const a = i * Math.PI / 3; return `C ${(1.39 * Math.cos(a)).toFixed(3)} ${(1.39 * Math.sin(a)).toFixed(3)} 0`; }).concat([...Array(6)].map((_, i) => { const a = i * Math.PI / 3; return `H ${(2.47 * Math.cos(a)).toFixed(3)} ${(2.47 * Math.sin(a)).toFixed(3)} 0`; })).join('\n'),
-  acetone: 'C 0 0 0\nO 0 1.21 0\nC 1.28 -0.78 0\nC -1.28 -0.78 0\nH 2.13 -0.1 0\nH 1.33 -1.42 0.88\nH 1.33 -1.42 -0.88\nH -2.13 -0.1 0\nH -1.33 -1.42 0.88\nH -1.33 -1.42 -0.88',
-  cyanide: 'C 0 0 0\nN 1.16 0 0',
-};
-const DOUBLE = { co2: [[0, 1], [0, 2]], acetone: [[0, 1]], cyanide: [[0, 1, 3]] };
-lib.molParse = txt2 => String(txt2 || '').split(/\r?\n/).map(l => l.trim().split(/\s+/)).filter(a => a.length >= 4 && EL[a[0]] !== undefined || (a.length >= 4 && /^[A-Z][a-z]?$/.test(a[0]))).map(a => ({ el: a[0], p: [parseFloat(a[1]), parseFloat(a[2]), parseFloat(a[3])] })).filter(a => a.p.every(isFinite));
-lib.register({
-  type: 'molecule', name: 'Molecule (ball and stick)', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
-  keywords: 'molecule ball stick atom chemistry water ethanol methanol benzene analyte co2 ammonia acetone cyanide',
-  defaults: { preset: 'ethanol', xyz: '', size: 3.2, rx: 10, ry: -15, rz: 0, carbon: '#3f86c9', scheme: 'cpk', symbols: false, ball: 1 },
-  params: [
-    { key: 'preset', label: 'Molecule', type: 'select', options: [['water', 'Water (H₂O)'], ['ethanol', 'Ethanol'], ['methanol', 'Methanol'], ['acetone', 'Acetone'], ['co2', 'Carbon dioxide'], ['methane', 'Methane'], ['ammonia', 'Ammonia'], ['benzene', 'Benzene'], ['cyanide', 'Cyanide (CN⁻)'], ['custom', 'Custom (XYZ)…']] },
-    { key: 'xyz', label: 'Atoms: element x y z (Å), one per line', type: 'textarea', show: p => p.preset === 'custom' },
-    { key: 'rx', label: 'Rotate about x', type: 'range', min: -180, max: 180, step: 1, animatable: true }, { key: 'ry', label: 'Rotate about y', type: 'range', min: -180, max: 180, step: 1, animatable: true },
-    { key: 'rz', label: 'Rotate about z', type: 'range', min: -180, max: 180, step: 1, animatable: true },
-    { key: 'size', label: 'Scale (mm per Å)', type: 'number', min: 0.2, max: 20, step: 0.1 }, { key: 'ball', label: 'Ball size', type: 'range', min: 0.4, max: 2, step: 0.01 },
-    { key: 'scheme', label: 'Colours', type: 'select', options: [['cpk', 'CPK (grey carbon)'], ['vivid', 'Coloured carbon']] },
-    { key: 'carbon', label: 'Carbon colour', type: 'color', show: p => p.scheme === 'vivid' }, { key: 'symbols', label: 'Element symbols', type: 'bool' }],
-  variants: [{ name: 'Water molecule', props: { preset: 'water', rx: 0, ry: 0 } }, { name: 'Benzene', props: { preset: 'benzene', rx: 55, ry: 0 } }],
-  model(p) {
-    const atoms = lib.molParse(p.preset === 'custom' ? p.xyz : MOLS[p.preset] || MOLS.water);
-    const c = atoms.reduce((a, t) => [a[0] + t.p[0], a[1] + t.p[1], a[2] + t.p[2]], [0, 0, 0]).map(v => v / (atoms.length || 1));
-    const R = (v, ax, deg) => { const a = U.rad(deg), cs = Math.cos(a), sn = Math.sin(a); const [x, y, z] = v; return ax === 0 ? [x, y * cs - z * sn, y * sn + z * cs] : ax === 1 ? [x * cs + z * sn, y, -x * sn + z * cs] : [x * cs - y * sn, x * sn + y * cs, z]; };
-    const pos = atoms.map(t => R(R(R([t.p[0] - c[0], t.p[1] - c[1], t.p[2] - c[2]], 0, p.rx), 1, p.ry), 2, p.rz));
-    const bonds = [];
-    for (let i = 0; i < atoms.length; i++) for (let j = i + 1; j < atoms.length; j++) {
-      const d = Math.hypot(...[0, 1, 2].map(k => atoms[i].p[k] - atoms[j].p[k]));
-      if (d < 1.2 * ((COV[atoms[i].el] || 0.8) + (COV[atoms[j].el] || 0.8))) {
-        const mult = (DOUBLE[p.preset] || []).find(b => (b[0] === i && b[1] === j) || (b[0] === j && b[1] === i));
-        bonds.push({ i, j, order: mult ? (mult[2] || 2) : 1 });
-      }
-    }
-    return { atoms, pos, bonds };
-  },
-  bbox(p) {
-    const m = this.model(p), s = p.size;
-    if (!m.pos.length) return [-3, -3, 3, 3];
-    const xs = m.pos.map(q => q[0] * s), ys = m.pos.map(q => -q[1] * s), pad = 0.8 * s * p.ball;
-    return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
-  },
-  draw(p, S, obj) {
-    const m = this.model(p), s = p.size, items = [];
-    const col = el => el === 'C' && p.scheme === 'vivid' ? p.carbon : (EL[el] || EL.C).c;
-    const gid = c => 'rbx-atom-' + c.replace('#', '') + '-' + (obj ? obj.id : 'x');
-    const used = new Set();
-    m.bonds.forEach(b => {
-      const A = m.pos[b.i], B = m.pos[b.j];
-      const a = [A[0] * s, -A[1] * s], e = [B[0] * s, -B[1] * s];
-      const len = Math.hypot(e[0] - a[0], e[1] - a[1]) || 1, px = -(e[1] - a[1]) / len, py = (e[0] - a[0]) / len;
-      const w = 0.16 * s * p.ball;
-      let svg = '';
-      const offs = b.order === 1 ? [0] : b.order === 2 ? [-0.8, 0.8] : [-1.4, 0, 1.4];
-      offs.forEach(o => {
-        const ox = px * w * o, oy = py * w * o;
-        svg += `<line x1="${n(a[0] + ox)}" y1="${n(a[1] + oy)}" x2="${n(e[0] + ox)}" y2="${n(e[1] + oy)}" stroke="#6b7079" stroke-width="${n(w * (b.order > 1 ? 0.8 : 1) + 0.12)}" stroke-linecap="round"/>` +
-          `<line x1="${n(a[0] + ox)}" y1="${n(a[1] + oy)}" x2="${n(e[0] + ox)}" y2="${n(e[1] + oy)}" stroke="#c9ccd2" stroke-width="${n(w * (b.order > 1 ? 0.8 : 1) * 0.55)}" stroke-linecap="round"/>`;
-      });
-      items.push({ z: (A[2] + B[2]) / 2 - 0.01, svg });
-    });
-    m.atoms.forEach((t, i) => {
-      const q = m.pos[i], c = col(t.el), r = (EL[t.el] || EL.C).r * s * p.ball;
-      used.add(c);
-      let svg = `<circle cx="${n(q[0] * s)}" cy="${n(-q[1] * s)}" r="${n(r)}" fill="url(#${gid(c)})" stroke="${U.darken(c, 0.45)}" stroke-width="${n(Math.max(0.06, S.lw * 0.4))}"/>`;
-      if (p.symbols) svg += txt(S, q[0] * s, -q[1] * s, t.el, r * 0.95, contrast(c), 'font-weight="700"');
-      items.push({ z: q[2], svg });
-    });
-    items.sort((a, b) => a.z - b.z);
-    const defs = [...used].map(c => `<radialGradient id="${gid(c)}" cx="0.36" cy="0.32" r="0.72"><stop offset="0" stop-color="#ffffff"/><stop offset="0.28" stop-color="${U.lighten(c, 0.3)}"/><stop offset="0.8" stop-color="${c}"/><stop offset="1" stop-color="${U.darken(c, 0.4)}"/></radialGradient>`).join('');
-    return `<defs>${defs}</defs>` + items.map(x => x.svg).join('');
-  },
-});
-
 /* ================= Measurement geometry ================= */
 lib.register({
   type: 'angle', name: 'Angle marker (θ)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
@@ -3820,51 +3733,6 @@ lib.register({
 
 /* ================= Lab equipment ================= */
 const lab = cfg => lib.register(Object.assign({ category: CAT_L, annotation: true, autoLabel: false, abbr: '' }, cfg));
-lab({
-  type: 'hotplate', name: 'Hot plate', keywords: 'hot plate heater heating stage temperature thermal emission',
-  defaults: { W: 30, Hh: 9, D: 20, color: '#5b6573', plate: '#efe4cc', temp: '60 °C', ang: 32, depthK: 0.55, glow: true },
-  params: [{ key: 'temp', label: 'Display', type: 'text' }, { key: 'color', label: 'Body colour', type: 'color' }, { key: 'plate', label: 'Plate colour', type: 'color' }, { key: 'glow', label: 'Hot glow', type: 'bool' },
-    { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
-  bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh - p.D * c.ky - 1, p.W / 2 + p.D * c.kx, p.Hh * 0.9]; },
-  draw(p, S) {
-    const c = OB.cam(p.ang, p.depthK), P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] - p.W / 2, q[1]]; };
-    let s = `<g transform="translate(${n(-p.W / 2)} 0)">${OB.box(c, 0, 0, p.W, p.Hh, p.D, p.color, S)}</g>`;
-    const t = [P(p.W * 0.06, p.Hh, p.D * 0.1), P(p.W * 0.94, p.Hh, p.D * 0.1), P(p.W * 0.94, p.Hh, p.D * 0.92), P(p.W * 0.06, p.Hh, p.D * 0.92)];
-    s += `<defs><radialGradient id="rbx-hot"><stop offset="0" stop-color="#ffffff"/><stop offset="0.5" stop-color="${p.plate}"/><stop offset="1" stop-color="${U.darken(p.plate, 0.25)}"/></radialGradient></defs>` + OB.poly(t, 'url(#rbx-hot)', `stroke="${U.darken(p.plate, 0.4)}" stroke-width="${n(S.lw * 0.5)}"`);
-    if (p.glow) { const m = P(p.W / 2, p.Hh + 0.5, p.D / 2); s += `<ellipse cx="${n(m[0])}" cy="${n(m[1])}" rx="${n(p.W * 0.45)}" ry="${n(p.D * c.ky * 0.6)}" fill="#ffd27a" fill-opacity="0.35"/>`; }
-    // front panel: display and knob
-    const pw = p.W * 0.62, ph = p.Hh * 0.62, px = -p.W / 2 + p.W * 0.08, py = -p.Hh * 0.82;
-    s += `<rect x="${n(px)}" y="${n(py)}" width="${n(pw)}" height="${n(ph)}" rx="0.6" fill="#d9dde3" stroke="${U.darken('#d9dde3', 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    s += `<rect x="${n(px + pw * 0.12)}" y="${n(py + ph * 0.22)}" width="${n(pw * 0.5)}" height="${n(ph * 0.56)}" fill="#1f2933" stroke="#333" stroke-width="${n(S.lw * 0.6)}"/>` + txt(S, px + pw * 0.37, py + ph * 0.5, p.temp, Math.min(ph * 0.4, S.fs), '#8ef0a0', 'font-weight="700"');
-    const kx = px + pw * 0.8, ky = py + ph * 0.5, kr = Math.min(ph, pw) * 0.25;
-    s += `<circle cx="${n(kx)}" cy="${n(ky)}" r="${n(kr)}" fill="#4b5563" stroke="#1f2933" stroke-width="${n(S.lw * 0.6)}"/><path d="M ${n(kx)} ${n(ky)} L ${n(kx + kr * 0.8)} ${n(ky - kr * 0.6)}" stroke="#f3f4f6" stroke-width="${n(kr * 0.3)}" stroke-linecap="round"/>`;
-    return s;
-  },
-});
-lab({
-  type: 'labjack', name: 'Lab jack / tilt stage', keywords: 'lab jack scissor lift tilt stage platform height adjust goniometer',
-  defaults: { W: 28, Hh: 18, D: 18, tilt: 22, color: '#8a8f97', top: '#6e737b', ang: 32, depthK: 0.5, tiltTop: true },
-  params: [{ key: 'tiltTop', label: 'Tilting top plate', type: 'bool' }, { key: 'tilt', label: 'Tilt angle', type: 'range', min: 0, max: 60, step: 1, show: p => p.tiltTop, animatable: true },
-    { key: 'color', label: 'Frame colour', type: 'color' }, { key: 'top', label: 'Plate colour', type: 'color' },
-    { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 4, max: 200, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
-  bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh - p.D * c.ky - (p.tiltTop ? p.W * Math.sin(U.rad(p.tilt)) + 2 : 2), p.W / 2 + p.D * c.kx, 0.5]; },
-  draw(p, S) {
-    const c = OB.cam(p.ang, p.depthK), x0 = -p.W / 2, plate = Math.max(1, p.Hh * 0.08);
-    const P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + x0, q[1]]; };
-    let s = `<g transform="translate(${n(x0)} 0)">${OB.box(c, 0, 0, p.W, plate, p.D, p.color, S)}</g>`;
-    // scissor legs (front and back pairs)
-    const legs = d => { const a = P(p.W * 0.08, plate, d), b = P(p.W * 0.92, p.Hh - plate, d), e = P(p.W * 0.92, plate, d), f = P(p.W * 0.08, p.Hh - plate, d); return `<line x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}" stroke="${U.darken(p.color, 0.35)}" stroke-width="${n(Math.max(0.5, p.W * 0.035))}" stroke-linecap="round"/><line x1="${n(e[0])}" y1="${n(e[1])}" x2="${n(f[0])}" y2="${n(f[1])}" stroke="${U.darken(p.color, 0.35)}" stroke-width="${n(Math.max(0.5, p.W * 0.035))}" stroke-linecap="round"/>`; };
-    s += legs(p.D * 0.8) + legs(p.D * 0.2);
-    const pv = P(p.W / 2, p.Hh / 2, p.D * 0.2); s += `<circle cx="${n(pv[0])}" cy="${n(pv[1])}" r="${n(p.W * 0.05)}" fill="#222"/>`;
-    const sc = P(p.W * 0.97, p.Hh * 0.45, p.D * 0.5); s += `<circle cx="${n(sc[0])}" cy="${n(sc[1])}" r="${n(p.Hh * 0.13)}" fill="#1d1f23"/>`;
-    s += `<g transform="translate(${n(x0)} ${n(-(p.Hh - plate))})">${OB.box(c, 0, 0, p.W, plate, p.D, p.top, S)}</g>`;
-    if (p.tiltTop) {
-      const hinge = P(0, p.Hh, p.D / 2), a = -p.tilt;
-      s += `<g transform="rotate(${n(a)} ${n(hinge[0])} ${n(hinge[1])})"><g transform="translate(${n(x0)} ${n(-p.Hh - 0.15)})">${OB.box(c, 0, 0, p.W * 0.95, plate * 0.8, p.D * 0.9, U.lighten(p.top, 0.15), S)}</g></g>`;
-    }
-    return s;
-  },
-});
 lab({
   type: 'ircam', name: 'Thermal / IR camera', keywords: 'thermal camera flir infrared imager ir camera bolometer',
   defaults: { W: 16, Hh: 9, D: 12, color: '#c9ced6', text: 'IR camera', ang: 32, depthK: 0.55 },
@@ -3994,7 +3862,7 @@ lib.register({
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, OB = lib.oblique;
 const CAT = 'Nanostructures & films';
-lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Structures & molecules'), 0, CAT);
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Structures'), 0, CAT);
 
 const contrast = c => { const r = U.hexToRgb(c); return r[0] * 0.3 + r[1] * 0.59 + r[2] * 0.11 < 140 ? '#ffffff' : '#111111'; };
 const pts = a => a.map(p => n(p[0]) + ' ' + n(p[1])).join(' L ');
@@ -4660,7 +4528,6 @@ ann({
     { key: 'labelSize', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5, show: p => !!p.label },
     { key: 'labelSide', label: 'Text side', type: 'select', options: [[1, 'Above / left'], [-1, 'Below / right']], show: p => !!p.label }],
   variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' },
-    { name: 'Hydrogen bond (dashed)', category: 'Structures & molecules', keywords: 'hydrogen bond dashed interaction h-bond van der waals', props: { head: 'none', dash: true, color: '#e0302f', width: 0.9, dx: 6, dy: 0 } },
     { name: 'Process arrow with text', category: 'Graphical abstract', keywords: 'process step fabrication flow arrow text', props: { label: 'Step', width: 1.2, headSize: 2.2 } }],
   bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; const m = 0.8 + (p.label ? U.pt2mm(p.labelSize || 7) * 1.5 : 0); return [Math.min(0, p.dx, c[0]) - m, Math.min(0, p.dy, c[1]) - m, Math.max(0, p.dx, c[0]) + m, Math.max(0, p.dy, c[1]) + m]; },
   handles: p => [{ key: 'end', x: p.dx, y: p.dy }],
@@ -6876,23 +6743,6 @@ T.list.push({
   },
 });
 
-/* ---------- Thermal emission measurement ---------- */
-T.list.push({
-  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a lab jack, IR camera and an observation-angle fan',
-  build() {
-    const d = base('nature-2', 150, 88, 'Thermal emission setup', { polarization: false });
-    const jack = mk('labjack', 44, 78, 0, { W: 34, Hh: 22, tilt: 0, tiltTop: false });
-    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20 });
-    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#5a7db3', text: '' });
-    const lab1 = mk('text', 40, 33, 0, { text: 'Sample', size: 7, bold: true, anchor: 'middle' });
-    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw' });
-    const cam = mk('ircam', 128, 26, 0, { W: 16, Hh: 9, D: 12 });
-    const pa = mk('panel', 4, 7, 0, { text: 'c' });
-    d.objects.push(jack, hp, smp, lab1, fan, cam, pa);
-    return d;
-  },
-});
-
 /* ---------- SPR sensor (Kretschmann) ---------- */
 T.list.push({
   id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with sensor chip and flow cell, fibre to spectrometer',
@@ -6919,15 +6769,15 @@ T.list.push({
     const pc = mk('laptop', 138, 58, 0, { W: 22 });
     const fib = link('fiber', fc1, fc2, { bend: 0.4 });
     const usb = link('wire', spec, pc, { route: 'straight' });
-    const pa = mk('panel', 4, 7, 0, { text: 'd' });
+    const pa = mk('panel', 4, 7, 0, { text: 'c' });
     // spectral SPR, as with a halogen lamp and spectrometer: calculate R(λ) at the
-    // angle the traced beam actually meets the chip, and show it as panel e
+    // angle the traced beam actually meets the chip, and show it as panel d
     const tr2 = RNBX.trace(d), baseY = prism.y - prism.props.s * Math.cos(U.rad(prism.props.apex / 2)) / 3;
     const hitBase = tr2.segments.find(sg => !sg.ghost && Math.abs(sg.b[1] - baseY) < 0.05);
     const th = hitBase ? U.round(U.deg(Math.acos(Math.abs(hitBase.b[1] - hitBase.a[1]) / V0.dist(hitBase.a, hitBase.b))), 2) : 50;
     prism.props.calc = { scan: 'wl', lmin: 500, lmax: 1000, angle: th, pol: 'p', show: 'R', points: 401, unit: 'nm', amin: 40, amax: 80, lambda: 633 };
     const plot = mk('plot', 80, 123, 0, { w: 110, h: 46, link: prism.id, linkAuto: true, legend: false });
-    const pe = mk('panel', 25, 97, 0, { text: 'e' });
+    const pe = mk('panel', 25, 97, 0, { text: 'd' });
     const note = mk('text', 82, 97.5, 0, { text: `p-polarised, θ = ${U.fmt(th, 1)}° at the chip (calculated)`, size: 6, color: '#555b66', anchor: 'middle' });
     d.objects.push(obj, fc1, fc2, spec, pc, fib, usb, pa, plot, pe, note);
     RNBX.labels.arrange2D(d);

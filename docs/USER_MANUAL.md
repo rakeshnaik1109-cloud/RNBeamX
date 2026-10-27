@@ -102,7 +102,7 @@ there is room, otherwise below it, growing the page). In its inspector:
 colours and axis titles. Set axis titles, ranges, a reversed axis, stacked
 offsets and legend in the inspector.
 
-## 5b2. Device sketches, molecules and lab equipment
+## 5b2. Device sketches and lab equipment
 
 Two library groups cover figures that are more than an optical table. These
 parts are illustrations: beams are not traced through them (use the optical
@@ -111,10 +111,8 @@ parts for that).
 | Part | Notes |
 |---|---|
 | **Multilayer / grating stack** | Edit the layers bottom → top in the inspector: colour, name, drawn thickness, tag; ↑ reorders, the bin removes, **+ Layer on top** adds. Surface profile flat, sinusoidal, trapezoid or square; period, ridge fraction and depth; period and ridge dimension labels; layer key; view angle and depth (oblique projection). Variants: MIM grating stack, corrugated film stack, sensor chip. For stacks built part by part, see the building blocks below |
-| **Molecule (ball and stick)** | Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide, or **Custom (XYZ)**: one atom per line, `element x y z` in Å. Bonds are found from covalent radii. Rotations about x, y, z can be keyframed. CPK colours, or coloured carbon |
-| **Hydrogen bond (dashed)** | A red dashed line; drag the end handle between two atoms |
 | **3D cylinder**, **3D block / slab** | Detector housings with coaxial face rings, substrates, chips |
-| **Hot plate**, **Lab jack / tilt stage**, **Thermal / IR camera**, **Laptop**, **Pipette with droplet**, **Flow cell (inlet / outlet)**, **Light bulb** | Lab equipment for measurement sketches; texts and colours are editable |
+| **Thermal / IR camera**, **Laptop**, **Pipette with droplet**, **Flow cell (inlet / outlet)**, **Light bulb** | Lab equipment for measurement sketches; texts and colours are editable |
 | **Angle marker (θ)** | Arc between two directions with an optional dashed normal |
 | **Dimension line (Λ = …)** | Arrows or ticks, label follows the line |
 | **Angle fan (θ arrows)** | Observation or emission angles, with an arc and label |
@@ -135,7 +133,7 @@ Optical parts for these figures:
   telescope path sketches.
 
 Templates in this style: *Device sketch · coated grating (building blocks)*, *FTIR beam
-path (ribbon beams)*, *Thermal emission setup*, *SPR sensor (Kretschmann prism)*.
+path (ribbon beams)* and *SPR sensor (Kretschmann prism)*.
 
 ### Building blocks (*Nanostructures & films*)
 

@@ -105,7 +105,8 @@ RNBX.normalizeDocument = doc => {
   doc.animation = Object.assign({}, fresh.animation, doc.animation);
   doc.animation.tracks = doc.animation.tracks || {};
   doc.animation.camera = doc.animation.camera || [];
-  doc.objects = (doc.objects || []).filter(o => o && o.type).map(o => {
+  // parts that no longer exist (e.g. removed from the library) are dropped
+  doc.objects = (doc.objects || []).filter(o => o && o.type && (!RNBX.lib || !RNBX.lib.get || RNBX.lib.get(o.type))).map(o => {
     const def = RNBX.lib && RNBX.lib.get(o.type);
     const props = Object.assign({}, def ? U.deepClone(def.defaults || {}) : {}, o.props || {});
     return Object.assign({ id: U.uid(), x: 0, y: 0, rot: 0, scale: 1 }, o, { props });

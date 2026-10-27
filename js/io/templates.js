@@ -296,23 +296,6 @@ T.list.push({
   },
 });
 
-/* ---------- Thermal emission measurement ---------- */
-T.list.push({
-  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a lab jack, IR camera and an observation-angle fan',
-  build() {
-    const d = base('nature-2', 150, 88, 'Thermal emission setup', { polarization: false });
-    const jack = mk('labjack', 44, 78, 0, { W: 34, Hh: 22, tilt: 0, tiltTop: false });
-    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20 });
-    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#5a7db3', text: '' });
-    const lab1 = mk('text', 40, 33, 0, { text: 'Sample', size: 7, bold: true, anchor: 'middle' });
-    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw' });
-    const cam = mk('ircam', 128, 26, 0, { W: 16, Hh: 9, D: 12 });
-    const pa = mk('panel', 4, 7, 0, { text: 'c' });
-    d.objects.push(jack, hp, smp, lab1, fan, cam, pa);
-    return d;
-  },
-});
-
 /* ---------- SPR sensor (Kretschmann) ---------- */
 T.list.push({
   id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with sensor chip and flow cell, fibre to spectrometer',
@@ -339,15 +322,15 @@ T.list.push({
     const pc = mk('laptop', 138, 58, 0, { W: 22 });
     const fib = link('fiber', fc1, fc2, { bend: 0.4 });
     const usb = link('wire', spec, pc, { route: 'straight' });
-    const pa = mk('panel', 4, 7, 0, { text: 'd' });
+    const pa = mk('panel', 4, 7, 0, { text: 'c' });
     // spectral SPR, as with a halogen lamp and spectrometer: calculate R(λ) at the
-    // angle the traced beam actually meets the chip, and show it as panel e
+    // angle the traced beam actually meets the chip, and show it as panel d
     const tr2 = RNBX.trace(d), baseY = prism.y - prism.props.s * Math.cos(U.rad(prism.props.apex / 2)) / 3;
     const hitBase = tr2.segments.find(sg => !sg.ghost && Math.abs(sg.b[1] - baseY) < 0.05);
     const th = hitBase ? U.round(U.deg(Math.acos(Math.abs(hitBase.b[1] - hitBase.a[1]) / V0.dist(hitBase.a, hitBase.b))), 2) : 50;
     prism.props.calc = { scan: 'wl', lmin: 500, lmax: 1000, angle: th, pol: 'p', show: 'R', points: 401, unit: 'nm', amin: 40, amax: 80, lambda: 633 };
     const plot = mk('plot', 80, 123, 0, { w: 110, h: 46, link: prism.id, linkAuto: true, legend: false });
-    const pe = mk('panel', 25, 97, 0, { text: 'e' });
+    const pe = mk('panel', 25, 97, 0, { text: 'd' });
     const note = mk('text', 82, 97.5, 0, { text: `p-polarised, θ = ${U.fmt(th, 1)}° at the chip (calculated)`, size: 6, color: '#555b66', anchor: 'middle' });
     d.objects.push(obj, fc1, fc2, spec, pc, fib, usb, pa, plot, pe, note);
     RNBX.labels.arrange2D(d);

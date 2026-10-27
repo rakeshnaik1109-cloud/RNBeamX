@@ -23,7 +23,7 @@
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, OB = lib.oblique;
 const CAT = 'Nanostructures & films';
-lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Structures & molecules'), 0, CAT);
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Structures'), 0, CAT);
 
 const contrast = c => { const r = U.hexToRgb(c); return r[0] * 0.3 + r[1] * 0.59 + r[2] * 0.11 < 140 ? '#ffffff' : '#111111'; };
 const pts = a => a.map(p => n(p[0]) + ' ' + n(p[1])).join(' L ');
