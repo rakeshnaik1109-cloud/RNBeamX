@@ -97,7 +97,11 @@ For imaging figures, light can be drawn as individual rays instead of one beam:
   paraxial focus for real lenses), keeping its sideways position. Ctrl+Z undoes it.
 - A screen, camera or detector hit by rays reports the **ray spot**: the RMS
   spread of where the rays land, per wavelength and in total, at the figure scale.
-- *Beams ▸ Ray width* sets the drawn line width of rays.
+- *Beams ▸ Ray width* sets the drawn line width of rays; the same slider sits
+  under a selected ray bundle, next to one-click colour sets: **F · d · C**,
+  **RGB** (450, 520, 638 nm), **Single colour** and **Black (print)**.
+- **Ray spot CSV** (on a detector hit by rays) downloads where each ray lands:
+  ray number, wavelength, and position across the detector in physical and drawn mm.
 
 ### Active, nonlinear and fibre parts
 

@@ -92,6 +92,26 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('lens readout shows the real focal length and back focal distance', /focal length 250 mm/.test(foc.txt) && /back focal distance/.test(foc.txt), foc.txt.slice(0, 110));
   H.near('Move screen to focus: screen at the paraxial ray crossing (drawn mm)', foc.x, foc.xCross, 0.01);
   H.check('Move screen to focus keeps the screen on its line', Math.abs(foc.y - 50.5) < 1e-6, foc.y);
+  // ray spot CSV and the ray colour presets
+  const csv = await page.evaluate(async () => {
+    RNBX.setDocument(RNBX.templates.list.find(t => t.id === 'aberration').build()); RNBX.canvas.fit();
+    await new Promise(r => setTimeout(r, 250));
+    const scr = RNBX.state.doc.objects.find(o => o.type === 'screen'); RNBX.select([scr.id]); RNBX.inspector.build();
+    let text = null; const keep = RNBX.util.download; RNBX.util.download = async b => { text = await b.text(); };
+    const btn = [...document.querySelectorAll('#inspector button')].find(b => b.textContent === 'Ray spot CSV');
+    if (btn) btn.click();
+    await new Promise(r => setTimeout(r, 100)); RNBX.util.download = keep;
+    const src = RNBX.state.doc.objects.find(o => o.type === 'raysource'); RNBX.select([src.id]); RNBX.inspector.build();
+    const press = label => [...document.querySelectorAll('#inspector button')].find(b => b.textContent === label).click();
+    press('RGB'); await new Promise(r => setTimeout(r, 60));
+    const s1 = RNBX.state.doc.objects.find(o => o.id === src.id), rgb = [...new Set(RNBX.trace(RNBX.state.doc).segments.filter(q => q.src === src.id).map(q => q.lambda))].sort((a, b) => a - b);
+    press('Black (print)'); await new Promise(r => setTimeout(r, 60));
+    const s2 = RNBX.state.doc.objects.find(o => o.id === src.id);
+    return { lines: text ? text.trim().split('\n') : [], rgb, black: [s2.props.colors, s2.props.color], width: !!document.querySelector('#inspector input[type=range]') };
+  });
+  H.check('Ray spot CSV: one row per ray with wavelength and position', csv.lines.length === 27 + 3 && /^ray,wavelength_nm,position_mm/.test(csv.lines[2]) && csv.lines[3].split(',').length === 4, csv.lines.slice(2, 4));
+  H.check('ray presets: RGB gives 450, 520 and 638 nm rays', csv.rgb.join() === '450,520,638', csv.rgb);
+  H.check('ray presets: black for print, with the ray width beside them', csv.black[0] === 'single' && csv.black[1] === '#1d1f23' && csv.width, csv.black);
   // template picker: grouped, and the search filters it
   const pick = await page.evaluate(async () => {
     RNBX.dialogs.templates();

@@ -4209,7 +4209,7 @@ lib.register({
     { key: 'rays', label: 'Rays per fan', type: 'number', min: 2, max: 41, step: 1 },
     { key: 'fan', label: 'Fan angle (full)', type: 'number', unit: '°', min: 0.1, max: 120, step: 0.5, show: p => p.mode !== 'parallel' },
     { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
-    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)']] },
+    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)'], ['rgb', 'RGB lasers (450, 520, 638 nm)']] },
     { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
     { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
   variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
@@ -4217,7 +4217,7 @@ lib.register({
   labelPos: [0, 6],
   bbox: p => p.mode === 'arrow' ? [-0.8, -p.h - 0.6, 0.8, 0.6] : [-0.8, -p.h / 2 - 0.4, 0.8, p.h / 2 + 0.4],
   draw(p, S) {
-    const col = p.colors === 'fdc' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
+    const col = p.colors !== 'single' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
     if (p.mode === 'arrow') return H.line(S, 0, 0, 0, -p.h + 0.8, '', 1.6, S.ink) + H.arrowHead(0, -p.h, -Math.PI / 2, 1.6, S.ink) + H.line(S, -0.9, 0, 0.9, 0, '', 0.8, S.ink);
     if (p.mode === 'point') return `<circle cx="0" cy="0" r="0.55" fill="${col}" ${H.stroke(S, 0.6)}/>`;
     let s = H.rect(S, -0.5, -p.h / 2, 0.5, p.h, S.fill('dark'));
@@ -4225,7 +4225,7 @@ lib.register({
     return s;
   },
   source(p) {
-    const ls = p.colors === 'fdc' ? FDC : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
+    const ls = p.colors === 'fdc' ? FDC : p.colors === 'rgb' ? [450, 520, 638] : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
     const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
     const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
     ls.forEach((l, k) => {
@@ -9986,6 +9986,16 @@ Ins.focusDetector = obj => {
   RNBX.toast(`${lib.get(c.o.type).name} moved to the ${f.real ? 'paraxial ' : ''}focus. Ctrl+Z to undo.`);
 };
 
+Ins.raySpotCsv = obj => {
+  const h = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
+  if (!h || !h.rays) return;
+  const sc = S.doc.style.scale || 10, name = (obj.label && obj.label.text) || lib.get(obj.type).name;
+  const rows = ['# RNBeamX ray spot: ' + name.replace(/\n/g, ' '), '# position across the detector (its own y axis), from its centre', 'ray,wavelength_nm,position_mm,position_drawn_mm'];
+  h.rays.forEach((r, i) => rows.push([i + 1, U.round(r.lambda, 3), U.round(r.y * sc, 6), U.round(r.y, 6)].join(',')));
+  U.download(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(name) + '_ray_spot.csv');
+  U.track('ray-spot-csv');
+};
+
 /* ---------- readouts (physics feedback) ---------- */
 function readout(obj) {
   const tr = RNBX.canvas.trace;
@@ -10122,6 +10132,16 @@ function objectPanel(obj) {
   const set = objSetter([obj]);
   const body = [];
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
+  // ray bundles: download where every ray lands on this detector
+  { const h0 = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
+    if (h0 && h0.rays && h0.rays.length) body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Ray spot CSV', title: 'Where each ray lands across this detector, per wavelength', onclick: () => Ins.raySpotCsv(obj) }))); }
+  if (obj.type === 'raysource') {
+    // one-click colour sets and the ray width (a figure-wide setting) next to them
+    const preset = (label, props) => el('button', { class: 'btn small', type: 'button', text: label, onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, props); RNBX.anim.touch([obj.id]); RNBX.changed(); setTimeout(Ins.build, 0); } });
+    body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
+      preset('F · d · C', { colors: 'fdc', color: '' }), preset('RGB', { colors: 'rgb', color: '' }), preset('Single colour', { colors: 'single' }), preset('Black (print)', { colors: 'single', color: '#1d1f23' })));
+    body.push(control({ key: 'rayWidth', label: 'Ray width (whole figure)', type: 'range', min: 0.04, max: 0.8, step: 0.02 }, () => S.doc.style.rayWidth == null ? 0.16 : S.doc.style.rayWidth, (k, v) => { RNBX.history.checkpoint('rayWidth'); S.doc.style.rayWidth = v; RNBX.changed(); }));
+  }
   if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
   if (def.stackable) {

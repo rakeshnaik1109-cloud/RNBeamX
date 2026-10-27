@@ -338,7 +338,7 @@ lib.register({
     { key: 'rays', label: 'Rays per fan', type: 'number', min: 2, max: 41, step: 1 },
     { key: 'fan', label: 'Fan angle (full)', type: 'number', unit: '°', min: 0.1, max: 120, step: 0.5, show: p => p.mode !== 'parallel' },
     { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
-    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)']] },
+    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)'], ['rgb', 'RGB lasers (450, 520, 638 nm)']] },
     { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
     { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
   variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
@@ -346,7 +346,7 @@ lib.register({
   labelPos: [0, 6],
   bbox: p => p.mode === 'arrow' ? [-0.8, -p.h - 0.6, 0.8, 0.6] : [-0.8, -p.h / 2 - 0.4, 0.8, p.h / 2 + 0.4],
   draw(p, S) {
-    const col = p.colors === 'fdc' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
+    const col = p.colors !== 'single' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
     if (p.mode === 'arrow') return H.line(S, 0, 0, 0, -p.h + 0.8, '', 1.6, S.ink) + H.arrowHead(0, -p.h, -Math.PI / 2, 1.6, S.ink) + H.line(S, -0.9, 0, 0.9, 0, '', 0.8, S.ink);
     if (p.mode === 'point') return `<circle cx="0" cy="0" r="0.55" fill="${col}" ${H.stroke(S, 0.6)}/>`;
     let s = H.rect(S, -0.5, -p.h / 2, 0.5, p.h, S.fill('dark'));
@@ -354,7 +354,7 @@ lib.register({
     return s;
   },
   source(p) {
-    const ls = p.colors === 'fdc' ? FDC : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
+    const ls = p.colors === 'fdc' ? FDC : p.colors === 'rgb' ? [450, 520, 638] : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
     const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
     const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
     ls.forEach((l, k) => {

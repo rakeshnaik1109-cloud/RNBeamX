@@ -252,6 +252,16 @@ Ins.focusDetector = obj => {
   RNBX.toast(`${lib.get(c.o.type).name} moved to the ${f.real ? 'paraxial ' : ''}focus. Ctrl+Z to undo.`);
 };
 
+Ins.raySpotCsv = obj => {
+  const h = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
+  if (!h || !h.rays) return;
+  const sc = S.doc.style.scale || 10, name = (obj.label && obj.label.text) || lib.get(obj.type).name;
+  const rows = ['# RNBeamX ray spot: ' + name.replace(/\n/g, ' '), '# position across the detector (its own y axis), from its centre', 'ray,wavelength_nm,position_mm,position_drawn_mm'];
+  h.rays.forEach((r, i) => rows.push([i + 1, U.round(r.lambda, 3), U.round(r.y * sc, 6), U.round(r.y, 6)].join(',')));
+  U.download(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(name) + '_ray_spot.csv');
+  U.track('ray-spot-csv');
+};
+
 /* ---------- readouts (physics feedback) ---------- */
 function readout(obj) {
   const tr = RNBX.canvas.trace;
@@ -388,6 +398,16 @@ function objectPanel(obj) {
   const set = objSetter([obj]);
   const body = [];
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
+  // ray bundles: download where every ray lands on this detector
+  { const h0 = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
+    if (h0 && h0.rays && h0.rays.length) body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Ray spot CSV', title: 'Where each ray lands across this detector, per wavelength', onclick: () => Ins.raySpotCsv(obj) }))); }
+  if (obj.type === 'raysource') {
+    // one-click colour sets and the ray width (a figure-wide setting) next to them
+    const preset = (label, props) => el('button', { class: 'btn small', type: 'button', text: label, onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, props); RNBX.anim.touch([obj.id]); RNBX.changed(); setTimeout(Ins.build, 0); } });
+    body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
+      preset('F · d · C', { colors: 'fdc', color: '' }), preset('RGB', { colors: 'rgb', color: '' }), preset('Single colour', { colors: 'single' }), preset('Black (print)', { colors: 'single', color: '#1d1f23' })));
+    body.push(control({ key: 'rayWidth', label: 'Ray width (whole figure)', type: 'range', min: 0.04, max: 0.8, step: 0.02 }, () => S.doc.style.rayWidth == null ? 0.16 : S.doc.style.rayWidth, (k, v) => { RNBX.history.checkpoint('rayWidth'); S.doc.style.rayWidth = v; RNBX.changed(); }));
+  }
   if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
   if (def.stackable) {
