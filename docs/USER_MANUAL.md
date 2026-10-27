@@ -93,7 +93,9 @@ For imaging figures, light can be drawn as individual rays instead of one beam:
   aberration-free lens.
 - Select a lens to read its focal length; a real lens also shows its back focal
   distance, surface radii, its focal length at the F, d and C lines and the
-  colour focal shift (C − F). **Move screen to focus** puts the nearest screen,
+  colour focal shift (C − F). Every lens also shows its f-number, NA and the
+  diffraction-limited Airy radius (1.22 λN at 587.6 nm), to compare with the ray
+  spot (the diameter is read at the figure scale). **Move screen to focus** puts the nearest screen,
   camera or detector in front of the lens (or objective) at its focus (the
   paraxial focus for real lenses), keeping its sideways position. Ctrl+Z undoes it.
 - A screen, camera or detector hit by rays reports the **ray spot**: the RMS

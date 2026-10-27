@@ -91,6 +91,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   });
   H.check('lens readout shows the real focal length and back focal distance', /focal length 250 mm/.test(foc.txt) && /back focal distance/.test(foc.txt), foc.txt.slice(0, 110));
   H.check('lens readout shows the F / d / C focal lengths and the colour focal shift', /F \/ d \/ C/.test(foc.txt) && /colour focal shift/.test(foc.txt), foc.txt.match(/Focal length F.*?mm · colour focal shift \(C − F\) [0-9.]+ mm/) ? foc.txt.match(/colour focal shift \(C − F\) [0-9.]+ mm/)[0] : foc.txt);
+  H.check('lens readout: f-number, NA and Airy radius (f = 250 mm, D = 120 mm → f/2.08, 1.49 µm)', /f\/2\.08/.test(foc.txt) && /NA 0\.23/.test(foc.txt) && /1\.49\d* µm/.test(foc.txt), (foc.txt.match(/f\/[^·]+·[^·]+·[^)]+\)[^µ]+µm/) || [foc.txt])[0]);
   H.near('Move screen to focus: screen at the paraxial ray crossing (drawn mm)', foc.x, foc.xCross, 0.01);
   H.check('Move screen to focus keeps the screen on its line', Math.abs(foc.y - 50.5) < 1e-6, foc.y);
   // ray spot CSV and the ray colour presets

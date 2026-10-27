@@ -305,6 +305,11 @@ function readout(obj) {
     let html = f.real
       ? `Real ${U.esc(RNBX.optics.MATERIALS[obj.props.mat] ? RNBX.optics.MATERIALS[obj.props.mat].name : obj.props.mat)} lens: focal length <b>${U.fmt(f.efl * sc, 4)} mm</b> at 587.6 nm · back focal distance <b>${U.fmt(f.bfd * sc, 4)} mm</b> (paraxial)`
       : `Ideal thin lens: focus <b>${U.fmt(f.efl * sc, 4)} mm</b> from the lens`;
+    // aperture: f-number, NA and the Airy radius 1.22 λ N (at 587.6 nm, or the lens's own focus in air)
+    if (f.efl > 0 && obj.props.d > 0) {
+      const N = f.efl / obj.props.d, NA = Math.sin(Math.atan(1 / (2 * N))), airy = 1.22 * 587.56e-6 * N;
+      html += `<br>f/${U.fmt(N, 3)} · NA ${U.fmt(NA, 3)} · diffraction-limited spot (Airy radius) ${airy >= 1 ? U.fmt(airy, 3) + ' mm' : U.fmt(airy * 1000, 3) + ' µm'}`;
+    }
     if (f.real) {
       // longitudinal colour: back focus at the F (blue), d (yellow) and C (red) lines
       const [F, Cc] = [lensFocus(obj, 486.13), lensFocus(obj, 656.27)];
