@@ -197,7 +197,7 @@ const KEYS = [
   ['Orient to beam', 'O'], ['Free move (no snapping)', 'hold Alt'], ['Constrain to axis', 'hold Shift'], ['Duplicate', 'Ctrl+D'],
   ['Copy / paste', 'Ctrl+C / Ctrl+V'], ['Delete', 'Del / Backspace'], ['Select all', 'Ctrl+A'], ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
-  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
+  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
   ['Play / pause', 'K'], ['Keyframe selection', 'I'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
   ['Reset everything (undoable)', '↺ toolbar button'], ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];

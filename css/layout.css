@@ -100,6 +100,7 @@ a.icon-btn { text-decoration: none; }
 .handle-line { stroke: var(--sel); vector-effect: non-scaling-stroke; stroke-width: 1; }
 .marquee { fill: color-mix(in srgb, var(--sel) 10%, transparent); stroke: var(--sel); vector-effect: non-scaling-stroke; stroke-width: 1; stroke-dasharray: 4 3; }
 .guide { stroke: #ff3d8b; vector-effect: non-scaling-stroke; stroke-width: 1; stroke-dasharray: 3 3; }
+.guide.eq { stroke: #1aa179; stroke-dasharray: none; stroke-width: 1.5; marker-start: none; }
 .snap-dot { fill: #ff3d8b; }
 .angle-tip { font: 600 3px var(--font); fill: var(--sel); paint-order: stroke; stroke: #fff; stroke-width: .8; }
 

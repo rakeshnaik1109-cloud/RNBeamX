@@ -146,7 +146,7 @@ function drawOverlay() {
       }
     }
   }
-  if (drag && drag.guides) drag.guides.forEach(g => overlay.append(sv('line', Object.assign({ class: 'guide' }, g))));
+  if (drag && drag.guides) drag.guides.forEach(g => { const { eq, ...geo } = g; overlay.append(sv('line', Object.assign({ class: eq ? 'guide eq' : 'guide' }, geo))); });
   if (drag && drag.snapPt) overlay.append(sv('circle', { cx: drag.snapPt[0], cy: drag.snapPt[1], r: 3.5 * k, class: 'snap-dot' }));
   if (drag && drag.angleTip) overlay.append(Object.assign(sv('text', { x: drag.angleTip.x, y: drag.angleTip.y, class: 'angle-tip', 'font-size': 11 * k, 'stroke-width': 3 * k }), { textContent: drag.angleTip.text }));
   if (drag && drag.kind === 'marquee') {
@@ -376,8 +376,11 @@ function moveSelection(p, e, k) {
       }
       if (gx) { single.x = gx.x; drag.guides.push({ x1: gx.x, y1: Math.min(gx.y, single.y) - 6, x2: gx.x, y2: Math.max(gx.y, single.y) + 6 }); }
       if (gy) { single.y = gy.y; drag.guides.push({ x1: Math.min(gy.x, single.x) - 6, y1: gy.y, x2: Math.max(gy.x, single.x) + 6, y2: gy.y }); }
+      // 2b. equal spacing with neighbours in the same row / column
+      let ex = false, ey = false;
+      if (S.ui.snap && RNBX.layout) { const r = RNBX.layout.smartSnap(single, drag.others, tol, { x: !gx, y: !gy }); ex = r.sx; ey = r.sy; drag.guides.push(...r.guides); }
       // 3. grid
-      if (S.ui.snap && S.ui.grid) { if (!gx) single.x = snapGrid(single.x); if (!gy) single.y = snapGrid(single.y); }
+      if (S.ui.snap && S.ui.grid) { if (!gx && !ex) single.x = snapGrid(single.x); if (!gy && !ey) single.y = snapGrid(single.y); }
     }
   } else if (!e.altKey && S.ui.snap && S.ui.grid && !space3d) {
     // move groups on the grid by their first member

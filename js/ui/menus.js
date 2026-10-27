@@ -91,6 +91,8 @@ M.items = {
     { label: 'Flip', icon: 'flip', key: 'F', disabled: !sel(), action: () => RNBX.inspector.flip() },
     { label: 'Orient to beam', icon: 'wand', key: 'O', disabled: !sel(), action: () => RNBX.canvas.orientToBeam() },
     { label: 'Auto-arrange labels', icon: 'label', key: '⇧L', action: () => RNBX.labels.arrange() },
+    { label: 'Tidy setup', icon: 'wand', key: '⇧T', action: () => RNBX.layout.tidy() },
+    { label: 'Fit to a journal width…', action: () => RNBX.layout.fitDialog() },
     '-',
     { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) },
     { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) },
@@ -265,7 +267,7 @@ function onKey(e) {
     case 'g': case 'G': toggleUi('grid', 'Grid'); break;
     case 'l': case 'L': if (e.shiftKey) RNBX.labels.arrange(); else toggleStyle('showLabels', 'Labels'); break;
     case 'p': case 'P': toggleStyle('polarization', 'Polarisation marks'); break;
-    case 't': case 'T': RNBX.timeline.toggle(); break;
+    case 't': case 'T': if (e.shiftKey) RNBX.layout.tidy(); else RNBX.timeline.toggle(); break;
     case 'k': case 'K': RNBX.anim.toggle(); break;
     case 'i': case 'I': if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } break;
     case '1': M.setMode('schematic'); break;

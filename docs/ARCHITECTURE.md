@@ -17,12 +17,12 @@ state (document) ──► tracer ──► renderer (2D) / renderer3d ──►
 | Layer | Files | Responsibility |
 |---|---|---|
 | core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
-| engine | `optics.js`, `tracer.js`, `nkdata.js`, `thinfilm.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power; measured n, k tables and the transfer-matrix solver for planar films |
-| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `nanostructures`, `shapes`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| engine | `optics.js`, `tracer.js`, `nkdata.js`, `thinfilm.js`, `rcwa.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power; measured n, k tables and the transfer-matrix solver for planar films |
+| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `nanostructures`, `shapes`, `groups`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
 | render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js`, `labels.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting, automatic label placement |
 | anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
-| io | `project.js`, `export.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
-| ui | `dom.js`, `canvas.js`, `palette.js`, `inspector.js`, `layers.js`, `timeline.js`, `dialogs.js`, `menus.js` | The application |
+| io | `project.js`, `export.js`, `share.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
+| ui | `dom.js`, `canvas.js`, `palette.js`, `inspector.js`, `layers.js`, `layout.js`, `timeline.js`, `dialogs.js`, `menus.js` | The application |
 
 ## Adding a component
 
@@ -87,6 +87,15 @@ refractiveindex.info database (CC0) with the dataset list in its header.
 x, y, rotation, W, D and view as the block below, and `props.base` set to that
 block's top surface. Coatings grow the surface by their thickness (Minkowski
 growth by a disc, so growths add); slabs flatten it; ridges add a profile.
+
+## Groups and RCWA
+
+A `group` keeps its parts in `props.children` relative to its origin;
+`lib.expand` returns them in world coordinates and is used by the tracer and the
+3D renderer, so grouped optics still work. `engine/rcwa.js` holds a self-contained
+core (`rcwaCore`) that also runs in a Web Worker built from its source; blocks
+expose `grating(p, obj, doc)` returning `{ period, orders, mats, slices }` with
+slices of `{ d, runs: [{ a, b, m }] }` in fractions of the period.
 
 ## Conventions
 

@@ -199,12 +199,25 @@ In an SPR setup the traced beam is also reflected at the chip with the calculate
 amplitudes, so detector readouts show the dip per wavelength. The *SPR sensor*
 template calculates R(λ) at the angle at which its beam actually meets the chip.
 
-**What it is and is not.** The calculation is the transfer-matrix method for flat,
-isotropic layers: exact for planar stacks, Kretschmann SPR, Fabry–Pérot and
-metal–insulator–metal films, antireflection coatings and Bragg mirrors. It does not
-include the lateral structure of gratings or metasurfaces (choose *Flat* to see
-what the stack alone does): their resonances need RCWA or FDTD, whose spectra you
-can import as data. Materials (n, k from the refractiveindex.info database, public
+**Gratings (RCWA).** When a stack of building blocks contains *Grating ridges*,
+**Method ▸ Grating (RCWA)** calculates it rigorously over one period, using the
+ridges' real period, height and residual layer and the coatings' real thicknesses
+(conformal coatings on rectangular ridges keep vertical walls for the calculation).
+It is the Fourier modal method with Li's inverse rule for TM and stable scattering
+matrices; R, T and A include every diffraction order. It runs in the background
+with a progress readout; the panel updates when it is done. Set the **diffraction
+orders** (more is slower and more exact), the **profile slices** (for curved
+profiles) and the points in the curve. **Check convergence** recalculates a few
+points with 1.5× the orders: metal gratings with thin walls or narrow gaps need
+many orders, and the check tells you when the result has settled. Nano-object
+arrays and 2D sheets are not periodic in one direction and are left out.
+
+**What it is and is not.** For flat layers the calculation is the transfer-matrix
+method, exact for planar stacks, Kretschmann SPR, Fabry–Pérot and
+metal–insulator–metal films, antireflection coatings and Bragg mirrors. The quick
+one-piece *Multilayer / grating stack* is always calculated as flat films; build the
+grating from blocks for RCWA. Two-dimensional metasurfaces need FDTD, whose spectra
+you can import as data. Materials (n, k from the refractiveindex.info database, public
 domain): Ag, Au, Al, Cu, Cr, Ti, Ni, Pt, W, SiO₂, TiO₂, Al₂O₃, HfO₂, MgF₂, Si₃N₄,
 ZnO, ZnS, CaF₂, Si, Ge, water, ethanol, methanol, acetone, PDMS, PMMA, the optical
 glasses, and custom n, k. Ag and Au also come as UV–mid-IR datasets (to 25 µm).
@@ -212,13 +225,35 @@ Outside a dataset's range the end value is used and the readout warns you.
 
 ## 5c. Your own components and styles
 
+- **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,
+  rotate and scale as one object; **Ctrl+Shift+G** ungroups. Optical parts inside a
+  group keep acting on beams, so a grouped source module still works.
+- **My components.** Select a group (or a custom component) and press **Save to
+  My components**: it appears at the top of the library in this browser. **Export
+  file** saves it as a small `.rnbxc.json` file to share with your group;
+  **File ▸ Import component file** adds such files to My components. Right-click a
+  tile in My components to export or remove it.
 - **Custom component** (*Samples & mechanics*): choose an SVG (kept as vector)
   or a photo, then an optical behaviour (mirror, splitter, lens, filter, sample,
-  detector, source…). **Save to My components** keeps it in the library.
+  detector, source…).
 - **Style presets** (Figure ▸ Style presets): classic line art, high-impact
   journal, 3D rendered, monochrome print, colour-blind safe, presentation, dark
   graphical abstract. **Save as house style** stores your current look;
   **Export / Import** shares it with your group as a small file.
+
+## 5c2. Layout helpers
+
+- **Tidy setup** (Arrange ▸ Tidy setup, **Shift+T**): parts sitting slightly off
+  their beam are put exactly on it, parts along one straight beam that are almost
+  evenly spaced (within 15 %) become evenly spaced, and labels are re-placed. Parts
+  never move further than that, so lens distances stay as you set them.
+- **Equal-spacing guides**: while you drag, the part snaps to the middle of its
+  two neighbours in a row or column, or repeats the gap of the pair next to it; a
+  green guide shows the equal gaps.
+- **Fit to a journal width** (Arrange menu): scales the whole figure to a column
+  width (Nature, APS, ACS, Elsevier, IEEE or your own). Type sizes and line weights
+  stay as they are, so text keeps its printed size, and the figure scale changes so
+  focal lengths and beams stay physically the same.
 
 ## 5d. Tablets and phones
 
@@ -249,7 +284,13 @@ wave plate changes the light after a PBS.
 | TIFF | Journals that require raster files; DPI tags included |
 | PNG / JPEG | Slides, web, quick previews (PNG includes DPI) |
 | MP4 / WebM | Talks, supplementary videos, social media |
+| PowerPoint (.pptx) | One slide the size of the figure with the figure as a vector picture (PNG fallback); right-click ▸ Convert to Shape makes every part editable |
+| TikZ (.tex) | LaTeX drawing commands for every path and label, in mm; compile with LuaLaTeX or XeLaTeX (Unicode text); gradients become their average colour |
 | Project (.rnbx.json) | Continue editing later or share with co-authors |
+
+**Share link** (File ▸ Copy share link) packs the whole figure into the web
+address. Whoever opens it gets an editable copy; nothing is uploaded. Very large
+figures (many data points) give very long links; send the project file instead.
 
 **Copy as PNG** puts the figure on the clipboard for slides. The work is also
 autosaved in your browser and never uploaded. RNBeamX counts visits and which

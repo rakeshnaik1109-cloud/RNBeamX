@@ -68,6 +68,9 @@ The tracer is a real 2D optical model, not just a line router:
 - **Shapes**: a 3D shape (box, cylinders, tube, cone, pyramid, sphere, hemisphere, wedge), atoms and bonds, and a free polygon / path, to draw instruments, stages or molecules in your own style.
 - **Device sketches**: multilayer / grating stacks with a layer key, angle markers and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
 - **One-click reset** (↺ next to undo) that is itself undoable.
+- **Groups and your own library**: group parts (Ctrl+G), save them to My components and share them as component files.
+- **Rigorous grating calculation (RCWA)** for gratings built from blocks, with every diffraction order, running in the background.
+- **Share links, PowerPoint and TikZ export**, plus Tidy setup, equal-spacing guides and Fit to a journal width.
 - **Calculated spectra**: layer stacks and the SPR prism compute reflectance, transmittance and absorptance against wavelength or angle (transfer-matrix method, measured n, k for metals, oxides, semiconductors, liquids and polymers), shown in a data panel that updates live, and the traced beam carries the SPR dip.
 
 ## Getting started

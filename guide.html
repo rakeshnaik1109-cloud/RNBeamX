@@ -68,7 +68,7 @@ footer .bar { padding: 20px 16px; }
     <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
     <nav>
       <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
-      <a href="#data">Panels &amp; data</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
+      <a href="#data">Panels &amp; data</a><a href="#layout">Groups &amp; layout</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
     </nav>
   </div>
 </header>
@@ -152,7 +152,8 @@ footer .bar { padding: 20px 16px; }
       <div class="card"><h3>3 · Linked panel</h3><p><i>Add data panel</i> places a plot that follows the stack. Keyframe the analyte index or a thickness to animate a binding event. <i>Unlink</i> freezes the curves; <i>CSV</i> exports them.</p></div>
       <div class="card"><h3>SPR in the beam path</h3><p>With a chip on the prism, the traced beam is reflected with the calculated amplitudes, so the spectrometer readout shows the same dip. See the <i>SPR sensor</i> template (panel d).</p></div>
     </div>
-    <div class="tip"><b>Scope.</b> The transfer-matrix method is exact for flat films: Kretschmann SPR, Fabry–Pérot and MIM stacks, AR coatings, Bragg mirrors. Grating and metasurface resonances need RCWA or FDTD; import those spectra as data. Optical constants come from the refractiveindex.info database (public domain). <i>Sources</i> lists the references to cite.</div>
+    <div class="card" style="margin-top:14px"><h3>Gratings, rigorously (RCWA)</h3><p>Build a grating from blocks (substrate, <i>Grating ridges</i>, coatings) and the calculation switches to RCWA: one period with the real period, ridge height and coating thicknesses, every diffraction order included, TM handled with Li's inverse rule. It runs in the background; <i>Check convergence</i> tells you when enough orders are used.</p></div>
+    <div class="tip"><b>Scope.</b> Flat films use the exact transfer-matrix method (Kretschmann SPR, Fabry–Pérot and MIM stacks, AR coatings, Bragg mirrors); 1D gratings built from blocks use RCWA. Two-dimensional metasurfaces need FDTD; import those spectra as data. Optical constants come from the refractiveindex.info database (public domain). <i>Sources</i> lists the references to cite.</div>
   </section>
 
   <section id="styles">
@@ -174,9 +175,20 @@ footer .bar { padding: 20px 16px; }
     </div>
   </section>
 
+  <section id="layout">
+    <h2>Groups, your library and layout helpers</h2>
+    <div class="grid">
+      <div class="card"><h3>Group (Ctrl+G)</h3><p>Parts move, rotate and scale as one; optics inside keep working. <kbd>Ctrl+Shift+G</kbd> ungroups.</p></div>
+      <div class="card"><h3>My components</h3><p>Save a group to the library and reuse it in any figure. <i>Export file</i> shares it with your group; <i>File ▸ Import component file</i> adds theirs.</p></div>
+      <div class="card"><h3>Tidy setup (Shift+T)</h3><p>Puts optics exactly on their beams, evens out nearly even spacing and re-places labels, without changing the optics.</p></div>
+      <div class="card"><h3>Fit to a journal width</h3><p>Rescales the figure to 89, 120, 183 mm (or any width) with type and line weights unchanged, and the physics identical.</p></div>
+    </div>
+    <p class="lead" style="margin-top:12px">While dragging, green guides show equal spacing with the neighbours in a row or column.</p>
+  </section>
+
   <section id="export">
-    <h2>Export and submission</h2>
-    <p class="lead">PDF and SVG stay fully vector with real text; PNG and TIFF render at the dpi you choose. <i>File ▸ Journal check</i> lists what a figure editor will look at (font sizes, line weights, colour-blind safety, image resolution), and the <i>Caption helper</i> drafts a caption with every abbreviation defined.</p>
+    <h2>Export, sharing and submission</h2>
+    <p class="lead"><b>Share link</b> (<i>File ▸ Copy share link</i>): the whole figure in the address, nothing uploaded; a co-author opens it and edits a copy. <b>PowerPoint</b>: a slide with the figure as a vector picture; right-click ▸ <i>Convert to Shape</i> to edit it. <b>TikZ</b>: LaTeX drawing commands for theses and papers. PDF and SVG stay fully vector with real text; PNG and TIFF render at the dpi you choose. <i>File ▸ Journal check</i> lists what a figure editor will look at (font sizes, line weights, colour-blind safety, image resolution), and the <i>Caption helper</i> drafts a caption with every abbreviation defined.</p>
   </section>
 
   <section id="reset">
@@ -196,6 +208,7 @@ footer .bar { padding: 20px 16px; }
       <tr><td>Grid / labels</td><td><kbd>G</kbd> / <kbd>L</kbd></td><td>Auto-arrange labels</td><td><kbd>Shift+L</kbd></td></tr>
       <tr><td>Timeline / play</td><td><kbd>T</kbd> / <kbd>K</kbd></td><td>Keyframe</td><td><kbd>I</kbd></td></tr>
       <tr><td>Save / export</td><td><kbd>Ctrl+S</kbd> / <kbd>Ctrl+E</kbd></td><td>Help</td><td><kbd>?</kbd></td></tr>
+      <tr><td>Group / ungroup</td><td><kbd>Ctrl+G</kbd> / <kbd>Ctrl+Shift+G</kbd></td><td>Tidy setup</td><td><kbd>Shift+T</kbd></td></tr>
     </table>
     </div>
   </section>
