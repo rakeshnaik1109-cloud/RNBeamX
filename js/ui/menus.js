@@ -53,6 +53,7 @@ M.items = {
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
+    { label: 'Import component file…', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.groups.importFile(f).catch(e => RNBX.toast(e.message, 'error'))) },
     { label: 'Add data panel (plot)…', icon: 'plus', action: () => RNBX.arrange.addDataPanel() },
     { label: 'Add data panel from RNSpectraX', action: () => { const d = RNBX.plotData.readHandoff(); if (d) { RNBX.arrange.addDataPanel(d); RNBX.toast('Spectrum from RNSpectraX added as panel'); } else RNBX.toast('Nothing received yet: in RNSpectraX open Export ▾ and press “→ RNBeamX”.'); } },
     { label: 'Export…', icon: 'download', key: mod + 'E', action: () => RNBX.dialogs.exporter() },
@@ -89,6 +90,9 @@ M.items = {
     { label: 'Flip', icon: 'flip', key: 'F', disabled: !sel(), action: () => RNBX.inspector.flip() },
     { label: 'Orient to beam', icon: 'wand', key: 'O', disabled: !sel(), action: () => RNBX.canvas.orientToBeam() },
     { label: 'Auto-arrange labels', icon: 'label', key: '⇧L', action: () => RNBX.labels.arrange() },
+    '-',
+    { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) },
+    { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) },
     '-',
     { label: 'Align left', icon: 'alignL', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('left') },
     { label: 'Align centres (horizontal)', icon: 'alignC', disabled: S.selection.length < 2, action: () => RNBX.arrange.align('cx') },
@@ -180,7 +184,7 @@ M.init = () => {
   RNBX.on('contextmenu', e => {
     const idEl = e.target.closest && e.target.closest('#figure [data-id]');
     if (idEl && !S.selection.includes(idEl.getAttribute('data-id'))) RNBX.select([idEl.getAttribute('data-id')]);
-    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add keyframe', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
+    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) }, { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) }, { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add keyframe', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
       : [{ label: 'Paste', action: () => RNBX.project.paste() }, { label: 'Fit page', action: () => RNBX.canvas.fit() }, { label: 'Templates…', action: () => RNBX.dialogs.templates() }];
     D.menu(items, e.clientX, e.clientY);
   });
@@ -226,6 +230,7 @@ function onKey(e) {
     if (k === 'v') { e.preventDefault(); RNBX.project.paste(); return; }
     if (k === 'd') { e.preventDefault(); RNBX.project.duplicate(); return; }
     if (k === 'a') { e.preventDefault(); RNBX.select(S.doc.objects.filter(o => !o.hidden).map(o => o.id)); return; }
+    if (k === 'g') { e.preventDefault(); e.shiftKey ? RNBX.groups.ungroup(S.selection.slice()) : RNBX.groups.group(S.selection.slice()); return; }
     if (k === ']') { e.preventDefault(); RNBX.layers.order('front'); return; }
     if (k === '[') { e.preventDefault(); RNBX.layers.order('back'); return; }
   }

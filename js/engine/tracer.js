@@ -40,7 +40,8 @@ function halfSize(obj) {
 function buildScene(doc) {
   const surfaces = [], vertical = [], sources = [], fibers = {};
   const scale = doc.style.scale || 10;
-  for (const obj of doc.objects) {
+  // parts inside groups take part in world coordinates
+  for (const obj of (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects)) {
     if (obj.hidden) continue;
     const def = RNBX.lib.get(obj.type);
     if (!def) continue;

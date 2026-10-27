@@ -172,17 +172,6 @@ function control(param, get, set, ctx = {}) {
         });
       });
       wrap.append(lab, btn);
-      if (ctx.obj && ctx.obj.type === 'custom') {
-        wrap.append(el('button', { class: 'btn small', type: 'button', style: { marginTop: '6px' }, text: 'Save to My components', onclick: () => {
-          const lib2 = U.store.get('rnbx_mylib', []);
-          const name = prompt('Name for this component:', ctx.obj.props.title || 'Custom component');
-          if (!name) return;
-          lib2.push({ id: U.uid(), name, props: Object.assign(U.deepClone(ctx.obj.props), { title: name }) });
-          U.store.set('rnbx_mylib', lib2);
-          RNBX.palette.build();
-          RNBX.toast('Saved to My components (in this browser)');
-        } }));
-      }
       return wrap;
     }
     default: { // number / wavelength
@@ -327,6 +316,15 @@ function objectPanel(obj) {
   params.forEach(p => body.push(control(p, k => obj.props[k], set, { obj })));
   if (body.length) root.push(sec(def.connection ? 'Connection' : 'Parameters', ...body));
   if (def.stack && RNBX.thinfilm && (!def.calcShow || def.calcShow(obj.props))) root.push(responseSection(obj, def, set));
+  if (obj.type === 'group' || obj.type === 'custom') {
+    const kids = obj.type === 'group' ? (obj.props.children || []) : [];
+    root.push(sec(obj.type === 'group' ? 'Group' : 'Share',
+      obj.type === 'group' ? el('div', { class: 'readout', text: `${kids.length} parts: ` + [...new Set(kids.map(c => (lib.get(c.type) || {}).name || c.type))].slice(0, 6).join(', ') + '. Optical parts inside still act on beams.' }) : null,
+      el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
+        obj.type === 'group' ? el('button', { class: 'btn small', type: 'button', text: 'Ungroup', title: 'Ctrl+Shift+G', onclick: () => RNBX.groups.ungroup([obj.id]) }) : null,
+        el('button', { class: 'btn small primary', type: 'button', text: 'Save to My components', onclick: () => { const nm = prompt('Name for this component:', obj.props.name || obj.props.title || 'My component'); if (nm) { RNBX.groups.save(obj, nm); RNBX.toast('Saved to My components (in this browser)'); } } }),
+        el('button', { class: 'btn small', type: 'button', text: 'Export file', title: 'A small file to share with your group; import it with File ▸ Import component file', onclick: () => RNBX.groups.exportFile(obj) }))));
+  }
 
   if (obj.label) {
     const lset = fieldSetter([obj], 'label');

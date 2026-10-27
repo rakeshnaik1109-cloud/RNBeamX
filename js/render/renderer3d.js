@@ -220,7 +220,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
   let shadows = '';
   let labels = '';
   const dark3 = RNBX.isDarkPage(doc.page);
-  for (const obj of doc.objects) {
+  for (const obj of (lib.expandIfNeeded ? lib.expandIfNeeded(doc.objects) : doc.objects)) {
     const def = lib.get(obj.type);
     if (!def || obj.hidden || def.annotation || def.special) continue;
     if (def.connection) {
@@ -254,7 +254,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
     // decals (stripes, bands) sit on a body's surface, so they go after it
     opaque.sort((a, b) => (a.f.decal - b.f.decal) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
     trans.filter(q => q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 1); });
-    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj.id}"` : ''}>${svg}</g>` });
+    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj._group || obj.id}"` : ''}>${svg}</g>` });
     // contact shadow
     if (v3.shadow !== false) {
       const b = def.bbox ? def.bbox(obj.props) : [-2, -2, 2, 2];
