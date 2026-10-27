@@ -332,8 +332,8 @@ lib.register({
 
 lib.register({
   type: 'prism', name: 'Dispersive prism', abbr: 'PR', category: 'Filters & dispersion', keywords: 'prism dispersive equilateral refraction',
-  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#c4c9d1', chipColor2: '#e9eef2',
-    metal: 'Ag', metalNm: 50, adhesion: 'none', adhesionNm: 2, layer2: 'SiO2', layer2Nm: 10, layer2N: 1.45, analyte: 'H2O', analyteN: 1.333,
+  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#d6a83a', chipColor2: '#e3eef3',
+    metal: 'Au', metalNm: 50, adhesion: 'none', adhesionNm: 2, layer2: 'none', layer2Nm: 10, layer2N: 1.45, analyte: 'H2O', analyteN: 1.333,
     calc: { scan: 'angle', amin: 40, amax: 80, lambda: 633, lmin: 450, lmax: 900, angle: 55, pol: 'p', show: 'R', points: 401, unit: 'nm' } },
   params: [{ key: 's', label: 'Side length', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 },
     { key: 'apex', label: 'Apex angle', type: 'number', unit: '°', min: 10, max: 120, step: 1 },

@@ -110,14 +110,14 @@ parts for that).
 
 | Part | Notes |
 |---|---|
-| **Multilayer / grating stack** | Edit the layers bottom → top in the inspector: colour, name, drawn thickness, tag (e.g. M₁, I, M₂); ↑ reorders, the bin removes, **+ Layer on top** adds. Surface profile flat, sinusoidal, trapezoid or square; period, ridge fraction and depth; Λ and a dimension labels; layer key; view angle and depth (oblique projection). Variants: SiO₂/Ag/PDMS grating, sensor chip |
-| **Molecule (ball and stick)** | Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide, or **Custom (XYZ)**: one atom per line, `element x y z` in Å. Bonds are found from covalent radii. Rotations about x, y, z can be keyframed. Vivid (green carbon) or CPK colours |
+| **Multilayer / grating stack** | Edit the layers bottom → top in the inspector: colour, name, drawn thickness, tag; ↑ reorders, the bin removes, **+ Layer on top** adds. Surface profile flat, sinusoidal, trapezoid or square; period, ridge fraction and depth; period and ridge dimension labels; layer key; view angle and depth (oblique projection). Variants: MIM grating stack, corrugated film stack, sensor chip. For stacks built part by part, see the building blocks below |
+| **Molecule (ball and stick)** | Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide, or **Custom (XYZ)**: one atom per line, `element x y z` in Å. Bonds are found from covalent radii. Rotations about x, y, z can be keyframed. CPK colours, or coloured carbon |
 | **Hydrogen bond (dashed)** | A red dashed line; drag the end handle between two atoms |
 | **3D cylinder**, **3D block / slab** | Detector housings with coaxial face rings, substrates, chips |
 | **Hot plate**, **Lab jack / tilt stage**, **Thermal / IR camera**, **Laptop**, **Pipette with droplet**, **Flow cell (inlet / outlet)**, **Light bulb** | Lab equipment for measurement sketches; texts and colours are editable |
 | **Angle marker (θ)** | Arc between two directions with an optional dashed normal |
 | **Dimension line (Λ = …)** | Arrows or ticks, label follows the line |
-| **Angle fan (θ arrows)** | Observation or emission angles, e.g. 0–70° with a θ_obs arc |
+| **Angle fan (θ arrows)** | Observation or emission angles, with an arc and label |
 
 Optical parts for these figures:
 
@@ -134,8 +134,31 @@ Optical parts for these figures:
   constant width with a darker edge (set **Ribbon width**), as in FTIR and
   telescope path sketches.
 
-Templates in this style: *Device sketch · metasurface absorber*, *FTIR beam
+Templates in this style: *Device sketch · coated grating (building blocks)*, *FTIR beam
 path (ribbon beams)*, *Thermal emission setup*, *SPR sensor (Kretschmann prism)*.
+
+### Building blocks (*Nanostructures & films*)
+
+Separate parts that stack onto each other, for building a device sketch one
+piece at a time:
+
+| Block | Notes |
+|---|---|
+| **Substrate / film (slab)** | Flat slab; on a corrugated surface its underside follows the corrugation and its top is flat (a planarising layer). Variants: glass, silicon wafer, polymer, thin film |
+| **Grating ridges** | Rectangular, trapezoid, sinusoidal, triangular or blazed profile; period, ridge fraction, height and a residual layer |
+| **Conformal coating** | Follows the surface below, sidewalls included (grown along the surface normal). Variants: metal, gold, oxide, silica |
+| **Nano-object array** | Disks / pillars, blocks, cones, hemispheres, spheres, core–shell spheres or lying rods; square, hexagonal or random layout |
+| **2D material sheet** | Graphene, hBN or MoS₂ with honeycomb geometry |
+| **Layer key** | Colour swatches with names and optional bracketed tags, independent of any stack |
+
+**Stacking.** Select a block and click another block in the library: the new one
+is placed on top of that stack. Or drag a block onto the top of another; it snaps
+on. Attached blocks take the width, depth and view of the stack and follow it when
+it moves or is resized. Drag a block away (or press **Detach** in the inspector) to
+take it off. Slabs and coatings have a material and a real thickness (shown once
+they sit on a stack), and **Optical response** on any block calculates the whole
+stack: the bottom slab is the substrate; ridges, arrays and sheets are left out
+and named in the readout.
 
 ## 5b3. Optical response: calculated spectra
 

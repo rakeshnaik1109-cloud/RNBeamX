@@ -69,7 +69,7 @@ const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02
 DataIO.calcResult = (src, doc) => {
   const def = src && lib.get(src.type);
   if (!def || !def.stack || !RNBX.thinfilm) return null;
-  return RNBX.thinfilm.cached(def.stack(src.props), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
+  return RNBX.thinfilm.cached(def.stack(src.props, src, doc), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
 };
 DataIO.calcSeries = res => res.calc.show.split('').filter(q => CALC_STYLE[q]).map(q => ({ name: CALC_STYLE[q][0], x: res.x, y: res.series[q], color: CALC_STYLE[q][1], dash: 'solid' }));
 DataIO.calcYLabel = res => { const q = res.calc.show.split('').filter(v => CALC_STYLE[v]); return q.length === 1 ? CALC_STYLE[q[0]][0] : q.join(', '); };
@@ -92,7 +92,7 @@ DataIO.downloadCsv = src => {
   U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(src.kindName || lib.get(src.type).name) + '_response.csv');
 };
 DataIO.sourcesDialog = src => {
-  const def = lib.get(src.type), st = def.stack(src.props), TF = RNBX.thinfilm, D = RNBX.dom, el = D.el;
+  const def = lib.get(src.type), st = def.stack(src.props, src), TF = RNBX.thinfilm, D = RNBX.dom, el = D.el;
   const mats = [...new Set([st.inc, st.sub].concat(st.layers.map(l => l.m)).map(m => m.mat))].filter(m => m && m !== 'air' && m !== 'custom');
   D.modal({ title: 'Optical constants used', sub: 'Measured n, k from the refractiveindex.info database (public domain)',
     body: [el('ul', { class: 'check-list' }, mats.map(m => el('li', {}, el('i', { class: 'ok', text: 'n,k' }), el('span', {}, el('b', { text: TF.name(m) + '. ' }), TF.ref(m))))),
@@ -153,7 +153,7 @@ lib.register({
     let series = (p.series || []).filter(s => s.x && s.x.length), lost = false;
     if (p.link) {
       // live: recomputed from the linked stack on every change and animation frame
-      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src) : null;
+      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src, S.doc) : null;
       if (res) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
       else { series = []; lost = true; }
     }

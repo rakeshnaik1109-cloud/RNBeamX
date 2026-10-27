@@ -274,7 +274,8 @@ function startMove(e, p) {
   const ids = objs.map(o => o.id);
   drag = {
     kind: 'move', p0: p, moved: false, ids,
-    starts: objs.map(o => ({ id: o.id, x: o.x, y: o.y })),
+    // an attached block starts from where its bottom is drawn, so dragging it off a stack does not jump
+    starts: objs.map(o => ({ id: o.id, x: o.x, y: o.y - (lib.get(o.type).stackable && o.props.on && lib.surfMax ? lib.surfMax(o.props.base) * (o.scale || 1) : 0) })),
     snapSegs: null,
     others: S.doc.objects.filter(o => !ids.includes(o.id) && !lib.get(o.type).connection && !lib.get(o.type).annotation),
   };
@@ -353,6 +354,12 @@ function moveSelection(p, e, k) {
   if (single && !e.altKey) {
     const def = lib.get(single.type);
     let snapped = false;
+    // 0. building blocks stack onto the top of other blocks
+    if (def.stackable && S.ui.snap && lib.stackAnchor) {
+      const hit = lib.stackAnchor(single, [single.x, single.y], S.doc, Math.max(2.5, 10 * k));
+      if (hit) { single.props.on = hit.o.id; drag.snapPt = hit.pt; snapped = true; }
+      else if (single.props.on) { single.props.on = ''; single.props.base = null; }
+    }
     // 1. snap optics onto beams
     if (def.snap && S.ui.snap) {
       if (!drag.snapSegs) drag.snapSegs = traceWithout([single.id]);
@@ -492,6 +499,17 @@ C.placeNew = (entry, p, fromDrop) => {
   if (is3d() && !def.annotation && RNBX.render.last3d) {
     const q = RNBX.render.last3d.unproject(p[0], p[1], S.doc.view3d.beamHeight);
     o.x = q[0]; o.y = q[1];
+  }
+  // building blocks: clicked → on top of the selected stack; dropped → onto a stack nearby
+  if (def.stackable && lib.stackTop) {
+    const sel = RNBX.selected().find(q => lib.get(q.type).stackable);
+    const target = !fromDrop && sel ? lib.stackTop(sel) : fromDrop ? (lib.stackAnchor(o, [o.x, o.y], S.doc, 8) || {}).o : null;
+    if (target) {
+      o.props.on = target.id; o.x = target.x; o.y = target.y;
+      RNBX.addObject(o);
+      RNBX.toast('Stacked on ' + (target.props.name || lib.get(target.type).name) + '. Drag it away to detach.');
+      return o;
+    }
   }
   // clicked (not dropped) optics go onto the open end of the beam, so a
   // setup can be built just by clicking library items in order

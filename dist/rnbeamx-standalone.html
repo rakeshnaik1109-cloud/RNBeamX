@@ -2442,8 +2442,8 @@ lib.register({
 
 lib.register({
   type: 'prism', name: 'Dispersive prism', abbr: 'PR', category: 'Filters & dispersion', keywords: 'prism dispersive equilateral refraction',
-  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#c4c9d1', chipColor2: '#e9eef2',
-    metal: 'Ag', metalNm: 50, adhesion: 'none', adhesionNm: 2, layer2: 'SiO2', layer2Nm: 10, layer2N: 1.45, analyte: 'H2O', analyteN: 1.333,
+  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#d6a83a', chipColor2: '#e3eef3',
+    metal: 'Au', metalNm: 50, adhesion: 'none', adhesionNm: 2, layer2: 'none', layer2Nm: 10, layer2N: 1.45, analyte: 'H2O', analyteN: 1.333,
     calc: { scan: 'angle', amin: 40, amax: 80, lambda: 633, lmin: 450, lmax: 900, angle: 55, pol: 'p', show: 'R', points: 401, unit: 'nm' } },
   params: [{ key: 's', label: 'Side length', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 },
     { key: 'apex', label: 'Apex angle', type: 'number', unit: '°', min: 10, max: 120, step: 1 },
@@ -3270,7 +3270,7 @@ const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02
 DataIO.calcResult = (src, doc) => {
   const def = src && lib.get(src.type);
   if (!def || !def.stack || !RNBX.thinfilm) return null;
-  return RNBX.thinfilm.cached(def.stack(src.props), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
+  return RNBX.thinfilm.cached(def.stack(src.props, src, doc), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
 };
 DataIO.calcSeries = res => res.calc.show.split('').filter(q => CALC_STYLE[q]).map(q => ({ name: CALC_STYLE[q][0], x: res.x, y: res.series[q], color: CALC_STYLE[q][1], dash: 'solid' }));
 DataIO.calcYLabel = res => { const q = res.calc.show.split('').filter(v => CALC_STYLE[v]); return q.length === 1 ? CALC_STYLE[q[0]][0] : q.join(', '); };
@@ -3293,7 +3293,7 @@ DataIO.downloadCsv = src => {
   U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(src.kindName || lib.get(src.type).name) + '_response.csv');
 };
 DataIO.sourcesDialog = src => {
-  const def = lib.get(src.type), st = def.stack(src.props), TF = RNBX.thinfilm, D = RNBX.dom, el = D.el;
+  const def = lib.get(src.type), st = def.stack(src.props, src), TF = RNBX.thinfilm, D = RNBX.dom, el = D.el;
   const mats = [...new Set([st.inc, st.sub].concat(st.layers.map(l => l.m)).map(m => m.mat))].filter(m => m && m !== 'air' && m !== 'custom');
   D.modal({ title: 'Optical constants used', sub: 'Measured n, k from the refractiveindex.info database (public domain)',
     body: [el('ul', { class: 'check-list' }, mats.map(m => el('li', {}, el('i', { class: 'ok', text: 'n,k' }), el('span', {}, el('b', { text: TF.name(m) + '. ' }), TF.ref(m))))),
@@ -3354,7 +3354,7 @@ lib.register({
     let series = (p.series || []).filter(s => s.x && s.x.length), lost = false;
     if (p.link) {
       // live: recomputed from the linked stack on every change and animation frame
-      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src) : null;
+      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src, S.doc) : null;
       if (res) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
       else { series = []; lost = true; }
     }
@@ -3463,9 +3463,10 @@ const obliqueParams = [
 /* mat / nm: material and real thickness for the thin-film calculation
    (t is only the drawn thickness) */
 const LAYER_PRESETS = {
-  absorber: [{ name: 'PDMS', color: '#2f7d3f', t: 7, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₁', mat: 'Ag', nm: 100 }, { name: 'TiO₂', color: '#9c1d1d', t: 1.1, tag: 'I', mat: 'TiO2', nm: 80 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₂', mat: 'Ag', nm: 15 }],
-  sio2: [{ name: 'PDMS', color: '#1f2f7a', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 1.2, tag: '', mat: 'Ag', nm: 100 }, { name: 'SiO₂', color: '#d8cf27', t: 1.5, tag: '', mat: 'SiO2', nm: 200 }],
-  spr: [{ name: 'SF11 glass', color: '#8fb7d6', t: 5, tag: '', mat: 'glass:SF11', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 0.8, tag: '', mat: 'Ag', nm: 50 }, { name: 'Silica matrix', color: '#e9eef2', t: 1.4, tag: '', mat: 'SiO2', nm: 10 }],
+  film: [{ name: 'Glass', color: '#cfe6f2', t: 6, tag: '', mat: 'glass:N-BK7', nm: 0 }, { name: 'Gold', color: '#d6a83a', t: 1.2, tag: '', mat: 'Au', nm: 40 }, { name: 'SiO₂', color: '#8fc9b9', t: 1.6, tag: '', mat: 'SiO2', nm: 100 }],
+  mim: [{ name: 'Polymer', color: '#d9ead3', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Ag', nm: 100 }, { name: 'Dielectric', color: '#e8a13a', t: 1.2, tag: '', mat: 'Al2O3', nm: 60 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Ag', nm: 20 }],
+  corrugated: [{ name: 'Polymer', color: '#d9ead3', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Au', nm: 80 }, { name: 'Oxide', color: '#8fc9b9', t: 1.4, tag: '', mat: 'SiO2', nm: 50 }],
+  chip: [{ name: 'Glass', color: '#cfe6f2', t: 5, tag: '', mat: 'glass:N-BK7', nm: 0 }, { name: 'Au', color: '#d6a83a', t: 0.8, tag: '', mat: 'Au', nm: 50 }],
 };
 /* guess a material from a layer name (old projects, new layers) */
 lib.guessMat = name => {
@@ -3492,8 +3493,8 @@ const layerStack = p => {
 lib.register({
   type: 'layers', name: 'Multilayer / grating stack', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'multilayer stack thin film metasurface grating corrugated substrate device cross section mim absorber layers pdms silver tio2',
-  defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'trapezoid', period: 9, duty: 0.32, amp: 1.6, layers: LAYER_PRESETS.absorber, labels: 'front', legend: true,
-    showPeriod: true, periodLabel: 'Λ = 1450 nm', dutyLabel: 'a = 450 nm', edge: true, sheen: true,
+  defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'flat', period: 8, duty: 0.5, amp: 1.6, layers: LAYER_PRESETS.film, labels: 'front', legend: false,
+    showPeriod: true, periodLabel: 'Λ', dutyLabel: 'w', edge: true, sheen: true,
     ambient: 'air', ambientN: 1.33, side: 'top', bottomMode: 'semi', calc: { scan: 'wl', lmin: 400, lmax: 1500, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } },
   params: [
     { key: 'layers', label: 'Layers (bottom → top)', type: 'layers' },
@@ -3519,8 +3520,9 @@ lib.register({
   stack: layerStack,
   calcNote: p => p.profile !== 'flat' ? 'The grating profile is not part of this calculation: it treats the layers as flat films. Grating and gap-plasmon resonances need RCWA or FDTD; import such spectra as data.' : '',
   variants: [
-    { name: 'SiO₂ / Ag / PDMS grating', props: { layers: LAYER_PRESETS.sio2, profile: 'sine', period: 10, amp: 2.2, legend: false, showPeriod: false } },
-    { name: 'Sensor chip (thin film)', props: { layers: LAYER_PRESETS.spr, profile: 'flat', W: 34, D: 20, legend: false } },
+    { name: 'MIM grating stack', props: { layers: LAYER_PRESETS.mim, profile: 'square', period: 8, duty: 0.5, amp: 1.6, legend: true } },
+    { name: 'Corrugated film stack', props: { layers: LAYER_PRESETS.corrugated, profile: 'sine', period: 8, amp: 2, showPeriod: false } },
+    { name: 'Sensor chip (thin film)', props: { layers: LAYER_PRESETS.chip, profile: 'flat', W: 34, D: 20 } },
   ],
   resizable: false,
   geom(p) {
@@ -3539,7 +3541,7 @@ lib.register({
     };
     const N = Math.min(700, Math.max(40, Math.round(W / per * 40)));
     const xs = []; for (let i = 0; i <= N; i++) xs.push(W * i / N);
-    const L = p.layers && p.layers.length ? p.layers : LAYER_PRESETS.absorber;
+    const L = p.layers && p.layers.length ? p.layers : LAYER_PRESETS.film;
     // boundaries: z[0] flat bottom; substrate top patterned; coatings conformal
     const bounds = [xs.map(() => 0)];
     let cum = 0;
@@ -3622,7 +3624,7 @@ lib.register({
 lib.register({
   type: 'cylinder3d', name: '3D cylinder (rings)', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'cylinder detector tube rod fibre 3d rings coaxial absorber housing',
-  defaults: { L: 26, r: 9, tilt: 0.45, body: '#2f7d3f', rings: '#c2762c, #c9ced6, #1e3f8f', core: '#ffe27a', coreR: 0.18, text: 'Detector' },
+  defaults: { L: 26, r: 9, tilt: 0.45, body: '#5a7db3', rings: '#d8dde4, #8f99a6', core: '', coreR: 0.18, text: '' },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 }, { key: 'r', label: 'Radius', type: 'number', unit: 'mm', min: 0.5, max: 100, step: 0.5 },
     { key: 'tilt', label: 'End-face tilt', type: 'range', min: 0.15, max: 1, step: 0.01 },
     { key: 'body', label: 'Body colour', type: 'color' }, { key: 'rings', label: 'Face rings (outer → inner, comma-separated)', type: 'text' },
@@ -3678,14 +3680,14 @@ lib.molParse = txt2 => String(txt2 || '').split(/\r?\n/).map(l => l.trim().split
 lib.register({
   type: 'molecule', name: 'Molecule (ball and stick)', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'molecule ball stick atom chemistry water ethanol methanol benzene analyte co2 ammonia acetone cyanide',
-  defaults: { preset: 'ethanol', xyz: '', size: 3.2, rx: 10, ry: -15, rz: 0, carbon: '#3fae49', scheme: 'vivid', symbols: false, ball: 1 },
+  defaults: { preset: 'ethanol', xyz: '', size: 3.2, rx: 10, ry: -15, rz: 0, carbon: '#3f86c9', scheme: 'cpk', symbols: false, ball: 1 },
   params: [
     { key: 'preset', label: 'Molecule', type: 'select', options: [['water', 'Water (H₂O)'], ['ethanol', 'Ethanol'], ['methanol', 'Methanol'], ['acetone', 'Acetone'], ['co2', 'Carbon dioxide'], ['methane', 'Methane'], ['ammonia', 'Ammonia'], ['benzene', 'Benzene'], ['cyanide', 'Cyanide (CN⁻)'], ['custom', 'Custom (XYZ)…']] },
     { key: 'xyz', label: 'Atoms: element x y z (Å), one per line', type: 'textarea', show: p => p.preset === 'custom' },
     { key: 'rx', label: 'Rotate about x', type: 'range', min: -180, max: 180, step: 1, animatable: true }, { key: 'ry', label: 'Rotate about y', type: 'range', min: -180, max: 180, step: 1, animatable: true },
     { key: 'rz', label: 'Rotate about z', type: 'range', min: -180, max: 180, step: 1, animatable: true },
     { key: 'size', label: 'Scale (mm per Å)', type: 'number', min: 0.2, max: 20, step: 0.1 }, { key: 'ball', label: 'Ball size', type: 'range', min: 0.4, max: 2, step: 0.01 },
-    { key: 'scheme', label: 'Colours', type: 'select', options: [['vivid', 'Vivid (green carbon)'], ['cpk', 'CPK (grey carbon)']] },
+    { key: 'scheme', label: 'Colours', type: 'select', options: [['cpk', 'CPK (grey carbon)'], ['vivid', 'Coloured carbon']] },
     { key: 'carbon', label: 'Carbon colour', type: 'color', show: p => p.scheme === 'vivid' }, { key: 'symbols', label: 'Element symbols', type: 'bool' }],
   variants: [{ name: 'Water molecule', props: { preset: 'water', rx: 0, ry: 0 } }, { name: 'Benzene', props: { preset: 'benzene', rx: 55, ry: 0 } }],
   model(p) {
@@ -3767,7 +3769,7 @@ lib.register({
 lib.register({
   type: 'dimension', name: 'Dimension line (Λ = …)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
   keywords: 'dimension length period distance measure double arrow lambda',
-  defaults: { dx: 20, dy: 0, label: 'Λ = 1450 nm', offset: -2.2, ends: 'arrows', color: '#111111', width: 0.5, size: 7, tilt: true },
+  defaults: { dx: 20, dy: 0, label: 'L', offset: -2.2, ends: 'arrows', color: '#111111', width: 0.5, size: 7, tilt: true },
   params: [{ key: 'label', label: 'Label', type: 'text' }, { key: 'dx', label: 'Length x', type: 'number', unit: 'mm', step: 0.5 }, { key: 'dy', label: 'Length y', type: 'number', unit: 'mm', step: 0.5 },
     { key: 'offset', label: 'Label offset', type: 'number', unit: 'mm', step: 0.2 }, { key: 'tilt', label: 'Label follows the line', type: 'bool' },
     { key: 'ends', label: 'Ends', type: 'select', options: [['arrows', 'Arrows'], ['ticks', 'Ticks'], ['both', 'Arrows and ticks']] },
@@ -3787,7 +3789,7 @@ lib.register({
 lib.register({
   type: 'fan', name: 'Angle fan (θ arrows)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
   keywords: 'angle fan observation angles arrows detection angular emission scan theta',
-  defaults: { r: 24, angles: '0,10,20,30,40,50,60,70', zero: 180, sense: 'cw', fmt: '{a}°', arc: true, arcLabel: 'θ_{obs}', color: '#111111', width: 0.7, size: 7 },
+  defaults: { r: 24, angles: '0,15,30,45,60', zero: 180, sense: 'cw', fmt: '{a}°', arc: true, arcLabel: 'θ', color: '#111111', width: 0.7, size: 7 },
   params: [{ key: 'angles', label: 'Angles (comma-separated)', type: 'text' }, { key: 'fmt', label: 'Label format ({a} = angle)', type: 'text' },
     { key: 'zero', label: 'Direction of 0° on the page', type: 'number', unit: '°', step: 1, hint: '0 = right, 180 = left' },
     { key: 'sense', label: 'Angles increase', type: 'select', options: [['cw', 'Upwards from 0°'], ['ccw', 'Downwards from 0°']] },
@@ -3820,7 +3822,7 @@ lib.register({
 const lab = cfg => lib.register(Object.assign({ category: CAT_L, annotation: true, autoLabel: false, abbr: '' }, cfg));
 lab({
   type: 'hotplate', name: 'Hot plate', keywords: 'hot plate heater heating stage temperature thermal emission',
-  defaults: { W: 30, Hh: 9, D: 20, color: '#2b2b55', plate: '#ffe7a8', temp: '100 °C', ang: 32, depthK: 0.55, glow: true },
+  defaults: { W: 30, Hh: 9, D: 20, color: '#5b6573', plate: '#efe4cc', temp: '60 °C', ang: 32, depthK: 0.55, glow: true },
   params: [{ key: 'temp', label: 'Display', type: 'text' }, { key: 'color', label: 'Body colour', type: 'color' }, { key: 'plate', label: 'Plate colour', type: 'color' }, { key: 'glow', label: 'Hot glow', type: 'bool' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh - p.D * c.ky - 1, p.W / 2 + p.D * c.kx, p.Hh * 0.9]; },
@@ -3832,10 +3834,10 @@ lab({
     if (p.glow) { const m = P(p.W / 2, p.Hh + 0.5, p.D / 2); s += `<ellipse cx="${n(m[0])}" cy="${n(m[1])}" rx="${n(p.W * 0.45)}" ry="${n(p.D * c.ky * 0.6)}" fill="#ffd27a" fill-opacity="0.35"/>`; }
     // front panel: display and knob
     const pw = p.W * 0.62, ph = p.Hh * 0.62, px = -p.W / 2 + p.W * 0.08, py = -p.Hh * 0.82;
-    s += `<rect x="${n(px)}" y="${n(py)}" width="${n(pw)}" height="${n(ph)}" rx="0.6" fill="#c9907a" stroke="${U.darken('#c9907a', 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    s += `<rect x="${n(px + pw * 0.12)}" y="${n(py + ph * 0.22)}" width="${n(pw * 0.5)}" height="${n(ph * 0.56)}" fill="#f6e04b" stroke="#333" stroke-width="${n(S.lw * 0.6)}"/>` + txt(S, px + pw * 0.37, py + ph * 0.5, p.temp, Math.min(ph * 0.4, S.fs), '#111', 'font-weight="700"');
+    s += `<rect x="${n(px)}" y="${n(py)}" width="${n(pw)}" height="${n(ph)}" rx="0.6" fill="#d9dde3" stroke="${U.darken('#d9dde3', 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+    s += `<rect x="${n(px + pw * 0.12)}" y="${n(py + ph * 0.22)}" width="${n(pw * 0.5)}" height="${n(ph * 0.56)}" fill="#1f2933" stroke="#333" stroke-width="${n(S.lw * 0.6)}"/>` + txt(S, px + pw * 0.37, py + ph * 0.5, p.temp, Math.min(ph * 0.4, S.fs), '#8ef0a0', 'font-weight="700"');
     const kx = px + pw * 0.8, ky = py + ph * 0.5, kr = Math.min(ph, pw) * 0.25;
-    s += `<circle cx="${n(kx)}" cy="${n(ky)}" r="${n(kr)}" fill="#2c4f9e" stroke="#16264d" stroke-width="${n(S.lw * 0.6)}"/><path d="M ${n(kx)} ${n(ky)} L ${n(kx + kr * 0.8)} ${n(ky - kr * 0.6)}" stroke="#c0392b" stroke-width="${n(kr * 0.45)}" stroke-linecap="round"/>`;
+    s += `<circle cx="${n(kx)}" cy="${n(ky)}" r="${n(kr)}" fill="#4b5563" stroke="#1f2933" stroke-width="${n(S.lw * 0.6)}"/><path d="M ${n(kx)} ${n(ky)} L ${n(kx + kr * 0.8)} ${n(ky - kr * 0.6)}" stroke="#f3f4f6" stroke-width="${n(kr * 0.3)}" stroke-linecap="round"/>`;
     return s;
   },
 });
@@ -3865,7 +3867,7 @@ lab({
 });
 lab({
   type: 'ircam', name: 'Thermal / IR camera', keywords: 'thermal camera flir infrared imager ir camera bolometer',
-  defaults: { W: 16, Hh: 9, D: 12, color: '#9ea6c9', text: 'FLIR Camera', ang: 32, depthK: 0.55 },
+  defaults: { W: 16, Hh: 9, D: 12, color: '#c9ced6', text: 'IR camera', ang: 32, depthK: 0.55 },
   params: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 100, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh / 2 - p.D * c.ky, p.W / 2 + p.D * c.kx, p.Hh / 2]; },
@@ -3908,7 +3910,7 @@ lab({
 });
 lab({
   type: 'pipette', name: 'Pipette with droplet', keywords: 'pipette micropipette drop casting droplet analyte dispense liquid',
-  defaults: { L: 26, color: '#5b8fd6', drop: '#f2b705', tilt: -28, showDrop: true },
+  defaults: { L: 26, color: '#9aa5b3', drop: '#5fa8d3', tilt: -28, showDrop: true },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 5, max: 150, step: 0.5 }, { key: 'color', label: 'Body colour', type: 'color' },
     { key: 'showDrop', label: 'Droplet', type: 'bool' }, { key: 'drop', label: 'Droplet colour', type: 'color', show: p => p.showDrop }, { key: 'tilt', label: 'Tilt', type: 'range', min: -90, max: 90, step: 1 }],
   bbox: p => [-p.L * 0.45, -p.L * 0.55, p.L * 0.45, p.L * 0.6],
@@ -3926,7 +3928,7 @@ lab({
 });
 lab({
   type: 'flowcell', name: 'Flow cell (inlet / outlet)', keywords: 'flow cell microfluidic channel inlet outlet liquid cell sensor',
-  defaults: { W: 30, Hh: 5, D: 16, color: '#f2c77d', fluid: '#e24b3b', ang: 32, depthK: 0.5, title: 'Flow cell', labels: true },
+  defaults: { W: 30, Hh: 5, D: 16, color: '#d6eaf3', fluid: '#4f9fd1', ang: 32, depthK: 0.5, title: 'Flow cell', labels: true },
   params: [{ key: 'title', label: 'Text', type: 'text' }, { key: 'labels', label: 'Inlet / outlet labels', type: 'bool' }, { key: 'color', label: 'Cell colour', type: 'color' }, { key: 'fluid', label: 'Fluid colour', type: 'color' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2 - 9, -p.Hh / 2 - p.D * c.ky - 6, p.W / 2 + p.D * c.kx + 9, p.Hh / 2 + 1]; },
@@ -3942,7 +3944,7 @@ lab({
       s += `<rect x="${n(b[0] - 0.7)}" y="${n(t[1])}" width="1.4" height="${n(b[1] - t[1])}" fill="#d9a441" stroke="${S.ink}" stroke-width="${n(S.lw * 0.5)}"/>`;
       if (p.labels) s += `<line x1="${n(b[0] + sg * 1.5)}" y1="${n(t[1] + 1)}" x2="${n(b[0] + sg * 6)}" y2="${n(t[1] + 1)}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>` + H.arrowHead(b[0] + sg * (sg > 0 ? 6 : 1.5), t[1] + 1, sg > 0 ? 0 : Math.PI, 1, S.ink) + `<text x="${n(b[0] + sg * 6.6)}" y="${n(t[1] + 1)}" font-family="${U.esc(S.font)}" font-size="${n(S.fs * 0.85)}" fill="${S.ink}" text-anchor="${sg > 0 ? 'start' : 'end'}" dominant-baseline="central">${lab2}</text>`;
     });
-    if (p.title) { const q = P(p.W * 0.5, p.Hh * 0.75, 0); s += txt(S, q[0], q[1], p.title, Math.min(S.fs, p.Hh * 0.45), '#3a2a0a', 'font-weight="700"'); }
+    if (p.title) { const q = P(p.W * 0.5, p.Hh * 0.75, 0); s += txt(S, q[0], q[1], p.title, Math.min(S.fs, p.Hh * 0.45), '#1d3a4a', 'font-weight="700"'); }
     return s;
   },
 });
@@ -3962,6 +3964,496 @@ lib.register({
     return s;
   },
 });
+})();
+
+</script>
+<script>
+/* js/components/nanostructures.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/nanostructures.js
+   Building blocks for device and metasurface sketches, assembled
+   one part at a time: substrate / film slabs, grating ridges,
+   conformal coatings, nano-object arrays, 2D-material sheets and
+   a separate layer key.
+
+   Stacking: a block dropped (or clicked in the library while a
+   block is selected) onto the top of another block attaches to
+   it (props.on = id of the block below). Attached blocks share
+   the bottom block's position, width, depth and view, start
+   where the block below ends, and follow it when it moves or
+   changes size. Coatings follow the surface below (a coating on
+   a grating is corrugated too). Drag a block away to detach it.
+
+   Every block uses the same oblique ("cabinet") projection as
+   the multilayer stack: x right, z up, depth receding up-right.
+   The origin of a stack is the front-bottom centre of its lowest
+   block. Slabs and coatings carry a material and real thickness,
+   so a stack of them can be calculated (Optical response).
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, OB = lib.oblique;
+const CAT = 'Nanostructures & films';
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Structures & molecules'), 0, CAT);
+
+const contrast = c => { const r = U.hexToRgb(c); return r[0] * 0.3 + r[1] * 0.59 + r[2] * 0.11 < 140 ? '#ffffff' : '#111111'; };
+const pts = a => a.map(p => n(p[0]) + ' ' + n(p[1])).join(' L ');
+const poly = (a, fill, extra = '') => `<path d="M ${pts(a)} Z" fill="${fill}" ${extra}/>`;
+const txt = (S, x, y, str, size, color, extra = '') => `<text x="${n(x)}" y="${n(y)}" font-family="${U.esc(S.font)}" font-size="${n(size)}" fill="${color}" text-anchor="middle" dominant-baseline="central" ${extra}>${RNBX.text.markup(str, size)}</text>`;
+
+/* ---------- surfaces ----------
+   A surface is { z, prof, grow }: a periodic profile { kind, period,
+   duty, amp } (or none), raised by z and grown outwards by `grow`
+   (the total thickness of conformal coatings on it, measured along
+   the surface normal, so sidewalls are coated too). Growing by a and
+   then b equals growing by a + b, so coatings simply add up. */
+const FLAT = { z: 0, prof: null };
+const profileFn = pr => {
+  if (!pr || !(pr.amp > 0)) return () => 0;
+  const per = Math.max(0.3, +pr.period || 1), a = U.clamp(+pr.duty || 0.5, 0.02, 0.98), A = +pr.amp, sh = +pr.shift || 0;
+  return x => {
+    const u = ((((x - sh) / per) % 1) + 1) % 1;
+    switch (pr.kind) {
+      case 'sine': return A * (0.5 - 0.5 * Math.cos(2 * Math.PI * u));
+      case 'triangle': return A * (1 - Math.abs(2 * u - 1));
+      case 'sawtooth': return A * u;
+      default: {
+        // ridges centred in each period; trapezoids get sloped walls
+        const ramp = pr.kind === 'trapezoid' ? Math.min(0.18, (1 - a) / 2) : 0.012;
+        const dist = Math.abs(u - 0.5), half = a / 2;
+        if (dist <= half - ramp / 2) return A;
+        if (dist >= half + ramp / 2) return 0;
+        return A * (half + ramp / 2 - dist) / ramp;
+      }
+    }
+  };
+};
+const surfFn = s => {
+  const f = profileFn(s && s.prof), z = s ? +s.z || 0 : 0, g = s ? +s.grow || 0 : 0;
+  if (!(g > 0)) return x => z + f(x);
+  if (!s.prof || !(s.prof.amp > 0)) return () => z + g;
+  // Minkowski growth by a disc of radius g: max over |u| ≤ g of f(x + u) + √(g² − u²)
+  const K = 24;
+  return x => { let m = -Infinity; for (let i = -K; i <= K; i++) { const u = g * i / K, v = f(x + u) + Math.sqrt(Math.max(0, g * g - u * u)); if (v > m) m = v; } return z + m; };
+};
+const surfMax = s => (s ? +s.z || 0 : 0) + (s && s.prof ? +s.prof.amp || 0 : 0) + (s ? +s.grow || 0 : 0);
+const samplesFor = (W, prof) => {
+  const per = prof && prof.amp > 0 ? Math.max(0.3, prof.period) : W;
+  const N = U.clamp(Math.round(W / per * 48), 2, 900);
+  const xs = []; for (let i = 0; i <= N; i++) xs.push(W * i / N);
+  return xs;
+};
+
+/* a solid between a lower and an upper height profile: right face,
+   top surface strips shaded by slope (light from the upper left), front face */
+function solid(c, W, D, xs, lo, hi, color, S, opt = {}) {
+  const ox = -W / 2, P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + ox, q[1]]; };
+  const N = xs.length - 1, ink = S.ink, lw = n(S.lw * 0.6);
+  const edge = `stroke="${opt.stroke || ink}" stroke-opacity="${opt.edgeOpacity == null ? 0.55 : opt.edgeOpacity}" stroke-width="${lw}" stroke-linejoin="round"`;
+  let s = '';
+  if (hi[N] - lo[N] > 1e-4) s += poly([P(W, lo[N], 0), P(W, lo[N], D), P(W, hi[N], D), P(W, hi[N], 0)], U.shadeRgb(color, 0.72), edge);
+  const topCol = U.lighten(color, 0.12);
+  for (let j = 0; j < N; j++) {
+    const slope = (hi[j + 1] - hi[j]) / (xs[j + 1] - xs[j]);
+    const k = 1.02 + 0.3 * slope / Math.sqrt(1 + slope * slope);
+    const fill = U.shadeRgb(topCol, k);
+    s += poly([P(xs[j], hi[j], 0), P(xs[j + 1], hi[j + 1], 0), P(xs[j + 1], hi[j + 1], D), P(xs[j], hi[j], D)], fill, `stroke="${fill}" stroke-width="0.05"`);
+  }
+  if (opt.sheen) {
+    const id = 'rbx-nsheen-' + opt.id;
+    s += `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.3"/><stop offset="0.6" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>` +
+      poly(xs.map((x, j) => P(x, hi[j], 0)).concat(xs.slice().reverse().map((x, j) => P(x, hi[N - j], D))), `url(#${id})`);
+  }
+  s += `<path d="M ${pts(xs.map((x, j) => P(x, hi[j], D)))}" fill="none" ${edge}/>`;
+  s += `<path d="M ${pts([P(0, hi[0], 0), P(0, hi[0], D)])}" fill="none" ${edge}/>`;
+  const front = xs.map((x, j) => P(x, hi[j], 0)).concat(xs.slice().reverse().map((x, j) => P(x, lo[N - j], 0)));
+  s += poly(front, color, edge);
+  return s;
+}
+const frontText = (c, W, xs, lo, hi, label, S, color, size) => {
+  if (!label) return '';
+  // centre of the thickest part of the front face
+  let best = 0, bj = 0;
+  xs.forEach((x, j) => { const t = hi[j] - lo[j]; if (t > best) { best = t; bj = j; } });
+  const fs = Math.min(size || S.fs, best * 0.8);
+  if (fs < S.fs * 0.45) return '';
+  const x = xs.length > 3 ? W * 0.5 : xs[bj], j = Math.round(x / W * (xs.length - 1));
+  const q = OB.P(c, x, (lo[j] + hi[j]) / 2, 0);
+  return txt(S, q[0] - W / 2, q[1], label, fs, contrast(color), 'font-weight="700"');
+};
+
+/* ---------- shared parameters ---------- */
+const VIEW = [
+  { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 2, max: 300, step: 0.5, show: p => !p.on },
+  { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5, show: p => !p.on },
+  { key: 'ang', label: 'View angle', type: 'range', min: 5, max: 85, step: 1, show: p => !p.on },
+  { key: 'depthK', label: 'Depth scale', type: 'range', min: 0.1, max: 1.2, step: 0.01, show: p => !p.on },
+];
+const VIEW_DEF = { W: 44, D: 26, ang: 32, depthK: 0.55, on: '', base: null };
+const MAT = (label = 'Material (for Optical response)') => ({ key: 'mat', label, type: 'select', options: () => RNBX.thinfilm ? RNBX.thinfilm.options() : [['custom', 'Custom']] });
+const NM = { key: 'nm', label: 'Real thickness', type: 'number', unit: 'nm', min: 0, max: 1e6, step: 1, animatable: true, show: p => !!p.on };
+const NK = [{ key: 'n', label: 'Refractive index n', type: 'number', min: 1, max: 6, step: 0.001, show: p => p.mat === 'custom' }, { key: 'k', label: 'Extinction k', type: 'number', min: 0, max: 20, step: 0.001, show: p => p.mat === 'custom' }];
+const cam = p => OB.cam(p.ang, p.depthK);
+const baseOf = p => p.base || FLAT;
+
+/* ---------- the stack calculation from a chain of blocks ---------- */
+const getDoc = doc => doc || RNBX.state.doc;
+lib.stackChain = (obj, doc) => {
+  doc = getDoc(doc);
+  const by = id => doc.objects.find(o => o.id === id);
+  const down = [];
+  let cur = obj, guard = 0;
+  while (cur && guard++ < 60) { down.unshift(cur); cur = cur.props.on ? by(cur.props.on) : null; }
+  cur = obj; guard = 0;
+  while (guard++ < 60) { const up = doc.objects.find(o => o.props && o.props.on === cur.id && lib.get(o.type) && lib.get(o.type).stackable); if (!up || down.includes(up)) break; down.push(up); cur = up; }
+  return down;
+};
+const chainStack = (p, obj, doc) => {
+  const chain = obj ? lib.stackChain(obj, doc) : [];
+  if (!chain.length) return { inc: { mat: p.ambient || 'air' }, layers: [], sub: { mat: p.mat, n: p.n, k: p.k } };
+  const root = chain[0], films = [];
+  chain.slice(1).forEach(o => { if (o.type === 'nslab' || o.type === 'ncoat') films.push({ m: { mat: o.props.mat, n: o.props.n, k: o.props.k }, d: +o.props.nm || 0 }); });
+  const sub = root.type === 'nslab' || root.type === 'ncoat' ? { mat: root.props.mat, n: root.props.n, k: root.props.k } : { mat: 'air' };
+  const amb = { mat: p.ambient || 'air', n: p.ambientN, k: 0 };
+  return p.side === 'bottom' ? { inc: sub, layers: films, sub: amb } : { inc: amb, layers: films.slice().reverse(), sub };
+};
+const chainNote = (p, obj) => {
+  const chain = obj ? lib.stackChain(obj) : [];
+  const skipped = chain.filter(o => !['nslab', 'ncoat'].includes(o.type));
+  const corrugated = chain.some(o => o.type === 'ncoat' && o.props.base && o.props.base.prof);
+  const out = ['Stack: ' + chain.map(o => (o.props.name || lib.get(o.type).name) + (o === chain[0] ? ' (substrate)' : o.props.nm ? ` ${o.props.nm} nm` : '')).join(' → ') + '.'];
+  if (skipped.length) out.push('Not included (laterally structured): ' + skipped.map(o => o.props.name || lib.get(o.type).name).join(', ') + '. Their resonances need RCWA or FDTD.');
+  else if (corrugated) out.push('Coatings on a grating are calculated as flat films.');
+  return out.join(' ');
+};
+const CALC = {
+  calcParams: [
+    { key: 'ambient', label: 'Medium above the stack', type: 'select', options: () => RNBX.thinfilm.options() },
+    { key: 'ambientN', label: 'Its refractive index', type: 'number', min: 1, max: 4, step: 0.001, animatable: true, show: p => p.ambient === 'custom' },
+    { key: 'side', label: 'Light arrives from', type: 'select', options: [['top', 'Above'], ['bottom', 'Below (through the substrate)']] },
+  ],
+  stack: chainStack,
+  calcNote: chainNote,
+};
+const CALC_DEF = { ambient: 'air', ambientN: 1.333, side: 'top', calc: { scan: 'wl', lmin: 400, lmax: 1200, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } };
+
+const block = cfg => lib.register(Object.assign({ category: CAT, annotation: true, autoLabel: false, abbr: '', stackable: true, resizable: false }, CALC, cfg,
+  { defaults: Object.assign({}, VIEW_DEF, CALC_DEF, cfg.defaults) }));
+
+/* bbox from the lowest and highest point of the block */
+const bboxFor = (p, zTop) => {
+  const c = cam(p), b = baseOf(p).z || 0;
+  return [-p.W / 2 - 0.3, -zTop - p.D * c.ky - 0.5, p.W / 2 + p.D * c.kx + 0.3, -b + 0.3];
+};
+
+/* ================= Slab: substrate or film ================= */
+block({
+  type: 'nslab', name: 'Substrate / film (slab)',
+  keywords: 'substrate slab film layer wafer glass silicon polymer pdms block planar building block stack',
+  defaults: { t: 5, color: '#cfe2ee', name: 'Substrate', label: true, mat: 'glass:N-BK7', nm: 100, n: 1.5, k: 0, sheen: false },
+  params: [
+    { key: 'name', label: 'Name', type: 'text' }, { key: 'label', label: 'Name on the front face', type: 'bool' },
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.1, max: 200, step: 0.1 },
+    { key: 'color', label: 'Colour', type: 'color' }, { key: 'sheen', label: 'Sheen', type: 'bool' },
+    MAT(), ...NK, NM, ...VIEW],
+  variants: [
+    { name: 'Glass substrate', props: { name: 'Glass', color: '#cfe6f2', mat: 'glass:N-BK7' } },
+    { name: 'Silicon wafer', props: { name: 'Si', color: '#6b7785', mat: 'Si', t: 3 } },
+    { name: 'Polymer substrate', props: { name: 'Polymer', color: '#d9ead3', mat: 'PDMS', t: 6 } },
+    { name: 'Thin film (slab)', props: { name: 'Film', color: '#8fc9b9', mat: 'SiO2', t: 1.4, nm: 100 } },
+  ],
+  top: p => ({ z: surfMax(baseOf(p)) + p.t, prof: null }),
+  bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + p.t); },
+  draw(p, S, obj) {
+    const c = cam(p), b = baseOf(p), xs = samplesFor(p.W, b.prof), f = surfFn(b), top = surfMax(b) + p.t;
+    const lo = xs.map(f), hi = xs.map(() => top);
+    return solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x' }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+  },
+});
+
+/* ================= Grating ridges ================= */
+block({
+  type: 'nridges', name: 'Grating ridges',
+  keywords: 'grating ridges lines periodic corrugation 1d metasurface lamellar trapezoid sinusoidal blazed sawtooth nanoimprint building block',
+  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS' },
+  params: [
+    { key: 'profile', label: 'Profile', type: 'select', options: [['square', 'Rectangular'], ['trapezoid', 'Trapezoid'], ['sine', 'Sinusoidal'], ['triangle', 'Triangular'], ['sawtooth', 'Blazed (sawtooth)']] },
+    { key: 'period', label: 'Period (drawn)', type: 'number', unit: 'mm', min: 0.3, max: 100, step: 0.1 },
+    { key: 'duty', label: 'Ridge fraction', type: 'range', min: 0.05, max: 0.95, step: 0.01, show: p => p.profile === 'square' || p.profile === 'trapezoid' },
+    { key: 'amp', label: 'Ridge height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.1, animatable: true },
+    { key: 'resid', label: 'Residual layer under the ridges', type: 'number', unit: 'mm', min: 0, max: 60, step: 0.1 },
+    { key: 'name', label: 'Name', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' }, ...VIEW],
+  variants: [
+    { name: 'Sinusoidal grating', props: { profile: 'sine', period: 7, amp: 2 } },
+    { name: 'Blazed grating', props: { profile: 'sawtooth', period: 6, amp: 2.2 } },
+  ],
+  // pattern centred on the block, so both cut edges look alike
+  prof: p => ({ kind: p.profile, period: p.period, duty: p.duty, amp: p.amp, shift: (p.W % Math.max(0.3, p.period)) / 2 }),
+  top(p) { return { z: surfMax(baseOf(p)) + p.resid, prof: this.prof(p) }; },
+  bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + p.resid + p.amp); },
+  draw(p, S) {
+    const c = cam(p), b = baseOf(p), pr = this.prof(p), xs = samplesFor(p.W, pr), fb = surfFn(b), z0 = surfMax(b) + p.resid, fp = profileFn(pr);
+    const lo = xs.map(fb), hi = xs.map(x => z0 + fp(x));
+    return solid(c, p.W, p.D, xs, lo, hi, p.color, S);
+  },
+});
+
+/* ================= Conformal coating ================= */
+block({
+  type: 'ncoat', name: 'Conformal coating',
+  keywords: 'coating conformal film metal oxide deposited sputtered evaporated thin layer silver gold tio2 sio2 al2o3 building block',
+  defaults: { t: 0.9, color: '#b3bac4', name: 'Metal', label: false, mat: 'Ag', nm: 50, n: 1.5, k: 0, sheen: true },
+  params: [
+    { key: 'name', label: 'Name', type: 'text' }, { key: 'label', label: 'Name on the front face', type: 'bool' },
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true },
+    { key: 'color', label: 'Colour', type: 'color' }, { key: 'sheen', label: 'Metallic sheen', type: 'bool' },
+    MAT(), ...NK, NM, ...VIEW],
+  variants: [
+    { name: 'Gold coating', props: { name: 'Au', color: '#d6a83a', mat: 'Au' } },
+    { name: 'Oxide coating', props: { name: 'Oxide', color: '#e8a13a', mat: 'TiO2', sheen: false, t: 1.2, nm: 80 } },
+    { name: 'Silica coating', props: { name: 'SiO₂', color: '#8fc9b9', mat: 'SiO2', sheen: false, t: 1.2, nm: 100 } },
+  ],
+  top: p => { const b = baseOf(p); return { z: +b.z || 0, prof: b.prof, grow: (+b.grow || 0) + p.t }; },
+  bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + p.t); },
+  draw(p, S, obj) {
+    const c = cam(p), b = baseOf(p), xs = samplesFor(p.W, b.prof), f = surfFn(b), g = surfFn(this.top(p));
+    const lo = xs.map(f), hi = xs.map(g);
+    return solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x', edgeOpacity: 0.45 }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+  },
+});
+
+/* ================= Nano-object arrays ================= */
+/* 2D convex hull (monotone chain) of page points */
+const hull = P => {
+  const a = P.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cr = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of a) { while (lower.length >= 2 && cr(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+  for (let i = a.length - 1; i >= 0; i--) { const p = a[i]; while (upper.length >= 2 && cr(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+};
+const rng = seed => { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 100000) / 100000; }; };
+block({
+  type: 'narray', name: 'Nano-object array',
+  keywords: 'nanodisk nanopillar nanoparticle nanorod cone pyramid sphere core shell array lattice metasurface meta-atom plasmonic random building block',
+  defaults: { shape: 'disk', layout: 'square', nx: 6, ny: 4, r: 1.6, h: 1.2, len: 4, count: 18, seed: 7, color: '#d6a83a', shell: '#9fd0e6', name: 'Nanodisks' },
+  params: [
+    { key: 'shape', label: 'Shape', type: 'select', options: [['disk', 'Disk / pillar (cylinder)'], ['box', 'Block (cuboid)'], ['cone', 'Cone'], ['dome', 'Hemisphere'], ['sphere', 'Sphere'], ['coreshell', 'Core–shell sphere'], ['rod', 'Rod (lying)']] },
+    { key: 'layout', label: 'Arrangement', type: 'select', options: [['square', 'Square lattice'], ['hex', 'Hexagonal lattice'], ['random', 'Random']] },
+    { key: 'nx', label: 'Columns', type: 'number', min: 1, max: 60, step: 1, show: p => p.layout !== 'random' },
+    { key: 'ny', label: 'Rows (in depth)', type: 'number', min: 1, max: 40, step: 1, show: p => p.layout !== 'random' },
+    { key: 'count', label: 'Number of objects', type: 'number', min: 1, max: 400, step: 1, show: p => p.layout === 'random' },
+    { key: 'seed', label: 'Random pattern', type: 'number', min: 1, max: 9999, step: 1, show: p => p.layout === 'random' },
+    { key: 'r', label: 'Radius / half-width (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 40, step: 0.05, animatable: true },
+    { key: 'h', label: 'Height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true, show: p => ['disk', 'box', 'cone'].includes(p.shape) },
+    { key: 'len', label: 'Rod length (drawn)', type: 'number', unit: 'mm', min: 0.2, max: 60, step: 0.1, show: p => p.shape === 'rod' },
+    { key: 'color', label: 'Colour', type: 'color' }, { key: 'shell', label: 'Shell colour', type: 'color', show: p => p.shape === 'coreshell' },
+    { key: 'name', label: 'Name', type: 'text' }, ...VIEW],
+  variants: [
+    { name: 'Nanopillar array', props: { shape: 'disk', r: 1, h: 3.2, color: '#9aa6b5', name: 'Nanopillars', nx: 8, ny: 5 } },
+    { name: 'Nanoparticles (random)', props: { shape: 'sphere', layout: 'random', r: 1.1, color: '#d6a83a', name: 'Nanoparticles' } },
+    { name: 'Core–shell particles', props: { shape: 'coreshell', layout: 'hex', r: 1.5, nx: 6, ny: 4, color: '#d6a83a', name: 'Core–shell' } },
+    { name: 'Nanorods', props: { shape: 'rod', layout: 'random', r: 0.6, len: 4, count: 14, color: '#d6a83a', name: 'Nanorods' } },
+    { name: 'Nanocone array', props: { shape: 'cone', r: 1.4, h: 3, color: '#7e9cc4', name: 'Nanocones' } },
+  ],
+  sites(p) {
+    const out = [], W = p.W, D = p.D;
+    if (p.layout === 'random') {
+      const R = rng(p.seed), m = p.shape === 'rod' ? p.len / 2 : p.r;
+      for (let i = 0; i < p.count; i++) out.push({ x: m + R() * Math.max(0, W - 2 * m), d: p.r + R() * Math.max(0, D - 2 * p.r), a: R() * Math.PI });
+    } else {
+      const nx = Math.max(1, Math.round(p.nx)), ny = Math.max(1, Math.round(p.ny));
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const sh = p.layout === 'hex' && j % 2 ? 0.5 : 0;
+        const x = (i + 0.5 + sh) * W / (nx + (p.layout === 'hex' ? 0.5 : 0));
+        out.push({ x, d: (j + 0.5) * D / ny, a: 0 });
+      }
+    }
+    return out;
+  },
+  height: p => ({ disk: p.h, box: p.h, cone: p.h, dome: p.r, sphere: 2 * p.r, coreshell: 2 * p.r, rod: 2 * p.r }[p.shape] || p.h),
+  top(p) { return { z: surfMax(baseOf(p)) + this.height(p), prof: null }; },
+  bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + this.height(p) + 0.5); },
+  draw(p, S, obj) {
+    const c = cam(p), z0 = surfMax(baseOf(p)), W = p.W, r = p.r, ox = -W / 2, id = obj ? obj.id : 'x';
+    const P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + ox, q[1]]; };
+    const ink = S.ink, lw = n(S.lw * 0.5), stroke = `stroke="${U.darken(p.color, 0.45)}" stroke-width="${lw}" stroke-linejoin="round"`;
+    const circ = (x, z, d, rr, N = 28) => { const a = []; for (let i = 0; i < N; i++) { const t = i / N * 2 * Math.PI; a.push(P(x + rr * Math.cos(t), z, d + rr * Math.sin(t))); } return a; };
+    const gid = 'rbx-na-' + id;
+    let defs = `<linearGradient id="${gid}-side" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${U.darken(p.color, 0.3)}"/><stop offset="0.35" stop-color="${U.lighten(p.color, 0.3)}"/><stop offset="1" stop-color="${U.darken(p.color, 0.35)}"/></linearGradient>` +
+      `<radialGradient id="${gid}-ball" cx="0.35" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffffff"/><stop offset="0.3" stop-color="${U.lighten(p.color, 0.3)}"/><stop offset="0.85" stop-color="${p.color}"/><stop offset="1" stop-color="${U.darken(p.color, 0.4)}"/></radialGradient>` +
+      `<radialGradient id="${gid}-shell" cx="0.35" cy="0.3" r="0.75"><stop offset="0" stop-color="#ffffff" stop-opacity="0.8"/><stop offset="0.5" stop-color="${p.shell}" stop-opacity="0.45"/><stop offset="1" stop-color="${U.darken(p.shell, 0.3)}" stop-opacity="0.7"/></radialGradient>`;
+    // painter's order: back rows first
+    const sites = this.sites(p).sort((a, b) => b.d - a.d || a.x - b.x);
+    let s = '';
+    sites.forEach(st => {
+      const { x, d } = st;
+      switch (p.shape) {
+        case 'box': {
+          const q = OB.P(c, 0, 0, d - r);
+          s += `<g transform="translate(${n(ox + q[0])} ${n(q[1])})">${OB.box(c, x - r, z0, 2 * r, p.h, 2 * r, p.color, S, { stroke: U.darken(p.color, 0.45) })}</g>`;
+          break;
+        }
+        case 'cone': {
+          s += poly(hull(circ(x, z0, d, r).concat([P(x, z0 + p.h, d)])), `url(#${gid}-side)`, stroke);
+          break;
+        }
+        case 'dome': {
+          const sp = [];
+          for (let i = 0; i <= 8; i++) for (let k = 0; k < 16; k++) { const th = i / 8 * Math.PI / 2, ph = k / 16 * 2 * Math.PI; sp.push(P(x + r * Math.sin(th) * Math.cos(ph), z0 + r * Math.cos(th), d + r * Math.sin(th) * Math.sin(ph))); }
+          s += poly(hull(sp), `url(#${gid}-ball)`, stroke);
+          break;
+        }
+        case 'sphere': case 'coreshell': {
+          const q = P(x, z0 + r, d);
+          if (p.shape === 'coreshell') s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r * 0.62)}" fill="url(#${gid}-ball)" ${stroke}/><circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-shell)" stroke="${U.darken(p.shell, 0.4)}" stroke-width="${lw}"/>`;
+          else s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-ball)" ${stroke}/>`;
+          break;
+        }
+        case 'rod': {
+          // capsule lying on the surface, axis in the x–depth plane
+          const L = p.len / 2, ca = Math.cos(st.a), sa = Math.sin(st.a);
+          const A = P(x - L * ca, z0 + r, d - L * sa * 0.6), B = P(x + L * ca, z0 + r, d + L * sa * 0.6);
+          s += `<line x1="${n(A[0])}" y1="${n(A[1])}" x2="${n(B[0])}" y2="${n(B[1])}" stroke="${U.darken(p.color, 0.45)}" stroke-width="${n(2 * r + S.lw * 0.5)}" stroke-linecap="round"/>` +
+            `<line x1="${n(A[0])}" y1="${n(A[1])}" x2="${n(B[0])}" y2="${n(B[1])}" stroke="${p.color}" stroke-width="${n(2 * r)}" stroke-linecap="round"/>` +
+            `<line x1="${n(A[0])}" y1="${n(A[1] - r * 0.4)}" x2="${n(B[0])}" y2="${n(B[1] - r * 0.4)}" stroke="#ffffff" stroke-opacity="0.55" stroke-width="${n(r * 0.5)}" stroke-linecap="round"/>`;
+          break;
+        }
+        default: { // disk / pillar
+          const B = circ(x, z0, d, r), T = circ(x, z0 + p.h, d, r);
+          s += poly(hull(B.concat(T)), `url(#${gid}-side)`, stroke) + poly(T, U.lighten(p.color, 0.25), stroke);
+        }
+      }
+    });
+    void ink;
+    return `<defs>${defs}</defs>` + s;
+  },
+});
+
+/* ================= 2D-material sheet ================= */
+const SHEETS = {
+  graphene: { a: ['#4a4f57', '#4a4f57'], name: 'Graphene' },
+  hbn: { a: ['#e88b8b', '#5b7fd6'], name: 'hBN' },
+  mos2: { a: ['#6aa0d8', '#e8c547'], name: 'MoS₂', tri: true },
+};
+block({
+  type: 'nsheet', name: '2D material sheet',
+  keywords: 'graphene hbn boron nitride mos2 tmd 2d material monolayer honeycomb lattice sheet van der waals building block',
+  defaults: { kind: 'graphene', a: 2.2, atom: 0.32, bond: 0.14, name: 'Graphene', colorA: '', colorB: '' },
+  params: [
+    { key: 'kind', label: 'Material', type: 'select', options: [['graphene', 'Graphene'], ['hbn', 'Hexagonal boron nitride'], ['mos2', 'MoS₂ (transition-metal dichalcogenide)']] },
+    { key: 'a', label: 'Lattice constant (drawn)', type: 'number', unit: 'mm', min: 0.4, max: 20, step: 0.1 },
+    { key: 'atom', label: 'Atom size', type: 'number', unit: 'mm', min: 0.05, max: 5, step: 0.01 },
+    { key: 'bond', label: 'Bond width', type: 'number', unit: 'mm', min: 0, max: 2, step: 0.01 },
+    { key: 'colorA', label: 'Atom colour 1', type: 'color', allowEmpty: true }, { key: 'colorB', label: 'Atom colour 2', type: 'color', allowEmpty: true },
+    { key: 'name', label: 'Name', type: 'text' }, ...VIEW],
+  variants: [{ name: 'hBN sheet', props: { kind: 'hbn', name: 'hBN' } }, { name: 'MoS₂ monolayer', props: { kind: 'mos2', name: 'MoS₂', a: 2.6 } }],
+  thick: p => p.kind === 'mos2' ? p.a * 0.6 : p.atom * 2,
+  top(p) { return { z: surfMax(baseOf(p)) + this.thick(p), prof: null }; },
+  bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + this.thick(p) + p.atom); },
+  draw(p, S) {
+    const c = cam(p), K = SHEETS[p.kind] || SHEETS.graphene, a = Math.max(0.4, p.a), W = p.W, D = p.D, ox = -W / 2;
+    const zc = surfMax(baseOf(p)) + this.thick(p) / 2;
+    const P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + ox, q[1]]; };
+    const colA = p.colorA || K.a[0], colB = p.colorB || K.a[1];
+    // honeycomb: lattice vectors (a, 0) and (a/2, a√3/2) in the x–depth plane, two-atom basis
+    const atoms = [], s3 = Math.sqrt(3), bl = a / s3;
+    for (let j = -1; j * a * s3 / 2 <= D + a; j++) for (let i = -2; i * a <= W + a; i++) {
+      const x0 = i * a + (j % 2 ? a / 2 : 0), d0 = j * a * s3 / 2;
+      [[0, 0, 0], [a / 2, bl / 2, 1]].forEach(([dx, dd, t]) => { const x = x0 + dx, d = d0 + dd; if (x >= 0 && x <= W && d >= 0 && d <= D) atoms.push({ x, d, t }); });
+    }
+    let s = '';
+    const lineAt = (A, B, z1, z2) => { const p1 = P(A.x, z1, A.d), p2 = P(B.x, z2, B.d); return `<line x1="${n(p1[0])}" y1="${n(p1[1])}" x2="${n(p2[0])}" y2="${n(p2[1])}" stroke="#7d838c" stroke-width="${n(p.bond)}" stroke-linecap="round"/>`; };
+    const ball = (x, z, d, col, rr) => { const q = P(x, z, d); return `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(rr)}" fill="${col}" stroke="${U.darken(col, 0.45)}" stroke-width="${n(S.lw * 0.35)}"/>`; };
+    const dz = K.tri ? a * 0.3 : 0;
+    // bonds between nearest neighbours (back to front)
+    const sorted = atoms.slice().sort((A, B) => B.d - A.d || A.x - B.x);
+    if (p.bond > 0) for (let i = 0; i < sorted.length; i++) for (let k = i + 1; k < sorted.length; k++) {
+      const A = sorted[i], B = sorted[k];
+      if (A.t === B.t || Math.abs(Math.hypot(A.x - B.x, A.d - B.d) - bl) > bl * 0.08) continue;
+      if (K.tri) { const m = A.t ? A : B, s2 = A.t ? B : A; s += lineAt(s2, m, zc, zc + dz) + lineAt(s2, m, zc, zc - dz); } else s += lineAt(A, B, zc, zc);
+    }
+    sorted.forEach(A => {
+      if (K.tri && A.t) s += ball(A.x, zc - dz, A.d, colB, p.atom * 0.85) + ball(A.x, zc + dz, A.d, colB, p.atom * 0.85);
+      else s += ball(A.x, zc, A.d, A.t ? colB : colA, p.atom * (K.tri ? 1.15 : 1));
+    });
+    return s;
+  },
+});
+
+/* ================= Layer key ================= */
+lib.register({
+  type: 'layerkey', name: 'Layer key', category: CAT, annotation: true, autoLabel: false, abbr: '',
+  keywords: 'legend key layers stack colour code tags m1 i m2 building block',
+  defaults: { rows: [{ name: 'Substrate', color: '#cfe2ee', tag: '' }, { name: 'Metal', color: '#b3bac4', tag: '' }, { name: 'Dielectric', color: '#e8a13a', tag: '' }, { name: 'Metal', color: '#b3bac4', tag: '' }], w: 16, rowH: 3, size: 6.5, tags: true },
+  params: [{ key: 'rows', label: 'Rows', type: 'layers', simple: true }, { key: 'w', label: 'Swatch width', type: 'number', unit: 'mm', min: 2, max: 80, step: 0.5 },
+    { key: 'rowH', label: 'Row height', type: 'number', unit: 'mm', min: 1, max: 20, step: 0.1 }, { key: 'size', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 30, step: 0.5 }, { key: 'tags', label: 'Tags with brackets', type: 'bool' }],
+  bbox: p => [-0.5, -0.5, p.w + (p.tags ? 12 : 0.5), (p.rows || []).length * p.rowH + 0.5],
+  draw(p, S) {
+    const ink = S.ink, lw = n(S.lw * 0.6), fs = U.pt2mm(p.size), rh = p.rowH;
+    let s = '';
+    // stored bottom → top, like the stack editor; drawn top row first
+    (p.rows || []).slice().reverse().forEach((ly, i) => {
+      const y = i * rh;
+      s += `<rect x="0" y="${n(y)}" width="${n(p.w)}" height="${n(rh)}" fill="${ly.color}" stroke="${ink}" stroke-width="${lw}"/>` + txt(S, p.w / 2, y + rh / 2, ly.name, Math.min(fs, rh * 0.8), contrast(ly.color), 'font-weight="700"');
+      if (p.tags && ly.tag) s += `<line x1="${n(p.w + 2)}" y1="${n(y + 0.3)}" x2="${n(p.w + 2)}" y2="${n(y + rh - 0.3)}" stroke="${ink}" stroke-width="${lw}"/>` + H.arrowHead(p.w + 2, y + 0.2, -Math.PI / 2, 0.8, ink) + H.arrowHead(p.w + 2, y + rh - 0.2, Math.PI / 2, 0.8, ink) +
+        `<text x="${n(p.w + 3.6)}" y="${n(y + rh / 2)}" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}" dominant-baseline="central" font-weight="700">${RNBX.text.markup(ly.tag)}</text>`;
+    });
+    return s;
+  },
+});
+
+/* ---------- keeping stacks together ----------
+   Runs on every change: attached blocks take the position, size and
+   view of the block below, and start on its top surface. */
+const SHARED = ['W', 'D', 'ang', 'depthK'];
+lib.stackRelayout = doc => {
+  if (!doc) return;
+  const by = new Map(doc.objects.map(o => [o.id, o]));
+  const isBlock = o => o && lib.get(o.type) && lib.get(o.type).stackable;
+  const depthOf = (o, seen = new Set()) => { if (!o.props.on) return 0; if (seen.has(o.id)) return -1; seen.add(o.id); const b = by.get(o.props.on); if (!isBlock(b)) return -1; const d = depthOf(b, seen); return d < 0 ? -1 : d + 1; };
+  const list = doc.objects.filter(o => isBlock(o) && o.props.on).map(o => ({ o, d: depthOf(o) }));
+  list.forEach(({ o, d }) => { if (d < 0) { o.props.on = ''; o.props.base = null; } });
+  list.filter(e => e.d > 0).sort((a, b) => a.d - b.d).forEach(({ o }) => {
+    const b = by.get(o.props.on), bd = lib.get(b.type);
+    const top = bd.top.call(bd, b.props);
+    if (o.x !== b.x) o.x = b.x;
+    if (o.y !== b.y) o.y = b.y;
+    if ((o.rot || 0) !== (b.rot || 0)) o.rot = b.rot || 0;
+    if ((o.scale || 1) !== (b.scale || 1)) o.scale = b.scale || 1;
+    SHARED.forEach(k => { if (o.props[k] !== b.props[k]) o.props[k] = b.props[k]; });
+    if (JSON.stringify(o.props.base) !== JSON.stringify(top)) o.props.base = top;
+    // drawn above the block below
+    const io = doc.objects.indexOf(o), ib = doc.objects.indexOf(b);
+    if (io < ib) { doc.objects.splice(io, 1); doc.objects.splice(doc.objects.indexOf(b) + 1, 0, o); }
+  });
+  doc.objects.filter(o => isBlock(o) && !o.props.on && o.props.base).forEach(o => { o.props.base = null; });
+};
+RNBX.on('change', () => lib.stackRelayout(RNBX.state.doc));
+RNBX.on('document', () => lib.stackRelayout(RNBX.state.doc));
+
+/* where a block dropped at point q would attach: the block whose top
+   front centre is nearest (not the block itself or anything above it) */
+lib.stackAnchor = (obj, q, doc, tol) => {
+  doc = getDoc(doc);
+  const above = new Set([obj.id]);
+  let grew = true;
+  while (grew) { grew = false; doc.objects.forEach(o => { if (o.props && o.props.on && above.has(o.props.on) && !above.has(o.id)) { above.add(o.id); grew = true; } }); }
+  let best = null;
+  doc.objects.forEach(o => {
+    const def = lib.get(o.type);
+    if (!def || !def.stackable || above.has(o.id) || o.hidden) return;
+    // only the top of a stack takes new blocks
+    if (doc.objects.some(u => u.props && u.props.on === o.id && !above.has(u.id))) return;
+    const t = def.top.call(def, o.props), pt = [o.x, o.y - surfMax(t) * (o.scale || 1)];
+    const dd = Math.hypot(q[0] - pt[0], q[1] - pt[1]);
+    if (dd < tol && (!best || dd < best.d)) best = { o, d: dd, pt };
+  });
+  return best;
+};
+lib.surfMax = surfMax;
+/* top block of the stack that contains obj */
+lib.stackTop = (obj, doc) => { const ch = lib.stackChain(obj, doc); return ch[ch.length - 1]; };
 })();
 
 </script>
@@ -6348,17 +6840,20 @@ T.list.push({
 
 /* ---------- Device sketch: metasurface absorber ---------- */
 T.list.push({
-  id: 'absorber', name: 'Device sketch · metasurface absorber', desc: 'MIM grating stack with Λ and a, layer key, incident light, detector',
+  id: 'absorber', name: 'Device sketch · coated grating (building blocks)', desc: 'Substrate, grating ridges and three conformal coatings stacked block by block, with a layer key',
   build() {
-    const d = base('nature-2', 150, 72, 'Metasurface absorber', { polarization: false });
-    const stack = mk('layers', 62, 52, 0, { W: 52, D: 26, period: 10, amp: 1.6, duty: 0.32 });
-    const bulb = mk('bulb', 16, 18, 0, { r: 5 });
-    const inc = mk('arrow', 24, 22, 0, { dx: 22, dy: 16, width: 1.4, headSize: 2.4, color: '#c0392b', label: 'Incident light', labelSize: 6.5 });
-    const th = mk('angle', 47, 39, 0, { r: 7, a1: -90, a2: -144, label: 'θ_i', refLen: 16 });
-    const cyl = mk('cylinder3d', 128, 22, 0, { L: 22, r: 8, text: 'Detector' });
-    const out = mk('arrow', 96, 26, 0, { dx: 18, dy: -4, width: 1, headSize: 2, color: '#555b66', dash: true, label: 'Reflected', labelSize: 6 });
+    const d = base('nature-2', 150, 76, 'Coated grating stack', { polarization: false });
+    const sub = mk('nslab', 58, 60, 0, { W: 56, D: 28, t: 6, color: '#d9ead3', name: 'Polymer', mat: 'PDMS', label: true });
+    const grat = mk('nridges', 0, 0, 0, { profile: 'square', period: 8, duty: 0.5, amp: 2.4, color: '#d9ead3', name: 'Grating', on: sub.id });
+    const m1 = mk('ncoat', 0, 0, 0, { t: 0.8, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 100, on: grat.id });
+    const di = mk('ncoat', 0, 0, 0, { t: 0.9, color: '#e8a13a', name: 'Dielectric', mat: 'Al2O3', nm: 50, sheen: false, on: m1.id });
+    const m2 = mk('ncoat', 0, 0, 0, { t: 0.6, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 20, on: di.id });
+    const key = mk('layerkey', 112, 30, 0, { rows: [{ name: 'Polymer', color: '#d9ead3', tag: '' }, { name: 'Metal', color: '#b3bac4', tag: 'M₁' }, { name: 'Dielectric', color: '#e8a13a', tag: 'I' }, { name: 'Metal', color: '#b3bac4', tag: 'M₂' }] });
+    const inc = mk('arrow', 20, 16, 0, { dx: 24, dy: 22, width: 1.3, headSize: 2.2, color: '#d9822b', label: 'Incident light', labelSize: 6.5 });
+    const th = mk('angle', 45, 39, 0, { r: 6, a1: -90, a2: -138, label: 'θ', refLen: 14 });
     const pa = mk('panel', 4, 7, 0, { text: 'a' });
-    d.objects.push(stack, bulb, inc, th, cyl, out, pa);
+    d.objects.push(sub, grat, m1, di, m2, key, inc, th, pa);
+    lib.stackRelayout(d);
     return d;
   },
 });
@@ -6368,7 +6863,7 @@ T.list.push({
   id: 'ftir', name: 'FTIR beam path (ribbon beams)', desc: 'Source → Michelson box → flat, cylindrical and parabolic mirrors → detector',
   build() {
     const d = base('nature-2', 150, 80, 'FTIR beam path', { beamStyle: 'ribbon', ribbonWidth: 3.6, beamArrows: true, polarization: false });
-    const src = mk('lamp', 14, 18, 0, { lmin: 640, lmax: 700 }, 'IR source', [0, 7]);
+    const src = mk('lamp', 14, 18, 0, { lmin: 470, lmax: 500, count: 3 }, 'Source', [0, 7]);
     const mod = mk('module', 46, 18, 0, { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' });
     const m1 = mk('mirror', 82, 18, ang(R, DN), { d: 10 }, 'Flat mirror', [9, -4]);
     const cm = mk('cmirror', 82, 52, ang(DN, R), { d: 12, t: 1.8, f: 2000 }, 'Cylindrical mirror', [-12, 6]);
@@ -6383,14 +6878,14 @@ T.list.push({
 
 /* ---------- Thermal emission measurement ---------- */
 T.list.push({
-  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a tilt stage, IR camera and 0–70° observation fan',
+  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a lab jack, IR camera and an observation-angle fan',
   build() {
     const d = base('nature-2', 150, 88, 'Thermal emission setup', { polarization: false });
     const jack = mk('labjack', 44, 78, 0, { W: 34, Hh: 22, tilt: 0, tiltTop: false });
-    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20, temp: '100 °C' });
-    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#9c1d1d', text: '' });
-    const lab1 = mk('text', 40, 33, 0, { text: 'MSA', size: 7, bold: true, anchor: 'middle' });
-    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw', angles: '0,10,20,30,40,50,60,70' });
+    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20 });
+    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#5a7db3', text: '' });
+    const lab1 = mk('text', 40, 33, 0, { text: 'Sample', size: 7, bold: true, anchor: 'middle' });
+    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw' });
     const cam = mk('ircam', 128, 26, 0, { W: 16, Hh: 9, D: 12 });
     const pa = mk('panel', 4, 7, 0, { text: 'c' });
     d.objects.push(jack, hp, smp, lab1, fan, cam, pa);
@@ -6406,7 +6901,7 @@ T.list.push({
     const a = -32, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];   // meets the chip near 52°: dip inside the lamp band
     const at = (p0, t) => [U.round(p0[0] + dir[0] * t, 2), U.round(p0[1] + dir[1] * t, 2)];
     const p0 = [16, 76];
-    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 560, lmax: 900, count: 15 }, 'THL', [0, 8]);
+    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 560, lmax: 900, count: 15 }, 'Lamp', [0, 8]);
     const l1 = mk('lens', ...at(p0, 14), a, { f: 400 }, 'Fibre lens', [-3, 8]);
     const ap = mk('iris', ...at(p0, 26), a, { r: 1 }, 'Aperture', [-3, 8]);
     const pol = mk('polarizer', ...at(p0, 38), a, { angle: 0 }, 'Polariser', [-3, 8]);
@@ -6964,7 +7459,8 @@ function startMove(e, p) {
   const ids = objs.map(o => o.id);
   drag = {
     kind: 'move', p0: p, moved: false, ids,
-    starts: objs.map(o => ({ id: o.id, x: o.x, y: o.y })),
+    // an attached block starts from where its bottom is drawn, so dragging it off a stack does not jump
+    starts: objs.map(o => ({ id: o.id, x: o.x, y: o.y - (lib.get(o.type).stackable && o.props.on && lib.surfMax ? lib.surfMax(o.props.base) * (o.scale || 1) : 0) })),
     snapSegs: null,
     others: S.doc.objects.filter(o => !ids.includes(o.id) && !lib.get(o.type).connection && !lib.get(o.type).annotation),
   };
@@ -7043,6 +7539,12 @@ function moveSelection(p, e, k) {
   if (single && !e.altKey) {
     const def = lib.get(single.type);
     let snapped = false;
+    // 0. building blocks stack onto the top of other blocks
+    if (def.stackable && S.ui.snap && lib.stackAnchor) {
+      const hit = lib.stackAnchor(single, [single.x, single.y], S.doc, Math.max(2.5, 10 * k));
+      if (hit) { single.props.on = hit.o.id; drag.snapPt = hit.pt; snapped = true; }
+      else if (single.props.on) { single.props.on = ''; single.props.base = null; }
+    }
     // 1. snap optics onto beams
     if (def.snap && S.ui.snap) {
       if (!drag.snapSegs) drag.snapSegs = traceWithout([single.id]);
@@ -7182,6 +7684,17 @@ C.placeNew = (entry, p, fromDrop) => {
   if (is3d() && !def.annotation && RNBX.render.last3d) {
     const q = RNBX.render.last3d.unproject(p[0], p[1], S.doc.view3d.beamHeight);
     o.x = q[0]; o.y = q[1];
+  }
+  // building blocks: clicked → on top of the selected stack; dropped → onto a stack nearby
+  if (def.stackable && lib.stackTop) {
+    const sel = RNBX.selected().find(q => lib.get(q.type).stackable);
+    const target = !fromDrop && sel ? lib.stackTop(sel) : fromDrop ? (lib.stackAnchor(o, [o.x, o.y], S.doc, 8) || {}).o : null;
+    if (target) {
+      o.props.on = target.id; o.x = target.x; o.y = target.y;
+      RNBX.addObject(o);
+      RNBX.toast('Stacked on ' + (target.props.name || lib.get(target.type).name) + '. Drag it away to detach.');
+      return o;
+    }
   }
   // clicked (not dropped) optics go onto the open end of the beam, so a
   // setup can be built just by clicking library items in order
@@ -7487,10 +8000,10 @@ function control(param, get, set, ctx = {}) {
       const o = ctx.obj;
       wrap.append(lab);
       if (!o) return wrap;
-      const L = o.props.layers = o.props.layers || [];
+      const L = o.props[param.key] = o.props[param.key] || [];
       const edit = (fn, key) => { RNBX.history.checkpoint(key); fn(); RNBX.changed(); };
       const rebuild = fn => { RNBX.history.checkpoint(); fn(); RNBX.changed(); Ins.build(); };
-      const TF = RNBX.thinfilm, matOpts = TF ? TF.options() : [];
+      const TF = param.simple ? null : RNBX.thinfilm, matOpts = TF ? TF.options() : [];
       L.slice().reverse().forEach((ly, ri) => {
         const i = L.length - 1 - ri;
         const c = el('input', { type: 'color', value: (ly.color || '#888888').slice(0, 7), oninput: () => edit(() => { ly.color = c.value; }, 'lc' + o.id + i) });
@@ -7499,7 +8012,7 @@ function control(param, get, set, ctx = {}) {
         const tg = el('input', { type: 'text', value: ly.tag || '', title: 'Tag in the layer key, e.g. M₁', placeholder: 'tag', oninput: () => edit(() => { ly.tag = tg.value; }, 'lg' + o.id + i) });
         const up = D.iconBtn('up', 'Move up', () => { if (i < L.length - 1) rebuild(() => L.splice(i + 1, 0, L.splice(i, 1)[0])); });
         const rm = D.iconBtn('trash', 'Remove layer', () => { if (L.length > 1) rebuild(() => L.splice(i, 1)); });
-        const card = el('div', { class: 'layer-card' }, el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 44px 34px auto auto' } }, c, nm, th, tg, up, rm));
+        const card = el('div', { class: 'layer-card' }, param.simple ? el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 40px auto auto' } }, c, nm, tg, up, rm) : el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 44px 34px auto auto' } }, c, nm, th, tg, up, rm));
         if (TF) {
           // second line: what the layer is made of, for the thin-film calculation
           const cur = ly.mat || lib.guessMat(ly.name);
@@ -7518,8 +8031,8 @@ function control(param, get, set, ctx = {}) {
         wrap.append(card);
       });
       wrap.append(el('div', { class: 'row', style: { marginTop: '4px' } },
-        el('button', { class: 'btn small', type: 'button', text: '+ Layer on top', onclick: () => rebuild(() => L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '', mat: 'SiO2', nm: 100 })) })));
-      wrap.append(el('div', { class: 'hint', text: 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
+        el('button', { class: 'btn small', type: 'button', text: param.simple ? '+ Row' : '+ Layer on top', onclick: () => rebuild(() => param.simple ? L.push({ name: 'Layer', color: '#d9b84a', tag: '' }) : L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '', mat: 'SiO2', nm: 100 })) })));
+      wrap.append(el('div', { class: 'hint', text: param.simple ? 'Top of the list = top row. Colour, name and tag (e.g. M₁).' : 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
       return wrap;
     }
     case 'image': {
@@ -7661,9 +8174,9 @@ function responseSection(obj, def, set) {
   const out = el('div', { class: 'readout' });
   const update = () => {
     let res;
-    try { res = TF.cached(def.stack(obj.props), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
+    try { res = TF.cached(def.stack(obj.props, obj, S.doc), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
     const lines = TF.summary(res);
-    const note = def.calcNote ? def.calcNote(obj.props) : '';
+    const note = def.calcNote ? def.calcNote(obj.props, obj) : '';
     out.innerHTML = (lines.length ? lines.map(U.esc).join('<br>') : 'No dip or peak inside this range.') +
       (res.warn.length ? `<br><span style="color:var(--warn,#b26a00)">Outside the measured data range: ${U.esc(res.warn.join(', '))}. End values are used.</span>` : '') +
       (note ? `<br><span class="hint" style="margin:0">${U.esc(note)}</span>` : '');
@@ -7672,7 +8185,7 @@ function responseSection(obj, def, set) {
   kids.push(out);
   const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id);
   kids.push(el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
-    el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Go to its panel' : 'Add data panel', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
+    el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Its panel' : 'Add panel', title: linked ? 'Select the linked data panel' : 'Add a data panel that follows this calculation', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
     el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Download the curves as CSV', onclick: () => RNBX.plotData.downloadCsv(obj) }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'Sources', title: 'Where the n, k data come from', onclick: () => RNBX.plotData.sourcesDialog(obj) })));
   return sec('Optical response (thin-film calculation)', ...kids);
@@ -7692,6 +8205,12 @@ function objectPanel(obj) {
   const body = [];
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
+  if (def.stackable) {
+    const below = obj.props.on && RNBX.getObj(obj.props.on);
+    body.push(below ? el('div', { class: 'readout' }, 'Stacked on ', el('b', { text: below.props.name || lib.get(below.type).name }), ' (size and view follow it). ',
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Detach', onclick: () => { RNBX.history.checkpoint(); obj.y -= lib.surfMax(obj.props.base) * (obj.scale || 1); obj.props.on = ''; obj.props.base = null; RNBX.changed(); Ins.build(); } }))
+      : el('div', { class: 'hint', text: 'Building block: click another block in the library while this one is selected to stack it on top, or drag blocks onto each other.' }));
+  }
   params.forEach(p => body.push(control(p, k => obj.props[k], set, { obj })));
   if (body.length) root.push(sec(def.connection ? 'Connection' : 'Parameters', ...body));
   if (def.stack && RNBX.thinfilm && (!def.calcShow || def.calcShow(obj.props))) root.push(responseSection(obj, def, set));

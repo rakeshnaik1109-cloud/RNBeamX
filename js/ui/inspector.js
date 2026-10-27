@@ -113,10 +113,10 @@ function control(param, get, set, ctx = {}) {
       const o = ctx.obj;
       wrap.append(lab);
       if (!o) return wrap;
-      const L = o.props.layers = o.props.layers || [];
+      const L = o.props[param.key] = o.props[param.key] || [];
       const edit = (fn, key) => { RNBX.history.checkpoint(key); fn(); RNBX.changed(); };
       const rebuild = fn => { RNBX.history.checkpoint(); fn(); RNBX.changed(); Ins.build(); };
-      const TF = RNBX.thinfilm, matOpts = TF ? TF.options() : [];
+      const TF = param.simple ? null : RNBX.thinfilm, matOpts = TF ? TF.options() : [];
       L.slice().reverse().forEach((ly, ri) => {
         const i = L.length - 1 - ri;
         const c = el('input', { type: 'color', value: (ly.color || '#888888').slice(0, 7), oninput: () => edit(() => { ly.color = c.value; }, 'lc' + o.id + i) });
@@ -125,7 +125,7 @@ function control(param, get, set, ctx = {}) {
         const tg = el('input', { type: 'text', value: ly.tag || '', title: 'Tag in the layer key, e.g. M₁', placeholder: 'tag', oninput: () => edit(() => { ly.tag = tg.value; }, 'lg' + o.id + i) });
         const up = D.iconBtn('up', 'Move up', () => { if (i < L.length - 1) rebuild(() => L.splice(i + 1, 0, L.splice(i, 1)[0])); });
         const rm = D.iconBtn('trash', 'Remove layer', () => { if (L.length > 1) rebuild(() => L.splice(i, 1)); });
-        const card = el('div', { class: 'layer-card' }, el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 44px 34px auto auto' } }, c, nm, th, tg, up, rm));
+        const card = el('div', { class: 'layer-card' }, param.simple ? el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 40px auto auto' } }, c, nm, tg, up, rm) : el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 44px 34px auto auto' } }, c, nm, th, tg, up, rm));
         if (TF) {
           // second line: what the layer is made of, for the thin-film calculation
           const cur = ly.mat || lib.guessMat(ly.name);
@@ -144,8 +144,8 @@ function control(param, get, set, ctx = {}) {
         wrap.append(card);
       });
       wrap.append(el('div', { class: 'row', style: { marginTop: '4px' } },
-        el('button', { class: 'btn small', type: 'button', text: '+ Layer on top', onclick: () => rebuild(() => L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '', mat: 'SiO2', nm: 100 })) })));
-      wrap.append(el('div', { class: 'hint', text: 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
+        el('button', { class: 'btn small', type: 'button', text: param.simple ? '+ Row' : '+ Layer on top', onclick: () => rebuild(() => param.simple ? L.push({ name: 'Layer', color: '#d9b84a', tag: '' }) : L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '', mat: 'SiO2', nm: 100 })) })));
+      wrap.append(el('div', { class: 'hint', text: param.simple ? 'Top of the list = top row. Colour, name and tag (e.g. M₁).' : 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
       return wrap;
     }
     case 'image': {
@@ -287,9 +287,9 @@ function responseSection(obj, def, set) {
   const out = el('div', { class: 'readout' });
   const update = () => {
     let res;
-    try { res = TF.cached(def.stack(obj.props), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
+    try { res = TF.cached(def.stack(obj.props, obj, S.doc), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
     const lines = TF.summary(res);
-    const note = def.calcNote ? def.calcNote(obj.props) : '';
+    const note = def.calcNote ? def.calcNote(obj.props, obj) : '';
     out.innerHTML = (lines.length ? lines.map(U.esc).join('<br>') : 'No dip or peak inside this range.') +
       (res.warn.length ? `<br><span style="color:var(--warn,#b26a00)">Outside the measured data range: ${U.esc(res.warn.join(', '))}. End values are used.</span>` : '') +
       (note ? `<br><span class="hint" style="margin:0">${U.esc(note)}</span>` : '');
@@ -298,7 +298,7 @@ function responseSection(obj, def, set) {
   kids.push(out);
   const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id);
   kids.push(el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
-    el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Go to its panel' : 'Add data panel', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
+    el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Its panel' : 'Add panel', title: linked ? 'Select the linked data panel' : 'Add a data panel that follows this calculation', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
     el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Download the curves as CSV', onclick: () => RNBX.plotData.downloadCsv(obj) }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'Sources', title: 'Where the n, k data come from', onclick: () => RNBX.plotData.sourcesDialog(obj) })));
   return sec('Optical response (thin-film calculation)', ...kids);
@@ -318,6 +318,12 @@ function objectPanel(obj) {
   const body = [];
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
+  if (def.stackable) {
+    const below = obj.props.on && RNBX.getObj(obj.props.on);
+    body.push(below ? el('div', { class: 'readout' }, 'Stacked on ', el('b', { text: below.props.name || lib.get(below.type).name }), ' (size and view follow it). ',
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Detach', onclick: () => { RNBX.history.checkpoint(); obj.y -= lib.surfMax(obj.props.base) * (obj.scale || 1); obj.props.on = ''; obj.props.base = null; RNBX.changed(); Ins.build(); } }))
+      : el('div', { class: 'hint', text: 'Building block: click another block in the library while this one is selected to stack it on top, or drag blocks onto each other.' }));
+  }
   params.forEach(p => body.push(control(p, k => obj.props[k], set, { obj })));
   if (body.length) root.push(sec(def.connection ? 'Connection' : 'Parameters', ...body));
   if (def.stack && RNBX.thinfilm && (!def.calcShow || def.calcShow(obj.props))) root.push(responseSection(obj, def, set));

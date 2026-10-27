@@ -50,9 +50,10 @@ const obliqueParams = [
 /* mat / nm: material and real thickness for the thin-film calculation
    (t is only the drawn thickness) */
 const LAYER_PRESETS = {
-  absorber: [{ name: 'PDMS', color: '#2f7d3f', t: 7, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₁', mat: 'Ag', nm: 100 }, { name: 'TiO₂', color: '#9c1d1d', t: 1.1, tag: 'I', mat: 'TiO2', nm: 80 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₂', mat: 'Ag', nm: 15 }],
-  sio2: [{ name: 'PDMS', color: '#1f2f7a', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 1.2, tag: '', mat: 'Ag', nm: 100 }, { name: 'SiO₂', color: '#d8cf27', t: 1.5, tag: '', mat: 'SiO2', nm: 200 }],
-  spr: [{ name: 'SF11 glass', color: '#8fb7d6', t: 5, tag: '', mat: 'glass:SF11', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 0.8, tag: '', mat: 'Ag', nm: 50 }, { name: 'Silica matrix', color: '#e9eef2', t: 1.4, tag: '', mat: 'SiO2', nm: 10 }],
+  film: [{ name: 'Glass', color: '#cfe6f2', t: 6, tag: '', mat: 'glass:N-BK7', nm: 0 }, { name: 'Gold', color: '#d6a83a', t: 1.2, tag: '', mat: 'Au', nm: 40 }, { name: 'SiO₂', color: '#8fc9b9', t: 1.6, tag: '', mat: 'SiO2', nm: 100 }],
+  mim: [{ name: 'Polymer', color: '#d9ead3', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Ag', nm: 100 }, { name: 'Dielectric', color: '#e8a13a', t: 1.2, tag: '', mat: 'Al2O3', nm: 60 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Ag', nm: 20 }],
+  corrugated: [{ name: 'Polymer', color: '#d9ead3', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Metal', color: '#b3bac4', t: 1.2, tag: '', mat: 'Au', nm: 80 }, { name: 'Oxide', color: '#8fc9b9', t: 1.4, tag: '', mat: 'SiO2', nm: 50 }],
+  chip: [{ name: 'Glass', color: '#cfe6f2', t: 5, tag: '', mat: 'glass:N-BK7', nm: 0 }, { name: 'Au', color: '#d6a83a', t: 0.8, tag: '', mat: 'Au', nm: 50 }],
 };
 /* guess a material from a layer name (old projects, new layers) */
 lib.guessMat = name => {
@@ -79,8 +80,8 @@ const layerStack = p => {
 lib.register({
   type: 'layers', name: 'Multilayer / grating stack', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'multilayer stack thin film metasurface grating corrugated substrate device cross section mim absorber layers pdms silver tio2',
-  defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'trapezoid', period: 9, duty: 0.32, amp: 1.6, layers: LAYER_PRESETS.absorber, labels: 'front', legend: true,
-    showPeriod: true, periodLabel: 'Λ = 1450 nm', dutyLabel: 'a = 450 nm', edge: true, sheen: true,
+  defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'flat', period: 8, duty: 0.5, amp: 1.6, layers: LAYER_PRESETS.film, labels: 'front', legend: false,
+    showPeriod: true, periodLabel: 'Λ', dutyLabel: 'w', edge: true, sheen: true,
     ambient: 'air', ambientN: 1.33, side: 'top', bottomMode: 'semi', calc: { scan: 'wl', lmin: 400, lmax: 1500, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } },
   params: [
     { key: 'layers', label: 'Layers (bottom → top)', type: 'layers' },
@@ -106,8 +107,9 @@ lib.register({
   stack: layerStack,
   calcNote: p => p.profile !== 'flat' ? 'The grating profile is not part of this calculation: it treats the layers as flat films. Grating and gap-plasmon resonances need RCWA or FDTD; import such spectra as data.' : '',
   variants: [
-    { name: 'SiO₂ / Ag / PDMS grating', props: { layers: LAYER_PRESETS.sio2, profile: 'sine', period: 10, amp: 2.2, legend: false, showPeriod: false } },
-    { name: 'Sensor chip (thin film)', props: { layers: LAYER_PRESETS.spr, profile: 'flat', W: 34, D: 20, legend: false } },
+    { name: 'MIM grating stack', props: { layers: LAYER_PRESETS.mim, profile: 'square', period: 8, duty: 0.5, amp: 1.6, legend: true } },
+    { name: 'Corrugated film stack', props: { layers: LAYER_PRESETS.corrugated, profile: 'sine', period: 8, amp: 2, showPeriod: false } },
+    { name: 'Sensor chip (thin film)', props: { layers: LAYER_PRESETS.chip, profile: 'flat', W: 34, D: 20 } },
   ],
   resizable: false,
   geom(p) {
@@ -126,7 +128,7 @@ lib.register({
     };
     const N = Math.min(700, Math.max(40, Math.round(W / per * 40)));
     const xs = []; for (let i = 0; i <= N; i++) xs.push(W * i / N);
-    const L = p.layers && p.layers.length ? p.layers : LAYER_PRESETS.absorber;
+    const L = p.layers && p.layers.length ? p.layers : LAYER_PRESETS.film;
     // boundaries: z[0] flat bottom; substrate top patterned; coatings conformal
     const bounds = [xs.map(() => 0)];
     let cum = 0;
@@ -209,7 +211,7 @@ lib.register({
 lib.register({
   type: 'cylinder3d', name: '3D cylinder (rings)', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'cylinder detector tube rod fibre 3d rings coaxial absorber housing',
-  defaults: { L: 26, r: 9, tilt: 0.45, body: '#2f7d3f', rings: '#c2762c, #c9ced6, #1e3f8f', core: '#ffe27a', coreR: 0.18, text: 'Detector' },
+  defaults: { L: 26, r: 9, tilt: 0.45, body: '#5a7db3', rings: '#d8dde4, #8f99a6', core: '', coreR: 0.18, text: '' },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 }, { key: 'r', label: 'Radius', type: 'number', unit: 'mm', min: 0.5, max: 100, step: 0.5 },
     { key: 'tilt', label: 'End-face tilt', type: 'range', min: 0.15, max: 1, step: 0.01 },
     { key: 'body', label: 'Body colour', type: 'color' }, { key: 'rings', label: 'Face rings (outer → inner, comma-separated)', type: 'text' },
@@ -265,14 +267,14 @@ lib.molParse = txt2 => String(txt2 || '').split(/\r?\n/).map(l => l.trim().split
 lib.register({
   type: 'molecule', name: 'Molecule (ball and stick)', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'molecule ball stick atom chemistry water ethanol methanol benzene analyte co2 ammonia acetone cyanide',
-  defaults: { preset: 'ethanol', xyz: '', size: 3.2, rx: 10, ry: -15, rz: 0, carbon: '#3fae49', scheme: 'vivid', symbols: false, ball: 1 },
+  defaults: { preset: 'ethanol', xyz: '', size: 3.2, rx: 10, ry: -15, rz: 0, carbon: '#3f86c9', scheme: 'cpk', symbols: false, ball: 1 },
   params: [
     { key: 'preset', label: 'Molecule', type: 'select', options: [['water', 'Water (H₂O)'], ['ethanol', 'Ethanol'], ['methanol', 'Methanol'], ['acetone', 'Acetone'], ['co2', 'Carbon dioxide'], ['methane', 'Methane'], ['ammonia', 'Ammonia'], ['benzene', 'Benzene'], ['cyanide', 'Cyanide (CN⁻)'], ['custom', 'Custom (XYZ)…']] },
     { key: 'xyz', label: 'Atoms: element x y z (Å), one per line', type: 'textarea', show: p => p.preset === 'custom' },
     { key: 'rx', label: 'Rotate about x', type: 'range', min: -180, max: 180, step: 1, animatable: true }, { key: 'ry', label: 'Rotate about y', type: 'range', min: -180, max: 180, step: 1, animatable: true },
     { key: 'rz', label: 'Rotate about z', type: 'range', min: -180, max: 180, step: 1, animatable: true },
     { key: 'size', label: 'Scale (mm per Å)', type: 'number', min: 0.2, max: 20, step: 0.1 }, { key: 'ball', label: 'Ball size', type: 'range', min: 0.4, max: 2, step: 0.01 },
-    { key: 'scheme', label: 'Colours', type: 'select', options: [['vivid', 'Vivid (green carbon)'], ['cpk', 'CPK (grey carbon)']] },
+    { key: 'scheme', label: 'Colours', type: 'select', options: [['cpk', 'CPK (grey carbon)'], ['vivid', 'Coloured carbon']] },
     { key: 'carbon', label: 'Carbon colour', type: 'color', show: p => p.scheme === 'vivid' }, { key: 'symbols', label: 'Element symbols', type: 'bool' }],
   variants: [{ name: 'Water molecule', props: { preset: 'water', rx: 0, ry: 0 } }, { name: 'Benzene', props: { preset: 'benzene', rx: 55, ry: 0 } }],
   model(p) {
@@ -354,7 +356,7 @@ lib.register({
 lib.register({
   type: 'dimension', name: 'Dimension line (Λ = …)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
   keywords: 'dimension length period distance measure double arrow lambda',
-  defaults: { dx: 20, dy: 0, label: 'Λ = 1450 nm', offset: -2.2, ends: 'arrows', color: '#111111', width: 0.5, size: 7, tilt: true },
+  defaults: { dx: 20, dy: 0, label: 'L', offset: -2.2, ends: 'arrows', color: '#111111', width: 0.5, size: 7, tilt: true },
   params: [{ key: 'label', label: 'Label', type: 'text' }, { key: 'dx', label: 'Length x', type: 'number', unit: 'mm', step: 0.5 }, { key: 'dy', label: 'Length y', type: 'number', unit: 'mm', step: 0.5 },
     { key: 'offset', label: 'Label offset', type: 'number', unit: 'mm', step: 0.2 }, { key: 'tilt', label: 'Label follows the line', type: 'bool' },
     { key: 'ends', label: 'Ends', type: 'select', options: [['arrows', 'Arrows'], ['ticks', 'Ticks'], ['both', 'Arrows and ticks']] },
@@ -374,7 +376,7 @@ lib.register({
 lib.register({
   type: 'fan', name: 'Angle fan (θ arrows)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
   keywords: 'angle fan observation angles arrows detection angular emission scan theta',
-  defaults: { r: 24, angles: '0,10,20,30,40,50,60,70', zero: 180, sense: 'cw', fmt: '{a}°', arc: true, arcLabel: 'θ_{obs}', color: '#111111', width: 0.7, size: 7 },
+  defaults: { r: 24, angles: '0,15,30,45,60', zero: 180, sense: 'cw', fmt: '{a}°', arc: true, arcLabel: 'θ', color: '#111111', width: 0.7, size: 7 },
   params: [{ key: 'angles', label: 'Angles (comma-separated)', type: 'text' }, { key: 'fmt', label: 'Label format ({a} = angle)', type: 'text' },
     { key: 'zero', label: 'Direction of 0° on the page', type: 'number', unit: '°', step: 1, hint: '0 = right, 180 = left' },
     { key: 'sense', label: 'Angles increase', type: 'select', options: [['cw', 'Upwards from 0°'], ['ccw', 'Downwards from 0°']] },
@@ -407,7 +409,7 @@ lib.register({
 const lab = cfg => lib.register(Object.assign({ category: CAT_L, annotation: true, autoLabel: false, abbr: '' }, cfg));
 lab({
   type: 'hotplate', name: 'Hot plate', keywords: 'hot plate heater heating stage temperature thermal emission',
-  defaults: { W: 30, Hh: 9, D: 20, color: '#2b2b55', plate: '#ffe7a8', temp: '100 °C', ang: 32, depthK: 0.55, glow: true },
+  defaults: { W: 30, Hh: 9, D: 20, color: '#5b6573', plate: '#efe4cc', temp: '60 °C', ang: 32, depthK: 0.55, glow: true },
   params: [{ key: 'temp', label: 'Display', type: 'text' }, { key: 'color', label: 'Body colour', type: 'color' }, { key: 'plate', label: 'Plate colour', type: 'color' }, { key: 'glow', label: 'Hot glow', type: 'bool' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh - p.D * c.ky - 1, p.W / 2 + p.D * c.kx, p.Hh * 0.9]; },
@@ -419,10 +421,10 @@ lab({
     if (p.glow) { const m = P(p.W / 2, p.Hh + 0.5, p.D / 2); s += `<ellipse cx="${n(m[0])}" cy="${n(m[1])}" rx="${n(p.W * 0.45)}" ry="${n(p.D * c.ky * 0.6)}" fill="#ffd27a" fill-opacity="0.35"/>`; }
     // front panel: display and knob
     const pw = p.W * 0.62, ph = p.Hh * 0.62, px = -p.W / 2 + p.W * 0.08, py = -p.Hh * 0.82;
-    s += `<rect x="${n(px)}" y="${n(py)}" width="${n(pw)}" height="${n(ph)}" rx="0.6" fill="#c9907a" stroke="${U.darken('#c9907a', 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    s += `<rect x="${n(px + pw * 0.12)}" y="${n(py + ph * 0.22)}" width="${n(pw * 0.5)}" height="${n(ph * 0.56)}" fill="#f6e04b" stroke="#333" stroke-width="${n(S.lw * 0.6)}"/>` + txt(S, px + pw * 0.37, py + ph * 0.5, p.temp, Math.min(ph * 0.4, S.fs), '#111', 'font-weight="700"');
+    s += `<rect x="${n(px)}" y="${n(py)}" width="${n(pw)}" height="${n(ph)}" rx="0.6" fill="#d9dde3" stroke="${U.darken('#d9dde3', 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+    s += `<rect x="${n(px + pw * 0.12)}" y="${n(py + ph * 0.22)}" width="${n(pw * 0.5)}" height="${n(ph * 0.56)}" fill="#1f2933" stroke="#333" stroke-width="${n(S.lw * 0.6)}"/>` + txt(S, px + pw * 0.37, py + ph * 0.5, p.temp, Math.min(ph * 0.4, S.fs), '#8ef0a0', 'font-weight="700"');
     const kx = px + pw * 0.8, ky = py + ph * 0.5, kr = Math.min(ph, pw) * 0.25;
-    s += `<circle cx="${n(kx)}" cy="${n(ky)}" r="${n(kr)}" fill="#2c4f9e" stroke="#16264d" stroke-width="${n(S.lw * 0.6)}"/><path d="M ${n(kx)} ${n(ky)} L ${n(kx + kr * 0.8)} ${n(ky - kr * 0.6)}" stroke="#c0392b" stroke-width="${n(kr * 0.45)}" stroke-linecap="round"/>`;
+    s += `<circle cx="${n(kx)}" cy="${n(ky)}" r="${n(kr)}" fill="#4b5563" stroke="#1f2933" stroke-width="${n(S.lw * 0.6)}"/><path d="M ${n(kx)} ${n(ky)} L ${n(kx + kr * 0.8)} ${n(ky - kr * 0.6)}" stroke="#f3f4f6" stroke-width="${n(kr * 0.3)}" stroke-linecap="round"/>`;
     return s;
   },
 });
@@ -452,7 +454,7 @@ lab({
 });
 lab({
   type: 'ircam', name: 'Thermal / IR camera', keywords: 'thermal camera flir infrared imager ir camera bolometer',
-  defaults: { W: 16, Hh: 9, D: 12, color: '#9ea6c9', text: 'FLIR Camera', ang: 32, depthK: 0.55 },
+  defaults: { W: 16, Hh: 9, D: 12, color: '#c9ced6', text: 'IR camera', ang: 32, depthK: 0.55 },
   params: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 100, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh / 2 - p.D * c.ky, p.W / 2 + p.D * c.kx, p.Hh / 2]; },
@@ -495,7 +497,7 @@ lab({
 });
 lab({
   type: 'pipette', name: 'Pipette with droplet', keywords: 'pipette micropipette drop casting droplet analyte dispense liquid',
-  defaults: { L: 26, color: '#5b8fd6', drop: '#f2b705', tilt: -28, showDrop: true },
+  defaults: { L: 26, color: '#9aa5b3', drop: '#5fa8d3', tilt: -28, showDrop: true },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 5, max: 150, step: 0.5 }, { key: 'color', label: 'Body colour', type: 'color' },
     { key: 'showDrop', label: 'Droplet', type: 'bool' }, { key: 'drop', label: 'Droplet colour', type: 'color', show: p => p.showDrop }, { key: 'tilt', label: 'Tilt', type: 'range', min: -90, max: 90, step: 1 }],
   bbox: p => [-p.L * 0.45, -p.L * 0.55, p.L * 0.45, p.L * 0.6],
@@ -513,7 +515,7 @@ lab({
 });
 lab({
   type: 'flowcell', name: 'Flow cell (inlet / outlet)', keywords: 'flow cell microfluidic channel inlet outlet liquid cell sensor',
-  defaults: { W: 30, Hh: 5, D: 16, color: '#f2c77d', fluid: '#e24b3b', ang: 32, depthK: 0.5, title: 'Flow cell', labels: true },
+  defaults: { W: 30, Hh: 5, D: 16, color: '#d6eaf3', fluid: '#4f9fd1', ang: 32, depthK: 0.5, title: 'Flow cell', labels: true },
   params: [{ key: 'title', label: 'Text', type: 'text' }, { key: 'labels', label: 'Inlet / outlet labels', type: 'bool' }, { key: 'color', label: 'Cell colour', type: 'color' }, { key: 'fluid', label: 'Fluid colour', type: 'color' },
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
   bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2 - 9, -p.Hh / 2 - p.D * c.ky - 6, p.W / 2 + p.D * c.kx + 9, p.Hh / 2 + 1]; },
@@ -529,7 +531,7 @@ lab({
       s += `<rect x="${n(b[0] - 0.7)}" y="${n(t[1])}" width="1.4" height="${n(b[1] - t[1])}" fill="#d9a441" stroke="${S.ink}" stroke-width="${n(S.lw * 0.5)}"/>`;
       if (p.labels) s += `<line x1="${n(b[0] + sg * 1.5)}" y1="${n(t[1] + 1)}" x2="${n(b[0] + sg * 6)}" y2="${n(t[1] + 1)}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>` + H.arrowHead(b[0] + sg * (sg > 0 ? 6 : 1.5), t[1] + 1, sg > 0 ? 0 : Math.PI, 1, S.ink) + `<text x="${n(b[0] + sg * 6.6)}" y="${n(t[1] + 1)}" font-family="${U.esc(S.font)}" font-size="${n(S.fs * 0.85)}" fill="${S.ink}" text-anchor="${sg > 0 ? 'start' : 'end'}" dominant-baseline="central">${lab2}</text>`;
     });
-    if (p.title) { const q = P(p.W * 0.5, p.Hh * 0.75, 0); s += txt(S, q[0], q[1], p.title, Math.min(S.fs, p.Hh * 0.45), '#3a2a0a', 'font-weight="700"'); }
+    if (p.title) { const q = P(p.W * 0.5, p.Hh * 0.75, 0); s += txt(S, q[0], q[1], p.title, Math.min(S.fs, p.Hh * 0.45), '#1d3a4a', 'font-weight="700"'); }
     return s;
   },
 });

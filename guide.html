@@ -67,7 +67,7 @@ footer .bar { padding: 20px 16px; }
   <div class="bar">
     <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
     <nav>
-      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#illustration">Illustration parts</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
+      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
       <a href="#data">Panels &amp; data</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
     </nav>
   </div>
@@ -110,13 +110,25 @@ footer .bar { padding: 20px 16px; }
     </div>
   </section>
 
+  <section id="blocks">
+    <h2>Building blocks: assemble a device part by part</h2>
+    <p class="lead">The <i>Nanostructures &amp; films</i> group holds separate parts that stack onto each other: substrate or film slabs, grating ridges, conformal coatings, nano-object arrays and 2D-material sheets, plus a layer key.</p>
+    <img class="shot" src="assets/guide/blocks.png" alt="Stacks built from blocks: a coated grating, a nanodisk array, an hBN sheet, particles on a coated sinusoidal grating, core–shell particles and nanocones">
+    <div class="grid" style="margin-top:16px">
+      <div class="card"><h3>Stacking</h3><p>Select a block and click another block in the library: it lands on top and takes the same width, depth and view. Or drag one block onto another. Drag a block away to detach it; the ones above it follow the block below.</p></div>
+      <div class="card"><h3>Conformal coatings</h3><p>A coating follows the surface under it, sidewalls included, so metal / dielectric / metal on grating ridges stays corrugated. Each coating adds its thickness along the surface normal.</p></div>
+      <div class="card"><h3>Nano-objects and 2D sheets</h3><p>Disks, pillars, blocks, cones, hemispheres, spheres, core–shell particles and rods, on square, hexagonal or random layouts. Graphene, hBN and MoS₂ sheets with real lattice geometry.</p></div>
+      <div class="card"><h3>Calculated too</h3><p>Slabs and coatings carry a material and real thickness: the <i>Optical response</i> section of any block calculates the whole stack. Ridges, arrays and sheets are skipped, and the readout says so.</p></div>
+    </div>
+  </section>
+
   <section id="illustration">
     <h2>Device sketches, molecules and lab equipment</h2>
     <p class="lead">Many figures are more than an optical table. The <i>Structures &amp; molecules</i> and <i>Lab &amp; illustration</i> groups in the library cover cross-sections, analytes, instruments and measurement geometry.</p>
     <div class="gallery">
-      <figure><img src="assets/guide/tpl-absorber.png" alt="Metasurface absorber device sketch"><figcaption><b>Multilayer / grating stack.</b> Edit layers bottom → top (colour, name, thickness, tag) and choose flat, sinusoidal, trapezoid or square gratings. Λ and a dimensions and the M₁ / I / M₂ layer key are built in. Template: <i>Device sketch · metasurface absorber</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-absorber.png" alt="Coated grating built from blocks"><figcaption><b>Coated grating from building blocks.</b> A polymer slab, grating ridges and three conformal coatings, each a separate part, with a layer key. For a quick one-piece version use <i>Multilayer / grating stack</i>. Template: <i>Device sketch · coated grating</i>.</figcaption></figure>
       <figure><img src="assets/guide/tpl-ftir.png" alt="FTIR beam path with ribbon beams"><figcaption><b>Ribbon beams and modules.</b> Set <i>Beams ▸ Drawing</i> to <i>Wide translucent ribbon</i> for instrument sketches. The <i>Optical module</i> box (e.g. a Michelson interferometer) passes the beam through. Cylindrical and large parabolic mirrors are under Mirrors. Template: <i>FTIR beam path</i>.</figcaption></figure>
-      <figure><img src="assets/guide/tpl-thermal.png" alt="Thermal emission measurement"><figcaption><b>Lab equipment and angle fans.</b> Hot plate with a temperature display, lab jack or tilt stage, IR camera, laptop, pipette, flow cell and light bulb. The <i>Angle fan</i> draws 0–70° observation arrows with a θ<sub>obs</sub> arc. Template: <i>Thermal emission setup</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-thermal.png" alt="Thermal emission measurement"><figcaption><b>Lab equipment and angle fans.</b> Hot plate with a temperature display, lab jack or tilt stage, IR camera, laptop, pipette, flow cell and light bulb. The <i>Angle fan</i> draws observation or emission angles with an arc. Template: <i>Thermal emission setup</i>.</figcaption></figure>
       <figure><img src="assets/guide/tpl-spr.png" alt="SPR sensor with Kretschmann prism"><figcaption><b>SPR prism (Kretschmann).</b> An inverted prism with a metal film and a sensing layer on its base. The reflectance at the chip is calculated, so the SPR dip appears in the beam and in panel e. Add a flow cell with inlet and outlet. Template: <i>SPR sensor</i>.</figcaption></figure>
     </div>
     <div class="table-wrap" style="margin-top:18px">
@@ -125,7 +137,7 @@ footer .bar { padding: 20px 16px; }
       <tr><td>Molecule (ball and stick)</td><td>Structures &amp; molecules</td><td>Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide or your own XYZ (Å); rotate on three axes, and the rotation can be animated.</td></tr>
       <tr><td>Hydrogen bond</td><td>Structures &amp; molecules</td><td>A red dashed line; drag its end handle between atoms.</td></tr>
       <tr><td>3D cylinder, 3D block</td><td>Structures &amp; molecules</td><td>Coaxial face rings (e.g. an absorber-coated detector), slab substrates, chips.</td></tr>
-      <tr><td>Angle marker, dimension line</td><td>Annotations</td><td>θ<sub>i</sub> arcs with a dashed normal; Λ = 1450 nm lines with arrows or ticks.</td></tr>
+      <tr><td>Angle marker, dimension line</td><td>Annotations</td><td>θ<sub>i</sub> arcs with a dashed normal; period or length lines (Λ, L…) with arrows or ticks.</td></tr>
       <tr><td>Arrow with text</td><td>Graphical abstract</td><td>Fabrication steps (“Annealing 300 °C”), incident or reflected light.</td></tr>
     </table>
     </div>

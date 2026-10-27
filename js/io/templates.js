@@ -260,17 +260,20 @@ T.list.push({
 
 /* ---------- Device sketch: metasurface absorber ---------- */
 T.list.push({
-  id: 'absorber', name: 'Device sketch · metasurface absorber', desc: 'MIM grating stack with Λ and a, layer key, incident light, detector',
+  id: 'absorber', name: 'Device sketch · coated grating (building blocks)', desc: 'Substrate, grating ridges and three conformal coatings stacked block by block, with a layer key',
   build() {
-    const d = base('nature-2', 150, 72, 'Metasurface absorber', { polarization: false });
-    const stack = mk('layers', 62, 52, 0, { W: 52, D: 26, period: 10, amp: 1.6, duty: 0.32 });
-    const bulb = mk('bulb', 16, 18, 0, { r: 5 });
-    const inc = mk('arrow', 24, 22, 0, { dx: 22, dy: 16, width: 1.4, headSize: 2.4, color: '#c0392b', label: 'Incident light', labelSize: 6.5 });
-    const th = mk('angle', 47, 39, 0, { r: 7, a1: -90, a2: -144, label: 'θ_i', refLen: 16 });
-    const cyl = mk('cylinder3d', 128, 22, 0, { L: 22, r: 8, text: 'Detector' });
-    const out = mk('arrow', 96, 26, 0, { dx: 18, dy: -4, width: 1, headSize: 2, color: '#555b66', dash: true, label: 'Reflected', labelSize: 6 });
+    const d = base('nature-2', 150, 76, 'Coated grating stack', { polarization: false });
+    const sub = mk('nslab', 58, 60, 0, { W: 56, D: 28, t: 6, color: '#d9ead3', name: 'Polymer', mat: 'PDMS', label: true });
+    const grat = mk('nridges', 0, 0, 0, { profile: 'square', period: 8, duty: 0.5, amp: 2.4, color: '#d9ead3', name: 'Grating', on: sub.id });
+    const m1 = mk('ncoat', 0, 0, 0, { t: 0.8, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 100, on: grat.id });
+    const di = mk('ncoat', 0, 0, 0, { t: 0.9, color: '#e8a13a', name: 'Dielectric', mat: 'Al2O3', nm: 50, sheen: false, on: m1.id });
+    const m2 = mk('ncoat', 0, 0, 0, { t: 0.6, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 20, on: di.id });
+    const key = mk('layerkey', 112, 30, 0, { rows: [{ name: 'Polymer', color: '#d9ead3', tag: '' }, { name: 'Metal', color: '#b3bac4', tag: 'M₁' }, { name: 'Dielectric', color: '#e8a13a', tag: 'I' }, { name: 'Metal', color: '#b3bac4', tag: 'M₂' }] });
+    const inc = mk('arrow', 20, 16, 0, { dx: 24, dy: 22, width: 1.3, headSize: 2.2, color: '#d9822b', label: 'Incident light', labelSize: 6.5 });
+    const th = mk('angle', 45, 39, 0, { r: 6, a1: -90, a2: -138, label: 'θ', refLen: 14 });
     const pa = mk('panel', 4, 7, 0, { text: 'a' });
-    d.objects.push(stack, bulb, inc, th, cyl, out, pa);
+    d.objects.push(sub, grat, m1, di, m2, key, inc, th, pa);
+    lib.stackRelayout(d);
     return d;
   },
 });
@@ -280,7 +283,7 @@ T.list.push({
   id: 'ftir', name: 'FTIR beam path (ribbon beams)', desc: 'Source → Michelson box → flat, cylindrical and parabolic mirrors → detector',
   build() {
     const d = base('nature-2', 150, 80, 'FTIR beam path', { beamStyle: 'ribbon', ribbonWidth: 3.6, beamArrows: true, polarization: false });
-    const src = mk('lamp', 14, 18, 0, { lmin: 640, lmax: 700 }, 'IR source', [0, 7]);
+    const src = mk('lamp', 14, 18, 0, { lmin: 470, lmax: 500, count: 3 }, 'Source', [0, 7]);
     const mod = mk('module', 46, 18, 0, { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' });
     const m1 = mk('mirror', 82, 18, ang(R, DN), { d: 10 }, 'Flat mirror', [9, -4]);
     const cm = mk('cmirror', 82, 52, ang(DN, R), { d: 12, t: 1.8, f: 2000 }, 'Cylindrical mirror', [-12, 6]);
@@ -295,14 +298,14 @@ T.list.push({
 
 /* ---------- Thermal emission measurement ---------- */
 T.list.push({
-  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a tilt stage, IR camera and 0–70° observation fan',
+  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a lab jack, IR camera and an observation-angle fan',
   build() {
     const d = base('nature-2', 150, 88, 'Thermal emission setup', { polarization: false });
     const jack = mk('labjack', 44, 78, 0, { W: 34, Hh: 22, tilt: 0, tiltTop: false });
-    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20, temp: '100 °C' });
-    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#9c1d1d', text: '' });
-    const lab1 = mk('text', 40, 33, 0, { text: 'MSA', size: 7, bold: true, anchor: 'middle' });
-    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw', angles: '0,10,20,30,40,50,60,70' });
+    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20 });
+    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#5a7db3', text: '' });
+    const lab1 = mk('text', 40, 33, 0, { text: 'Sample', size: 7, bold: true, anchor: 'middle' });
+    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw' });
     const cam = mk('ircam', 128, 26, 0, { W: 16, Hh: 9, D: 12 });
     const pa = mk('panel', 4, 7, 0, { text: 'c' });
     d.objects.push(jack, hp, smp, lab1, fan, cam, pa);
@@ -318,7 +321,7 @@ T.list.push({
     const a = -32, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];   // meets the chip near 52°: dip inside the lamp band
     const at = (p0, t) => [U.round(p0[0] + dir[0] * t, 2), U.round(p0[1] + dir[1] * t, 2)];
     const p0 = [16, 76];
-    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 560, lmax: 900, count: 15 }, 'THL', [0, 8]);
+    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 560, lmax: 900, count: 15 }, 'Lamp', [0, 8]);
     const l1 = mk('lens', ...at(p0, 14), a, { f: 400 }, 'Fibre lens', [-3, 8]);
     const ap = mk('iris', ...at(p0, 26), a, { r: 1 }, 'Aperture', [-3, 8]);
     const pol = mk('polarizer', ...at(p0, 38), a, { angle: 0 }, 'Polariser', [-3, 8]);

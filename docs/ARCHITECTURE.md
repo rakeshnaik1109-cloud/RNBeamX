@@ -18,7 +18,7 @@ state (document) ──► tracer ──► renderer (2D) / renderer3d ──►
 |---|---|---|
 | core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
 | engine | `optics.js`, `tracer.js`, `nkdata.js`, `thinfilm.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power; measured n, k tables and the transfer-matrix solver for planar films |
-| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `nanostructures`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
 | render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js`, `labels.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting, automatic label placement |
 | anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
 | io | `project.js`, `export.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
@@ -77,6 +77,16 @@ the complex rp, rs of that stack (the SPR prism base). `TF.solve` uses
 e^(−iωt), N = n + ik, tilted admittances and per-layer scaling, so thick metal
 layers cannot overflow. To refresh `nkdata.js`, re-run the extraction against the
 refractiveindex.info database (CC0) with the dataset list in its header.
+
+## Stackable building blocks
+
+`components/nanostructures.js` registers blocks with `stackable: true` and a
+`top(p)` method returning the surface they leave behind: `{ z, prof, grow }`
+(height, periodic profile, conformal growth). A block attached with
+`props.on = <id>` is re-placed on every change by `lib.stackRelayout`: same
+x, y, rotation, W, D and view as the block below, and `props.base` set to that
+block's top surface. Coatings grow the surface by their thickness (Minkowski
+growth by a disc, so growths add); slabs flatten it; ridges add a profile.
 
 ## Conventions
 
