@@ -74,6 +74,39 @@ module.exports = async ({ base, getBrowser, H }) => {
     return document.querySelector('#inspector .readout') ? document.querySelector('#inspector .readout').textContent : '';
   });
   H.check('screen hit by a ray bundle shows the RMS ray spot per colour', /Ray spot/.test(spot) && /486\.1 nm/.test(spot), spot.slice(0, 120));
+  // lens readout and "Move screen to focus": the screen lands where the paraxial rays cross the axis
+  const foc = await page.evaluate(async () => {
+    const d = RNBX.newDocument(), mk = (type, x, y, props) => Object.assign(RNBX.createObject(type, x, y), { props: Object.assign(RNBX.createObject(type, 0, 0).props, props || {}) });
+    const lens = mk('lens', 40, 50, { f: 250, d: 12, model: 'real' }), scr = mk('screen', 90, 50.5, {});
+    d.objects = [mk('raysource', 20, 50, { mode: 'parallel', h: 0.2, rays: 3 }), lens, scr];
+    RNBX.setDocument(d); RNBX.select([lens.id]); RNBX.inspector.build();
+    await new Promise(r => setTimeout(r, 150));
+    const txt = document.querySelector('#inspector .readout') ? document.querySelector('#inspector .readout').textContent : '';
+    const btn = [...document.querySelectorAll('#inspector button')].find(b => b.textContent === 'Move screen to focus');
+    btn.click();
+    const t = RNBX.trace(RNBX.state.doc), s = t.segments.filter(q => q.ray && q.a[0] > 40.5 && Math.abs(q.b[1] - q.a[1]) > 1e-9)[0];
+    const xCross = s.a[0] + (50 - s.a[1]) / (s.b[1] - s.a[1]) * (s.b[0] - s.a[0]);
+    const sc2 = RNBX.state.doc.objects.find(o => o.type === 'screen');
+    return { txt, x: sc2.x, y: sc2.y, xCross };
+  });
+  H.check('lens readout shows the real focal length and back focal distance', /focal length 250 mm/.test(foc.txt) && /back focal distance/.test(foc.txt), foc.txt.slice(0, 110));
+  H.near('Move screen to focus: screen at the paraxial ray crossing (drawn mm)', foc.x, foc.xCross, 0.01);
+  H.check('Move screen to focus keeps the screen on its line', Math.abs(foc.y - 50.5) < 1e-6, foc.y);
+  // template picker: grouped, and the search filters it
+  const pick = await page.evaluate(async () => {
+    RNBX.dialogs.templates();
+    await new Promise(r => setTimeout(r, 100));
+    const m = document.querySelector('.tpl-search').closest('.modal') || document.body;
+    const heads = [...document.querySelectorAll('.tpl-head')].map(h => h.textContent);
+    const search = document.querySelector('.tpl-search'); search.value = 'galvo'; search.dispatchEvent(new Event('input'));
+    const shown = [...document.querySelectorAll('.tpl')].filter(c => c.style.display !== 'none').map(c => c.querySelector('b').textContent);
+    const drawn = [...document.querySelectorAll('.tpl')].filter(c => c.style.display !== 'none').every(c => c.querySelector('.tp svg'));
+    document.querySelector('.modal .close, .modal [aria-label="Close"]') && document.querySelector('.modal .close, .modal [aria-label="Close"]').click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    return { heads, shown, drawn, n: m ? 1 : 0 };
+  });
+  H.check('template picker is grouped by topic', pick.heads.includes('Microscopy & imaging') && pick.heads.includes('Interferometers & polarisation'), pick.heads);
+  H.check('template search finds the confocal microscope and draws its preview', pick.shown.length === 1 && /Laser-scanning confocal/.test(pick.shown[0]) && pick.drawn, pick.shown);
   for (const id of ['aberration', 'fourf']) {
     await page.evaluate(i => { RNBX.setDocument(RNBX.templates.list.find(t => t.id === i).build()); RNBX.canvas.fit(); }, id);
     await page.waitForTimeout(250); await H.shot(page, 'imaging-' + id, '#stage');

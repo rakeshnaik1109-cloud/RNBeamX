@@ -215,6 +215,43 @@ const fieldSetter = (objs, path) => (key, v, rebuild) => {
   if (rebuild) setTimeout(Ins.build, 0);
 };
 
+/* ---------- lens focus (drawn mm, along the lens's own +x axis) ----------
+   real lenses: paraxial y–nu trace through the designed surfaces at 587.6 nm */
+function lensFocus(obj) {
+  const p = obj.props, sc = S.doc.style.scale || 10;
+  if (obj.type === 'objective') return { real: false, efl: p.fd, at: p.L / 2 + p.fd };
+  const geo = lib.lensReal ? lib.lensReal(p, S.doc) : null;
+  if (!geo) { const f = (/concave/.test(p.shape) ? -Math.abs(p.f) : p.f) / sc; return f ? { real: false, efl: f, at: f } : null; }
+  let y = 1, nu = 0, nPrev = 1;
+  geo.forEach((g, i) => {
+    const n2 = g.matB === 'air' ? 1 : RNBX.optics.index(g.matB, 587.56, p.n || 1.5), c = g.R ? 1 / g.R : 0;
+    nu -= y * (n2 - nPrev) * c;
+    if (i < geo.length - 1) y += (geo[i + 1].x - g.x) * nu / n2;
+    nPrev = n2;
+  });
+  if (!nu) return null;
+  const last = geo[geo.length - 1].x, bfd = -y / nu;
+  return { real: true, efl: -1 / nu, bfd, at: last + bfd, radii: geo.map(g => g.R) };
+}
+Ins.focusDetector = obj => {
+  // the nearest screen / camera / detector in front of the lens goes to its (paraxial) focus
+  const f = lensFocus(obj);
+  if (!f || f.at <= 0) { RNBX.toast('This lens has no real focus in front of it.'); return; }
+  const ax = U.dirToWorld(obj, [1, 0]), side = U.dirToWorld(obj, [0, 1]);
+  const cands = S.doc.objects.filter(o => o !== obj && !o.locked && lib.get(o.type) && lib.get(o.type).category === 'Detectors').map(o => {
+    const v = [o.x - obj.x, o.y - obj.y], along = v[0] * ax[0] + v[1] * ax[1], off = Math.abs(v[0] * side[0] + v[1] * side[1]);
+    return { o, along, off };
+  }).filter(c => c.along > 0 && c.off < Math.max(4, obj.props.d));
+  if (!cands.length) { RNBX.toast('Place a screen, camera or detector in front of the lens first.'); return; }
+  const c = cands.sort((a, b) => a.along - b.along)[0], k = (obj.scale || 1);
+  RNBX.history.checkpoint();
+  const off = (c.o.x - obj.x) * side[0] + (c.o.y - obj.y) * side[1];
+  c.o.x = U.round(obj.x + ax[0] * f.at * k + side[0] * off, 3); c.o.y = U.round(obj.y + ax[1] * f.at * k + side[1] * off, 3);
+  RNBX.anim.touch([c.o.id]);
+  RNBX.changed();
+  RNBX.toast(`${lib.get(c.o.type).name} moved to the ${f.real ? 'paraxial ' : ''}focus. Ctrl+Z to undo.`);
+};
+
 /* ---------- readouts (physics feedback) ---------- */
 function readout(obj) {
   const tr = RNBX.canvas.trace;
@@ -226,6 +263,16 @@ function readout(obj) {
     const segs = tr.segments.filter(s => s.src === obj.id);
     const ls = [...new Set(segs.map(s => s.lambda))];
     return el('div', { class: 'readout', html: `Emits <b>${U.esc(ls.map(l => U.fmt(l, 1)).join(', ') || '—')} nm</b> · ${segs.length} traced segments` });
+  }
+  if (obj.type === 'lens') {
+    const f = lensFocus(obj);
+    if (!f) return null;
+    const sc = S.doc.style.scale || 10;
+    let html = f.real
+      ? `Real ${U.esc(RNBX.optics.MATERIALS[obj.props.mat] ? RNBX.optics.MATERIALS[obj.props.mat].name : obj.props.mat)} lens: focal length <b>${U.fmt(f.efl * sc, 4)} mm</b> at 587.6 nm · back focal distance <b>${U.fmt(f.bfd * sc, 4)} mm</b> (paraxial)`
+      : `Ideal thin lens: focus <b>${U.fmt(f.efl * sc, 4)} mm</b> from the lens`;
+    if (f.real && obj.props.shape !== 'ball') html += `<br>${f.radii.map((R, i) => `R${i + 1} = ${R ? U.fmt(R * sc, 4) + ' mm' : '∞'}`).join(' · ')}`;
+    return el('div', { class: 'readout', html });
   }
   if (obj.type === 'fiber') {
     const fl = tr.fiberLight[obj.id];
@@ -341,6 +388,7 @@ function objectPanel(obj) {
   const set = objSetter([obj]);
   const body = [];
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
+  if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
   if (def.stackable) {
     const below = obj.props.on && RNBX.getObj(obj.props.on);

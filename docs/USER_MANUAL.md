@@ -7,7 +7,7 @@
 
 | Area | What it does |
 |---|---|
-| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), undo · redo · **↺ reset**, view toggles, Guide, Manual, Templates, Export |
+| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), undo · redo · **↺ reset**, view toggles, Guide, Manual, Templates (grouped by topic, searchable), Export |
 | **Library** (left) | Every component, grouped and searchable. Drag a tile onto the page, or click it |
 | **Canvas** (centre) | The page at its true printed size, in millimetres |
 | **Properties** (right) | With nothing selected: page, journal preset, style, beams, 3D camera. With a selection: that object |
@@ -91,6 +91,10 @@ For imaging figures, light can be drawn as individual rays instead of one beam:
   N-BK7 / N-SF5 pair designed so that blue and red share one focus; a ball lens
   takes its focal length from its size and glass. Tick *Aspheric* for an
   aberration-free lens.
+- Select a lens to read its focal length; a real lens also shows its back focal
+  distance and surface radii. **Move screen to focus** puts the nearest screen,
+  camera or detector in front of the lens (or objective) at its focus (the
+  paraxial focus for real lenses), keeping its sideways position. Ctrl+Z undoes it.
 - A screen, camera or detector hit by rays reports the **ray spot**: the RMS
   spread of where the rays land, per wavelength and in total, at the figure scale.
 - *Beams ▸ Ray width* sets the drawn line width of rays.

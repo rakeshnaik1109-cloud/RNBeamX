@@ -466,4 +466,13 @@ T.list.push({
   },
 });
 
+/* groups for the template picker */
+T.GROUPS = [
+  ['Interferometers & polarisation', ['michelson', 'mzi', 'fringes', 'polarization']],
+  ['Microscopy & imaging', ['epifluor', 'confocal', 'lightsheet', 'raman', 'tower', 'fourf', 'aberration']],
+  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr']],
+  ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
+  ['Devices & photonics', ['ring', 'absorber']],
+];
+T.groupOf = id => { const g = T.GROUPS.find(([, ids]) => ids.includes(id)); return g ? g[0] : 'More'; };
 })();

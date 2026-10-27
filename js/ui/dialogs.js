@@ -101,12 +101,18 @@ Dl.exporter = (initial = 'svg') => {
 
 /* ---------- templates ---------- */
 Dl.templates = () => {
-  const grid = el('div', { class: 'tpl-grid' });
-  RNBX.templates.list.forEach(t => {
-    const doc = RNBX.normalizeDocument(t.build());
-    const card = el('button', { class: 'tpl', type: 'button' },
-      el('div', { class: 'tp', html: RNBX.render.build(doc).svg, style: { background: RNBX.isDarkPage(doc.page) ? '#0b1020' : '#fff' } }),
-      el('div', { class: 'tt' }, el('b', { text: t.name }), el('small', { text: t.desc })));
+  const T = RNBX.templates, body = el('div', {});
+  const search = el('input', { type: 'search', placeholder: 'Search templates (e.g. confocal, SPR, interferometer)…', class: 'tpl-search' });
+  const cards = [];
+  const groups = T.GROUPS.map(g => g[0]).concat(['More']);
+  const sections = {};
+  groups.forEach(g => { const grid = el('div', { class: 'tpl-grid' }); sections[g] = { head: el('h4', { class: 'tpl-head', text: g }), grid }; body.append(sections[g].head, grid); });
+  // cards are drawn as they scroll into view, so the dialog opens at once
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && e.target.draw) { e.target.draw(); io.unobserve(e.target); } }), { rootMargin: '200px' }) : null;
+  T.list.forEach(t => {
+    const pv = el('div', { class: 'tp' });
+    pv.draw = () => { const doc = RNBX.normalizeDocument(t.build()); pv.innerHTML = RNBX.render.build(doc).svg; pv.style.background = RNBX.isDarkPage(doc.page) ? '#0b1020' : '#fff'; pv.draw = null; };
+    const card = el('button', { class: 'tpl', type: 'button' }, pv, el('div', { class: 'tt' }, el('b', { text: t.name }), el('small', { text: t.desc })));
     card.onclick = () => {
       if (S.doc.objects.length && !confirm('Replace the current figure with this template? (You can undo with Ctrl+Z.)')) return;
       RNBX.history.checkpoint();
@@ -115,9 +121,24 @@ Dl.templates = () => {
       RNBX.toast(t.name + ' loaded. Drag anything; the beams follow.');
       U.track('template-' + t.id);
     };
-    grid.append(card);
+    const g = T.groupOf(t.id);
+    sections[g].grid.append(card);
+    cards.push({ card, g, text: (t.name + ' ' + t.desc + ' ' + g + ' ' + t.id).toLowerCase() });
+    if (io) io.observe(pv); else pv.draw();
   });
-  const m = D.modal({ title: 'Templates', sub: 'Complete, physically traced setups to start from', wide: true, body: grid });
+  const none = el('div', { class: 'note', text: 'No template matches. Try a part name such as “galvo”, “prism” or “fibre”.', style: { display: 'none' } });
+  body.append(none);
+  const filter = () => {
+    const q = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    cards.forEach(c => { const ok = q.every(w => c.text.includes(w)); c.card.style.display = ok ? '' : 'none'; if (ok) { shown++; if (c.card.firstChild.draw) c.card.firstChild.draw(); } });
+    groups.forEach(g => { const any = cards.some(c => c.g === g && c.card.style.display !== 'none'); sections[g].head.style.display = sections[g].grid.style.display = any ? '' : 'none'; });
+    none.style.display = shown ? 'none' : '';
+  };
+  search.oninput = filter;
+  filter();
+  const m = D.modal({ title: 'Templates', sub: `${T.list.length} complete, physically traced setups to start from`, wide: true, body: [search, body] });
+  setTimeout(() => search.focus(), 30);
 };
 
 /* ---------- journal check ---------- */

@@ -143,6 +143,8 @@ a.icon-btn { text-decoration: none; }
 #stCursor { font-family: var(--mono); min-width: 120px; }
 
 /* ---------- dialogs ---------- */
+.tpl-search { width: 100%; margin: 0 0 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; }
+.tpl-head { margin: 14px 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .tpl { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); cursor: pointer; text-align: left; padding: 0; display: flex; flex-direction: column; }
 .tpl:hover { border-color: var(--accent); box-shadow: var(--shadow); }
