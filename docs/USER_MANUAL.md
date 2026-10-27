@@ -71,6 +71,45 @@ photodiodes, a wavefront sensor and a scientific camera; and lab electronics
 (lock-in amplifier, laser-diode driver, temperature controller, photodiode
 amplifier, motion controller, power supply, DAQ). Search the library by name.
 
+### Ray bundles and real glass lenses
+
+For imaging figures, light can be drawn as individual rays instead of one beam:
+
+- **Ray bundle / object** (*Imaging*): an object arrow (a ray fan from its tip
+  and its base), a point source, or a parallel bundle (object at infinity). Set
+  the number of rays, the fan angle, a field angle (tilt, animatable) and one
+  wavelength or the blue, yellow and red F, d, C lines.
+- Any laser, LED or lamp can also be drawn as parallel rays: set **Draw as a ray
+  bundle** to the number of rays.
+- **Lens ▸ Optics model ▸ Real glass surfaces** replaces the ideal thin lens by
+  spherical surfaces in real glass (N-BK7 by default; N-SF5, N-F2, SF11, fused
+  silica, CaF₂, sapphire or a custom index), traced exactly with Snell's law at
+  each wavelength. The radii are chosen so that the paraxial focal length at
+  587.6 nm is the one you set, and the lens is drawn with its true shape. You then
+  see spherical aberration (edge rays focus short) and chromatic aberration (a
+  singlet focuses blue about f/V before red). The achromatic doublet is an
+  N-BK7 / N-SF5 pair designed so that blue and red share one focus; a ball lens
+  takes its focal length from its size and glass. Tick *Aspheric* for an
+  aberration-free lens.
+- A screen, camera or detector hit by rays reports the **ray spot**: the RMS
+  spread of where the rays land, per wavelength and in total, at the figure scale.
+- *Beams ▸ Ray width* sets the drawn line width of rays.
+
+### Active, nonlinear and fibre parts
+
+| Part | Behaviour |
+|---|---|
+| Optical parametric oscillator / amplifier | The pump splits into a signal (set) and an idler from 1/λp = 1/λs + 1/λi, sharing the converted power by photon energy. |
+| Supercontinuum fibre | Turns part of the input into a broadband spectrum (range and number of drawn lines adjustable). |
+| Acousto-optic modulator | Deflection set directly, or from the RF frequency and acoustic velocity (Bragg angle θ = λf / v, so it depends on the wavelength). |
+| Pockels cell (EOM variant) | A voltage-controlled wave plate; keyframe the retardance to switch it. |
+| Fibre circulator | Port 1 → port 2; light coming back into port 2 leaves at port 3. |
+| Fibre splitter / WDM | A power splitter with any ratio (e.g. 99:1 tap), or a wavelength splitter. |
+| Spatial filter assembly | Objective, pinhole and collimating lens in one part: expands the beam and stops light that does not pass the pinhole. |
+
+Optical isolators, Faraday rotators, AOMs, EOMs, SHG / THG crystals, pinholes and
+slits were already in the library and are unchanged.
+
 ## 3. Labels and text
 
 Every component gets a label (M1, L2, PBS…), placed clear of parts and beams.

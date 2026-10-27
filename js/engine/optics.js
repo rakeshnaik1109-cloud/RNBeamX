@@ -80,6 +80,8 @@ O.MATERIALS = {
   'SF11': { name: 'SF11 (dense flint)', B: [1.73759695, 0.313747346, 1.89878101], C: [0.013188707, 0.0623068142, 155.23629] },
   'CaF2': { name: 'CaF₂', B: [0.5675888, 0.4710914, 3.8484723], C: [0.00252643, 0.0100783, 1200.556] },
   'Sapphire': { name: 'Sapphire (o-ray)', B: [1.4313493, 0.65054713, 5.3414021], C: [0.00527992, 0.0142383, 325.0178] },
+  'N-SF5': { name: 'N-SF5 (flint)', B: [1.52481889, 0.187085527, 1.42729015], C: [0.011254756, 0.0588995392, 129.141675] },
+  'N-F2': { name: 'N-F2 (flint)', B: [1.39757037, 0.159201403, 1.2686543], C: [0.00995906143, 0.0546931752, 119.248346] },
   'custom': { name: 'Custom index' },
 };
 O.index = (mat, nm, custom = 1.5) => {
@@ -128,6 +130,81 @@ O.qRadius = (q, lamMm, M2 = 1, n = 1) => {
 };
 /* waist radius and its distance ahead (+) or behind (−) of the current point */
 O.qWaistInfo = (q, lamMm, M2 = 1, n = 1) => ({ zToWaist: -q.re, zR: q.im, w0: Math.sqrt(Math.max(0, q.im) * M2 * lamMm / (Math.PI * n)) });
+
+/* ---------- real lenses (spherical surfaces) ----------
+   Designs a lens of the given shape, drawn focal length fd, clear
+   radius r and minimum drawn thickness, in the part's own frame
+   (optical axis +x, centred on x = 0). Radii are chosen from the
+   thin-lens formulas and then rescaled so that the paraxial focal
+   length at 587.6 nm is exactly fd. Returns the surfaces from left
+   to right: {x (vertex), c (curvature 1/R, 0 = flat), mat after}. */
+const ND = 587.56;
+O.paraxialEFL = (surfs, lam = ND, nc = 1.5) => {
+  // y–nu ray trace of a ray parallel to the axis at height 1
+  let y = 1, nu = 0, nPrev = 1;
+  for (let i = 0; i < surfs.length; i++) {
+    const S = surfs[i], n2 = S.mat === 'air' ? 1 : O.index(S.mat, lam, nc);
+    nu = nu - y * (n2 - nPrev) * S.c;
+    if (i < surfs.length - 1) y += (surfs[i + 1].x - S.x) * nu / n2;
+    nPrev = n2;
+  }
+  return nu === 0 ? Infinity : -1 / nu;
+};
+const sagOf = (c, h) => { if (!c) return 0; const R = 1 / c; return R - Math.sign(R) * Math.sqrt(Math.max(0, R * R - h * h)); };
+O.lensDesign = (shape, fd, r, tMin, mat = 'N-BK7', nc = 1.5) => {
+  const n = O.index(mat, ND, nc), fl = 'N-SF5';
+  const margin = Math.max(0.12, r * 0.04);
+  const build = (k, dc = 0) => {
+    // k scales every curvature; thicknesses follow from the sags
+    let cs, mats;
+    if (shape === 'ball') { cs = [1 / r, -1 / r]; mats = [mat, 'air']; }
+    else if (shape === 'doublet') {
+      const n1 = n, n2 = O.index(fl, ND), V1 = (n1 - 1) / (O.index(mat, 486.13, nc) - O.index(mat, 656.27, nc)), V2 = (n2 - 1) / (O.index(fl, 486.13) - O.index(fl, 656.27));
+      const phi = 1 / fd, p1 = phi * V1 / (V1 - V2), p2 = -phi * V2 / (V1 - V2);
+      const c1 = p1 / (2 * (n1 - 1)), c2 = -c1, c3 = c2 - p2 / (n2 - 1);
+      cs = [c1, c2, c3 + dc]; mats = [mat, fl, 'air'];
+    } else {
+      const conc = /concave/.test(shape), f = conc ? -Math.abs(fd) : Math.abs(fd);
+      if (shape === 'biconvex' || shape === 'biconcave') { const c = 1 / (2 * (n - 1) * f); cs = [c, -c]; }
+      else cs = [1 / ((n - 1) * f), 0];                        // plano: curved side towards the incoming light
+      mats = [mat, 'air'];
+    }
+    cs = cs.map(c => c * k);
+    if (shape === 'ball') cs = [1 / r, -1 / r];
+    // centre thicknesses so that no element gets thinner than the margin at its rim
+    const xs = [0];
+    for (let i = 0; i < cs.length - 1; i++) {
+      const edge = sagOf(cs[i + 1], r) - sagOf(cs[i], r);       // centre minus edge thickness, up to sign
+      const tc = shape === 'ball' ? 2 * r : Math.max(i === 0 ? tMin * (cs.length > 2 ? 0.6 : 1) : tMin * 0.4, margin - edge, margin);
+      xs.push(xs[i] + tc);
+    }
+    const mid = xs[xs.length - 1] / 2;
+    return cs.map((c, i) => ({ x: xs[i] - mid, c, mat: mats[i] }));
+  };
+  if (shape === 'ball') return build(1);
+  // rescale curvatures until the paraxial focal length is exact
+  const fit = dc => {
+    let k = 1, surfs = build(k, dc);
+    for (let it = 0; it < 30; it++) {
+      const e = O.paraxialEFL(surfs, ND, nc);
+      if (!isFinite(e) || Math.abs(e / fd - 1) < 1e-10) break;
+      k *= e / fd; surfs = build(k, dc);
+    }
+    return surfs;
+  };
+  let surfs = fit(0);
+  if (shape === 'doublet') {
+    // thick elements spoil the thin-lens achromat: retouch the last curvature so that F and C focus together
+    const err = dc => { const S = fit(dc); return O.paraxialEFL(S, 486.13, nc) - O.paraxialEFL(S, 656.27, nc); };
+    let a = 0, b = 0.02 / fd, ea = err(a), eb = err(b);
+    for (let it = 0; it < 25 && Math.abs(eb) > 1e-9 * Math.abs(fd) && eb !== ea; it++) { const c = b - eb * (b - a) / (eb - ea); a = b; ea = eb; b = c; eb = err(b); }
+    const S1 = fit(b), ok = Math.abs(O.paraxialEFL(S1, ND, nc) / fd - 1) < 1e-6 && S1.every(q => !q.c || Math.abs(1 / q.c) > r);
+    if (ok && Math.abs(eb) < Math.abs(err(0))) surfs = S1;
+  }
+  // a surface steeper than a hemisphere cannot reach the clear aperture
+  surfs.forEach(S => { if (S.c && Math.abs(1 / S.c) < r) S.tooSteep = true; });
+  return surfs;
+};
 
 /* Spectral transmission of filters and dichroics (sharp-edge model). */
 O.filterT = (p, nm) => {

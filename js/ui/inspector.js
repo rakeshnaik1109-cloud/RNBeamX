@@ -239,6 +239,13 @@ function readout(obj) {
       html += `<br><b>Interference</b> (${U.fmt(I.lambda, 1)} nm): coherent ${fmtP(h.Pcoh)} · Δφ = ${U.fmt(dphi, 1)}° · visibility ${U.fmt(I.vis, 2)}`;
       if (I.overlap < 0.99) html += ` · polarisation overlap ${U.fmt(I.overlap, 2)}`;
     }
+    if (h.rays && h.rays.length > 1) {
+      // ray bundle: spread of the ray landing points (RMS about their mean), per wavelength and in total
+      const sc = (S.doc.style.scale || 10), rms = a => { const m = a.reduce((x, r) => x + r.y, 0) / a.length; return Math.sqrt(a.reduce((x, r) => x + (r.y - m) * (r.y - m), 0) / a.length); };
+      const ls = [...new Set(h.rays.map(r => r.lambda))].sort((a, b) => a - b);
+      const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
+      html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+    }
     if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
     return el('div', { class: 'readout', html });
   }
@@ -496,6 +503,7 @@ function docPanel() {
       control({ key: 'waistLabels', label: 'Label foci (2w₀)', type: 'bool' }, k => st[k], dset('style')))] : []),
     control({ key: 'ghosts', label: 'Surface reflections (ghosts)', type: 'select', options: [['off', 'Off'], ['uncoated', 'Uncoated glass (Fresnel)'], ['ar', 'AR-coated (0.25 % per surface)']] }, k => st[k] || 'off', dset('style')),
     control({ key: 'beamWidth', label: 'Default beam diameter', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05, hint: 'new sources' }, k => st[k], dset('style')),
+    control({ key: 'rayWidth', label: 'Ray width (ray bundles)', type: 'number', unit: 'mm', min: 0.02, max: 2, step: 0.02 }, k => st[k] == null ? 0.16 : st[k], dset('style')),
     control({ key: 'beamOpacity', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01 }, k => st[k], dset('style')),
     control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)'], ['mono', 'Monochrome (black)']] }, k => st[k], dset('style')),
     el('div', { class: 'grid2' },

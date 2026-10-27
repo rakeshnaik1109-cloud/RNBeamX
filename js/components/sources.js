@@ -22,10 +22,20 @@ const beamParams = [
   { key: 'power', label: 'Power', type: 'number', unit: 'mW', min: 0, max: 1e6, step: 0.1 },
   { key: 'M2', label: 'Beam quality M²', type: 'number', min: 1, max: 100, step: 0.1, hint: 'Gaussian model' },
   { key: 'color', label: 'Beam colour override', type: 'color', allowEmpty: true },
+  { key: 'bundle', label: 'Draw as a ray bundle (rays, 0 = off)', type: 'number', min: 0, max: 41, step: 1, hint: 'parallel rays across the beam; shows aberrations of real lenses' },
 ];
 
 function rays(p, lambdas, o = [0, 0]) {
   const P = (p.power == null ? 1 : p.power) / lambdas.length;
+  const N = Math.round(p.bundle || 0);
+  if (N >= 2) {
+    // ray bundle: N parallel rays spread over the beam diameter
+    const W = (p.beamWidth || 0.7) / 2, dv = Math.tan(U.rad(p.divergence || 0));
+    return lambdas.flatMap(l => Array.from({ length: N }, (_, i) => {
+      const f = -1 + 2 * i / (N - 1), J = RNBX.optics.jones(p.pol, p.polAngle);
+      return { o: [o[0], o[1] + f * W], d: [1, f * dv], lambda: l, P: P / N, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P / N)) : null, w: 0, dw: 0, ray: true, pulsed: !!p.pulsed, color: p.color || null };
+    }));
+  }
   return lambdas.map(l => {
     const J = RNBX.optics.jones(p.pol, p.polAngle);
     return { o, d: [1, 0], lambda: l, P, M2: p.M2 || 1, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };

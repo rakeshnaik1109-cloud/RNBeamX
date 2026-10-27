@@ -160,29 +160,73 @@ lib.register({
 });
 
 /* ================= Lenses & objectives ================= */
+/* real lens: surfaces designed for the drawn focal length (see optics.lensDesign) */
+const lensReal = (p, doc) => {
+  if (p.model !== 'real' || (p.asph && p.shape !== 'ball')) return null;
+  const sc = (doc && doc.style.scale) || 10, r = p.d / 2;
+  const fd = (/concave/.test(p.shape) ? -Math.abs(p.f) : p.f) / sc;
+  if (!fd && p.shape !== 'ball') return null;
+  const key = [p.shape, fd, r, p.t, p.mat, p.n].join('|');
+  if (lensReal.cache.key === key) return lensReal.cache.val;
+  const surfs = RNBX.optics.lensDesign(p.shape === 'cylindrical' ? 'planoconvex' : p.shape, fd, r, p.t, p.mat, p.n);
+  const geo = surfs.map((S, i) => {
+    const matA = i === 0 ? 'air' : surfs[i - 1].mat;
+    if (!S.c) return { x: S.x, R: 0, h: r, xe: S.x, matA, matB: S.mat };
+    const R = 1 / S.c, h = Math.min(r, Math.abs(R) * 0.999), xe = S.x + R - Math.sign(R) * Math.sqrt(R * R - h * h);
+    return { x: S.x, R, h, xe, matA, matB: S.mat };
+  });
+  lensReal.cache = { key, val: geo };
+  return geo;
+};
+lensReal.cache = {};
+const lensRealPath = geo => {
+  // outline of each element: front surface down, rim, back surface up
+  const arc = (g, down) => g.R ? `A ${n(Math.abs(g.R))} ${n(Math.abs(g.R))} 0 0 ${(g.R > 0) === down ? 0 : 1} ${n(g.xe)} ${n(down ? g.h : -g.h)}` : `L ${n(g.xe)} ${n(down ? g.h : -g.h)}`;
+  const out = [];
+  for (let i = 0; i < geo.length - 1; i++) {
+    const A = geo[i], B = geo[i + 1], h = Math.min(A.h, B.h);
+    const a = Object.assign({}, A, { h }), b = Object.assign({}, B, { h });
+    if (a.R) a.xe = a.x + a.R - Math.sign(a.R) * Math.sqrt(a.R * a.R - h * h);
+    if (b.R) b.xe = b.x + b.R - Math.sign(b.R) * Math.sqrt(b.R * b.R - h * h);
+    out.push({ d: `M ${n(a.xe)} ${n(-h)} ${arc(a, true)} L ${n(b.xe)} ${n(h)} ${arc(b, false)} Z`, mat: A.matB });
+  }
+  return out;
+};
+lib.lensReal = lensReal;
+
 lib.register({
   type: 'lens', name: 'Lens', abbr: 'L', category: 'Lenses & objectives', keywords: 'lens convex concave focusing collimating achromat',
-  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6 },
+  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false },
   params: [P.diameter(),
-    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale' },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale', show: p => !(p.model === 'real' && p.shape === 'ball') },
     { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave'], ['doublet', 'Achromatic doublet'], ['cylindrical', 'Cylindrical (plano-convex)'], ['ball', 'Ball lens']] },
-    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1 }],
+    { key: 'model', label: 'Optics model', type: 'select', options: [['thin', 'Ideal thin lens'], ['real', 'Real glass surfaces (aberrations, colour)']], hint: 'Real: spherical surfaces traced exactly with Snell’s law. Try it with a ray bundle.' },
+    Object.assign(P.material(), { label: 'Glass', show: p => p.model === 'real' }),
+    { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.model === 'real' && p.mat === 'custom' },
+    { key: 'asph', label: 'Aspheric (aberration-free on axis)', type: 'bool', show: p => p.model === 'real' && p.shape !== 'ball' },
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' }],
   variants: [
     { name: 'Plano-convex lens', props: { shape: 'planoconvex' } },
     { name: 'Concave (diverging) lens', props: { shape: 'biconcave', f: -100 }, keywords: 'negative diverging' },
     { name: 'Achromatic doublet', props: { shape: 'doublet', t: 2.4 }, keywords: 'achromat doublet cemented colour corrected' },
     { name: 'Cylindrical lens', props: { shape: 'cylindrical', t: 1.8 }, keywords: 'cylindrical lens line focus anamorphic' },
     { name: 'Ball lens', props: { shape: 'ball', d: 4, f: 5 }, keywords: 'ball lens sphere fibre coupling' },
-    { name: 'Aspheric lens', props: { shape: 'planoconvex', t: 2.4, f: 20 }, keywords: 'asphere aspheric collimating short focal length' },
+    { name: 'Aspheric lens', props: { shape: 'planoconvex', t: 2.4, f: 20, asph: true }, keywords: 'asphere aspheric collimating short focal length' },
     { name: 'Tube lens', props: { shape: 'doublet', d: 10, t: 2.6, f: 200 }, category: 'Imaging', keywords: 'tube lens microscope infinity corrected imaging' },
     { name: 'Condenser lens', props: { shape: 'planoconvex', d: 12, t: 3, f: 30 }, category: 'Imaging', keywords: 'condenser illumination kohler' },
     { name: 'Scan lens', props: { shape: 'doublet', d: 10, t: 3, f: 50 }, category: 'Imaging', keywords: 'scan lens telecentric laser scanning f-theta' },
   ],
   snap: 'perp', mount: true, labelPos: [0, 7],
   init(obj) { obj.label.text = obj.label.text; },
-  bbox: p => p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2],
+  bbox: (p, obj) => {
+    const g = lensReal(p, RNBX.state && RNBX.state.doc);
+    if (g) { const xs = g.flatMap(q => [q.x, q.xe]); return [Math.min(...xs) - 0.2, -p.d / 2, Math.max(...xs) + 0.2, p.d / 2]; }
+    return p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2];
+  },
   draw(p, S) {
     const r = p.d / 2, glass = `fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}`;
+    const real = lensReal(p, S.doc);
+    if (real) return lensRealPath(real).map((e, i) => `<path d="${e.d}" ${i === 0 ? glass : `fill="${S.shaded ? '#9fc2dd' : '#cfe0ee'}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S)}`}/>`).join('');
     if (p.shape === 'ball') return `<circle cx="0" cy="0" r="${n(r)}" ${glass}/>` + (S.shaded ? `<circle cx="${n(-r * 0.35)}" cy="${n(-r * 0.35)}" r="${n(r * 0.22)}" fill="#ffffff" opacity="0.7"/>` : '');
     if (p.shape === 'doublet') {
       // crown biconvex element cemented to a flint meniscus (darker)
@@ -196,7 +240,11 @@ lib.register({
     if (S.shaded) s += `<path d="M ${n(-p.t * 0.12)} ${n(-r * 0.7)} Q ${n(p.t * 0.25)} ${n(-r * 0.2)} ${n(-p.t * 0.05)} ${n(r * 0.35)}" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="${n(S.lw * 1.4)}" stroke-linecap="round"/>`;
     return s;
   },
-  optics: p => [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: /concave/.test(p.shape) ? -Math.abs(p.f) : p.f }],
+  optics: (p, obj, doc) => {
+    const real = lensReal(p, doc);
+    if (real) return real.map(g => ({ kind: 'iface', a: [g.xe, -g.h], b: [g.xe, g.h], arc: g.R ? { c: [g.x + g.R, 0], R: Math.abs(g.R), m: [g.x, 0] } : null, matA: g.matA, matB: g.matB, nc: p.n }));
+    return [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: /concave/.test(p.shape) ? -Math.abs(p.f) : p.f }];
+  },
   solid: (p, bh) => [{ kind: 'cyl', x: [-p.t / 2, p.t / 2], r: [p.d / 2, p.d / 2], mat: 'glass', lens: ['ball', 'doublet', 'cylindrical'].includes(p.shape) ? 'biconvex' : p.shape }, { kind: 'cyl', x: [-p.t / 2 - 0.35, -p.t / 2], r: [p.d / 2 + 0.7, p.d / 2 + 0.7], mat: 'anod', ring: true }],
 });
 
@@ -444,8 +492,11 @@ lib.register({
 /* ================= Modulators & nonlinear ================= */
 boxDevice('aom', 'Acousto-optic modulator', 'AOM', 'Modulators & nonlinear', {
   keywords: 'aom acousto optic modulator deflector frequency shifter bragg',
-  defaults: { L: 9, H: 5.5, angle: 4, eff: 0.8, order: 1 },
-  params: [{ key: 'angle', label: 'Deflection angle', type: 'number', unit: '°', min: 0.1, max: 30, step: 0.1 },
+  defaults: { L: 9, H: 5.5, angle: 4, eff: 0.8, order: 1, drive: 'angle', rf: 80, vel: 4200 },
+  params: [{ key: 'drive', label: 'Set by', type: 'select', options: [['angle', 'Deflection angle'], ['rf', 'RF frequency (Bragg: θ = λf / v)']] },
+    { key: 'angle', label: 'Deflection angle', type: 'number', unit: '°', min: 0.1, max: 30, step: 0.1, show: p => p.drive !== 'rf' },
+    { key: 'rf', label: 'RF frequency', type: 'number', unit: 'MHz', min: 1, max: 2000, step: 1, animatable: true, show: p => p.drive === 'rf', hint: 'the first order is also shifted by this frequency' },
+    { key: 'vel', label: 'Acoustic velocity', type: 'number', unit: 'm/s', min: 500, max: 12000, step: 10, show: p => p.drive === 'rf', hint: 'TeO₂ ≈ 4200, fused silica ≈ 5960, quartz ≈ 5720' },
     { key: 'order', label: 'Diffraction order', type: 'select', options: [[1, '+1'], [-1, '−1']] },
     { key: 'eff', label: 'First-order efficiency', type: 'range', min: 0, max: 1, step: 0.01 }],
   mat3d: 'glass',
@@ -455,7 +506,7 @@ boxDevice('aom', 'Acousto-optic modulator', 'AOM', 'Modulators & nonlinear', {
     for (let i = 1; i < 6; i++) s += H.line(S, -p.L / 2 + i * p.L / 6, -p.H / 2 + 0.6, -p.L / 2 + i * p.L / 6, p.H / 2 - 0.4, 'stroke-dasharray="0.5 0.45"', 0.5, '#5b7fa6');
     return s;
   },
-  optics: p => [{ kind: 'aom', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, eff: p.eff, order: Number(p.order) }],
+  optics: p => [{ kind: 'aom', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, eff: p.eff, order: Number(p.order), rf: p.drive === 'rf' ? p.rf : 0, vel: p.vel }],
   solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh - p.H / 2, bh + p.H / 2], mat: 'glass' }, { kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh + p.H / 2, bh + p.H / 2 + 0.8], mat: 'gold' }],
 });
 boxDevice('eom', 'Electro-optic modulator', 'EOM', 'Modulators & nonlinear', {
@@ -469,6 +520,7 @@ boxDevice('eom', 'Electro-optic modulator', 'EOM', 'Modulators & nonlinear', {
     return s;
   },
   mat3d: 'crystal',
+  variants: [{ name: 'Pockels cell', abbr: 'PC', props: { L: 8, H: 6, retardance: 180 }, keywords: 'pockels cell q switch pulse picker half wave voltage' }],
   optics: p => [{ kind: 'waveplate', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, retardance: p.retardance }],
 });
 boxDevice('crystal', 'Nonlinear crystal', 'BBO', 'Modulators & nonlinear', {
@@ -485,6 +537,37 @@ boxDevice('crystal', 'Nonlinear crystal', 'BBO', 'Modulators & nonlinear', {
   },
   optics: p => [{ kind: 'shg', a: [0, -p.H / 2], b: [0, p.H / 2], eff: p.eff, harmonic: Number(p.harmonic) }],
 });
+boxDevice('opo', 'Optical parametric oscillator', 'OPO', 'Modulators & nonlinear', {
+  keywords: 'opo optical parametric oscillator amplifier opa signal idler tunable mid infrared nonlinear',
+  defaults: { L: 16, H: 7, signal: 1550, eff: 0.4 },
+  params: [{ key: 'signal', label: 'Signal wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 12000, step: 1, animatable: true, hint: 'the idler follows from 1/λp = 1/λs + 1/λi' },
+    { key: 'eff', label: 'Conversion (pump depletion)', type: 'range', min: 0, max: 1, step: 0.01 }],
+  variants: [{ name: 'Optical parametric amplifier (OPA)', abbr: 'OPA', props: { L: 14, H: 6, signal: 1300 }, keywords: 'opa amplifier' }],
+  mat3d: 'dark',
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.H / 2, p.L, p.H, S.fill('dark'), 'rx="0.7"') + H.sheen(S, -p.L / 2, -p.H / 2, p.L, p.H * 0.45, 0.7);
+    s += H.rect(S, -p.L * 0.18, -p.H * 0.22, p.L * 0.36, p.H * 0.44, S.fill('crystal'));
+    for (const x of [-p.L * 0.38, p.L * 0.38]) s += H.rect(S, x - 0.3, -p.H * 0.32, 0.6, p.H * 0.64, S.fill('mirror'));
+    return s;
+  },
+  // photon energy is shared: the pump splits into signal and idler (power shared in proportion to photon energy)
+  optics: p => [{ kind: 'convert', a: [0, -p.H / 2], b: [0, p.H / 2], outs: lp => { const ls = p.signal, li = 1 / (1 / lp - 1 / ls); if (!(ls > lp) || !(li > 0)) return []; return [{ lambda: ls, frac: p.eff * lp / ls }, { lambda: U.round(li, 2), frac: p.eff * lp / li }]; } }],
+});
+boxDevice('scfiber', 'Supercontinuum fibre', 'SC', 'Modulators & nonlinear', {
+  keywords: 'supercontinuum photonic crystal fibre fiber pcf white light generation broadband',
+  defaults: { L: 14, H: 5, lmin: 450, lmax: 1600, count: 8, eff: 0.5 },
+  params: [{ key: 'lmin', label: 'Shortest wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 5 }, { key: 'lmax', label: 'Longest wavelength', type: 'wavelength', unit: 'nm', min: 250, max: 6000, step: 5 },
+    { key: 'count', label: 'Wavelengths drawn', type: 'number', min: 2, max: 16, step: 1 }, { key: 'eff', label: 'Converted fraction', type: 'range', min: 0, max: 1, step: 0.01 }],
+  mat3d: 'metal',
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.H / 2, p.L, p.H, S.fill('metal'), 'rx="0.6"') + H.sheen(S, -p.L / 2, -p.H / 2, p.L, p.H * 0.45, 0.6);
+    let d = `M ${n(-p.L * 0.4)} 0`;
+    for (let k = 0; k < 6; k++) d += ` C ${n(-p.L * 0.4 + p.L * 0.8 * (k + 0.3) / 6)} ${n(-p.H * 0.28)} ${n(-p.L * 0.4 + p.L * 0.8 * (k + 0.7) / 6)} ${n(p.H * 0.28)} ${n(-p.L * 0.4 + p.L * 0.8 * (k + 1) / 6)} 0`;
+    return s + `<path d="${d}" fill="none" stroke="#f2b33d" stroke-width="${n(S.lw * 1.6)}"/>`;
+  },
+  optics: p => [{ kind: 'convert', a: [0, -p.H / 2], b: [0, p.H / 2], outs: () => { const N = Math.max(2, Math.round(p.count)); return Array.from({ length: N }, (_, i) => ({ lambda: U.round(p.lmin + (p.lmax - p.lmin) * i / (N - 1), 1), frac: p.eff / N })); } }],
+});
+
 lib.register({
   type: 'chopper', name: 'Optical chopper', abbr: 'CH', category: 'Modulators & nonlinear', keywords: 'chopper lock in modulation wheel',
   defaults: { r: 5 }, params: [{ key: 'r', label: 'Wheel radius', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],

@@ -362,4 +362,108 @@ T.list.push({
     return d;
   },
 });
+/* ---------- Epi-fluorescence microscope ---------- */
+T.list.push({
+  id: 'epifluor', name: 'Epi-fluorescence microscope', desc: 'LED, filter cube, objective, tube lens and camera; the sample emits at 525 nm',
+  build() {
+    const d = base('nature-2', 183, 100, 'Epi-fluorescence microscope');
+    const led = mk('led', 22, 58, 0, { lambda: 470, beamWidth: 1.2, divergence: 8, power: 20 }, 'LED 470 nm', [0, 6]);
+    const col = mk('lens', 33.3, 58, 0, { f: 150, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
+    const cube = mk('filtercube', 90, 58, 0, { exc: 470, excW: 40, edge: 495, em: 525, emW: 50 }, 'Filter cube', [-12, 7]);
+    const obj = mk('objective', 90, 36, -90, { fd: 3, mag: '40×' }, 'Objective 40×', [13, 0]);
+    const smp = mk('sample', 90, 27.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 525, emitFrac: 0.4, spot: '#3fb26b' }, 'Labelled cells', [15, -2]);
+    const tl = mk('lens', 90, 74, 90, { f: 160, d: 9, shape: 'doublet', t: 2.2 }, 'Tube lens', [12, 0]);
+    const cam = mk('camera', 90, 90, 90, { L: 10, H: 10 }, 'sCMOS camera', [15, 0]);
+    const t1 = mk('text', 60, 53, 0, { text: 'excitation 470 nm', size: 6, color: '#1f6fb5', italic: true });
+    const t2 = mk('text', 112, 82, 0, { text: 'emission 525 nm', size: 6, color: '#2e8b3e', italic: true, anchor: 'start' });
+    d.objects.push(led, col, cube, obj, smp, tl, cam, t1, t2);
+    return d;
+  },
+});
+
+/* ---------- Laser-scanning confocal microscope ---------- */
+T.list.push({
+  id: 'confocal', name: 'Laser-scanning confocal microscope', desc: 'Galvo scanner, scan and tube lenses, descanned detection through a pinhole onto a PMT (animated scan)',
+  build() {
+    const d = base('nature-2', 183, 108, 'Confocal microscope');
+    const laser = mk('laser', 18, 74, 0, { lambda: 488, L: 16, H: 5.5, power: 5 }, 'Laser 488 nm', [0, 7]);
+    const ex = mk('lenstube', 44, 74, 0, { content: 'expander', L: 18, D: 7, mag: 2.5 }, 'Expander', [0, 7]);
+    const dm = mk('dichroic', 70, 74, ang(R, UP), { edge: 500, mode: 'longpass' }, 'DM', [-7, 4]);
+    const gv = mk('galvo', 70, 36, ang(UP, R), { scan: 0 }, 'Galvo', [-4, -8]);
+    const sl = mk('lens', 82, 36, 0, { f: 120, d: 8, shape: 'doublet', t: 2 }, 'Scan lens', [0, -7]);
+    const tl = mk('lens', 112, 36, 0, { f: 180, d: 10, shape: 'doublet', t: 2.2 }, 'Tube lens', [0, -8]);
+    const fm = mk('mirror', 142, 36, ang(R, UP), {}, 'M', [6, 5]);
+    const obj = mk('objective', 142, 22, -90, { fd: 3, mag: '60×' }, 'Objective 60×', [14, 1]);
+    const smp = mk('sample', 142, 13.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 520, emitFrac: 0.4, spot: '#3fb26b' }, 'Sample', [-12, -1]);
+    const l3 = mk('lens', 70, 86, 90, { f: 80, d: 7 }, 'L', [7, 0]);
+    const ph = mk('iris', 70, 94, 90, { r: 0.25, d: 7 }, 'Pinhole', [9, 0]);
+    const em = mk('filter', 70, 98.5, 90, { mode: 'bandpass', center: 525, width: 40, d: 7 }, '', null);
+    const pmt = mk('pmt', 70, 104, 90, {}, 'PMT', [10, 0]);
+    const t1 = mk('text', 104, 50, 0, { text: 'scan', size: 6, italic: true, color: '#555555' });
+    d.objects.push(laser, ex, dm, gv, sl, tl, fm, obj, smp, l3, ph, em, pmt, t1);
+    d.animation.duration = 4;
+    const k = (t, a) => ({ t, ease: 'inout', x: gv.x, y: gv.y, rot: gv.rot, scale: 1, opacity: 1, props: Object.assign(U.deepClone(gv.props), { scan: a }) });
+    d.animation.tracks[gv.id] = [k(0, 0), k(1, 0.6), k(3, -0.6), k(4, 0)];
+    return d;
+  },
+});
+
+/* ---------- 4f imaging with a Fourier plane ---------- */
+T.list.push({
+  id: 'fourf', name: '4f imaging system (ray diagram)', desc: 'Object, two lenses and the Fourier plane, drawn with ray fans; the image is inverted',
+  build() {
+    const d = base('nature-15', 120, 56, '4f imaging system');
+    const ob = mk('raysource', 14, 30, 0, { mode: 'arrow', h: 5, rays: 5, fan: 10, lambda: 532 }, 'Object', [0, 6]);
+    const l1 = mk('lens', 38, 30, 0, { f: 240, d: 16 }, 'L1', [0, 11]);
+    const fp = mk('iris', 62, 30, 0, { r: 4, d: 16 }, 'Fourier plane', [0, 11]);
+    const l2 = mk('lens', 86, 30, 0, { f: 240, d: 16 }, 'L2', [0, 11]);
+    const im = mk('screen', 110, 30, 0, { d: 14 }, 'Image', [0, 10]);
+    const dims = [14, 38, 62, 86].map(x => mk('dimension', x, 47, 0, { dx: 24, dy: 0, label: 'f', ends: 'arrows' }));
+    d.objects.push(ob, l1, fp, l2, im, ...dims);
+    return d;
+  },
+});
+
+/* ---------- Light-sheet microscope ---------- */
+T.list.push({
+  id: 'lightsheet', name: 'Light-sheet microscope', desc: 'Cylindrical lens forms the sheet; fluorescence collected at 90° by a detection objective',
+  build() {
+    const d = base('nature-2', 183, 92, 'Light-sheet fluorescence microscope');
+    const laser = mk('laser', 18, 30, 0, { lambda: 488, L: 16, H: 5.5 }, 'Laser 488 nm', [0, 7]);
+    const ex = mk('lenstube', 42, 30, 0, { content: 'expander', L: 16, D: 7, mag: 2 }, 'Expander', [0, 7]);
+    const cyl = mk('lens', 62, 30, 0, { f: 150, d: 9, shape: 'cylindrical', t: 1.8 }, 'Cylindrical lens', [0, 8]);
+    const io = mk('objective', 84, 30, 0, { fd: 7, mag: '10×', L: 8 }, 'Illumination obj.', [0, -7]);
+    const cuv = mk('sample', 98, 30, 0, { look: 'cuvette', w: 9, h: 9, T: 1, spot: '#cfe8d2' }, '', null);
+    const fl = mk('raysource', 95, 30, 90, { mode: 'point', h: 0.5, rays: 7, fan: 26, lambda: 520 }, '', null);
+    const dobj = mk('objective', 95, 44.5, -90, { fd: 7, mag: '20×', L: 9 }, 'Detection objective 20×', [17, 0]);
+    const tl = mk('lens', 95, 58, 90, { f: 150, d: 10, shape: 'doublet', t: 2.2 }, 'Tube lens', [10, 0]);
+    const em = mk('filter', 95, 64, 90, { mode: 'longpass', edge: 500, d: 9 }, 'LP', [7, 0]);
+    const cam = mk('camera', 95, 79, 90, { L: 10, H: 10 }, 'Camera', [12, 0]);
+    const bd = mk('beamdump', 125, 30, 0, {}, '', null);
+    const t1 = mk('text', 110, 20, 0, { text: 'light sheet in the sample', size: 6, italic: true, color: '#1f6fb5' });
+    const t2 = mk('text', 120, 39, 0, { text: 'fluorescence 520 nm', size: 6, italic: true, color: '#2e8b3e', anchor: 'start' });
+    d.objects.push(cuv, laser, ex, cyl, io, fl, dobj, tl, em, cam, bd, t1, t2);
+    return d;
+  },
+});
+
+/* ---------- Aberrations: singlet vs achromatic doublet (real glass) ---------- */
+T.list.push({
+  id: 'aberration', name: 'Lens aberrations: singlet vs doublet', desc: 'Real glass surfaces traced exactly: spherical and chromatic aberration of a singlet, corrected by an achromat',
+  build() {
+    const d = base('nature-15', 132, 66, 'Lens aberrations', { rayWidth: 0.1 });
+    // the insets magnify the focus (positions from the exact trace)
+    const rows = [[17, 'biconvex', 'Singlet (N-BK7)', 54.4], [49, 'doublet', 'Achromatic doublet', 54.32]];
+    rows.forEach(([y, shape, name, xf]) => {
+      d.objects.push(mk('raysource', 12, y, 0, { mode: 'parallel', h: 10, rays: 9, colors: 'fdc' }, '', null));
+      d.objects.push(mk('lens', 30, y, 0, { f: 250, d: 12, shape, model: 'real' }, name, [0, 9.5]));
+      d.objects.push(mk('inset', xf, y, 0, { r: 1.6, dx: 30, dy: 0, R: 11 }));
+      d.objects.push(mk('screen', 62, y, 0, { d: 5 }, '', null));
+    });
+    d.objects.push(mk('text', 118, 17, 0, { text: 'blue focuses first;\nedge rays focus short', size: 5.5, italic: true, color: '#555555' }));
+    d.objects.push(mk('text', 118, 49, 0, { text: 'blue and red\nshare one focus', size: 5.5, italic: true, color: '#555555' }));
+    return d;
+  },
+});
+
 })();

@@ -76,7 +76,11 @@ function buildScene(doc) {
           } else {
             const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
             const t = V.norm(V.sub(b, a));
-            surfaces.push(Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz }));
+            const sf = Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz });
+            // spherical surface of a real lens: exact circle, limited to the arc between a and b
+            if (s.arc) Object.assign(sf, { arcC: U.toWorld(obj, s.arc.c), arcR: s.arc.R * (obj.scale || 1), arcM: U.toWorld(obj, s.arc.m) });
+            if (s.kind === 'iface') sf.ax = V.norm(U.dirToWorld(obj, [1, 0]));
+            surfaces.push(sf);
             // fold mirrors also act on vertical beams arriving at their height
             if (s.kind === 'vfold') vertical.push(Object.assign({}, s, { obj, r: Math.max(1, V.dist(s.a, s.b) / 2 * (obj.scale || 1)), zc: z, c: [obj.x, obj.y], scale, port: s.port }));
           }
@@ -104,6 +108,19 @@ function lensDeflect(d, s, hit, f) {
   if (Math.abs(dn) < 1e-9) return d;
   const u = dt / dn - h / f;
   return V.norm(V.add(n, V.mul(s.t, u)));
+}
+
+/* nearest hit of a ray with the arc of a spherical surface */
+function rayArc(o, d, s) {
+  const oc = V.sub(o, s.arcC), b = V.dot(d, oc), cc = V.dot(oc, oc) - s.arcR * s.arcR, disc = b * b - cc;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc), ab = V.sub(s.b, s.a), side = V.cross(ab, V.sub(s.arcM, s.a));
+  for (const t of [-b - sq, -b + sq]) {
+    if (t <= EPS) continue;
+    const p = V.add(o, V.mul(d, t));
+    if (V.cross(ab, V.sub(p, s.a)) * side >= 0) return { t };
+  }
+  return null;
 }
 
 function exitBox(o, d, box) {
@@ -149,6 +166,8 @@ RNBX.trace = function trace(doc) {
     acc[0] = C.add(acc[0], f[0]); acc[1] = C.add(acc[1], f[1]);
     (h.parts[key] = h.parts[key] || []).push({ f, P: ray.P, lambda: ray.lambda });
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
+    // ray bundles: where each ray lands across the detector (for the spot readout)
+    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }
   };
 
   /* Fresnel ghost: a weak reflection at a glass surface */
@@ -181,7 +200,7 @@ RNBX.trace = function trace(doc) {
     const w = base.w;
     // the beam as it arrives at this surface (q, path length) — not as it left the last one
     const qa = base.q;
-    const rayAt = Object.assign({}, ray, { q: qa, opl: base.opl, w });
+    const rayAt = Object.assign({}, ray, { q: qa, opl: base.opl, w, o: hit });
     const lensQ = f => (qa ? { q: O.qLens(qa, f * scale) } : {});
     switch (s.kind) {
       case 'mirror': {
@@ -302,10 +321,30 @@ RNBX.trace = function trace(doc) {
         out.push(child(ray, Object.assign({}, base, qn, tPatch, { d: td, inside: entering ? s.poly : null, nmed: n2 })));
         break;
       }
+      case 'iface': {
+        // interface between two media of a real lens (flat or spherical), traced exactly with Snell's law
+        if (vert) { out.push(child(ray, Object.assign({}, base))); break; }
+        const nrm0 = s.arcC ? V.norm(V.sub(hit, s.arcC)) : s.n;
+        const fwd = V.dot(d, s.ax) >= 0;
+        const nA = s.matA === 'air' ? 1 : O.index(s.matA, ray.lambda, s.nc || 1.5), nB = s.matB === 'air' ? 1 : O.index(s.matB, ray.lambda, s.nc || 1.5);
+        const n1 = fwd ? nA : nB, n2 = fwd ? nB : nA;
+        const facing = V.dot(d, nrm0) < 0 ? nrm0 : V.mul(nrm0, -1);
+        const td = O.refract(d, facing, n1 / n2);
+        if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, nrm0) }))); break; }
+        // paraxial envelope and Gaussian q: surface power (n2 − n1)·c, c > 0 when the centre lies ahead
+        const c = s.arcC ? (V.dot(V.sub(s.arcC, hit), d) > 0 ? 1 : -1) / s.arcR : 0, Pw = (n2 - n1) * c;
+        const dw = (n1 * ray.dw - w * Pw) / n2;
+        let qp = {};
+        if (qa) { const Cq = -Pw / scale / n2, Dq = n1 / n2; qp = { q: O.cdiv(qa, { re: Cq * qa.re + Dq, im: Cq * qa.im }) }; }
+        out.push(child(ray, Object.assign({}, base, qp, { d: td, dw, nmed: n2, glass: n2 > 1.0001 })));
+        break;
+      }
       case 'aom': {
         const eff = U.clamp(s.eff == null ? 0.8 : s.eff, 0, 1);
         if (eff < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - eff) })));
-        if (eff > 0) out.push(child(ray, Object.assign({}, base, vert ? {} : { d: V.rot(d, (s.order || 1) * (s.angle || 3)) }, { P: ray.P * eff })));
+        // driven at an RF frequency the Bragg deflection follows θ = λ·f / v (so it depends on the wavelength)
+        const ang = s.rf ? U.deg(ray.lambda * 1e-9 * s.rf * 1e6 / (s.vel || 4200)) : (s.angle || 3);
+        if (eff > 0) out.push(child(ray, Object.assign({}, base, vert ? {} : { d: V.rot(d, (s.order || 1) * ang) }, { P: ray.P * eff, fshift: (ray.fshift || 0) + (s.rf || 0) * (s.order || 1) })));
         break;
       }
       case 'shg': {
@@ -328,6 +367,28 @@ RNBX.trace = function trace(doc) {
           if (s.emitDir !== 'forward') out.push(child(ray, Object.assign({}, base, em, qBack, vert ? { vz: -ray.vz } : { d: V.mul(d, -1) }, { dw: -ray.dw, last: -1, ignore: s.obj.id })));
           if (s.emitDir === 'forward' || s.emitDir === 'both') out.push(child(ray, Object.assign({}, base, em)));
         }
+        break;
+      }
+      case 'convert': {
+        // nonlinear conversion (OPO, supercontinuum…): part of the input leaves at new wavelengths, the rest passes
+        const outs = (s.outs ? s.outs(ray.lambda) : []).filter(o => o.frac > 0 && o.lambda > 0);
+        const used = Math.min(1, outs.reduce((a, o) => a + o.frac, 0));
+        if (used < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - used), E: O.scaleJ(ray.E, Math.sqrt(1 - used)) })));
+        outs.forEach(o => out.push(child(ray, Object.assign({}, base, { P: ray.P * o.frac, E: null, lambda: o.lambda, color: null, pulsed: ray.pulsed, q: qa ? O.qWaist(Math.max(1e-4, O.qRadius(qa, ray.lambda * 1e-6, ray.M2) || 0.3), o.lambda * 1e-6, ray.M2) : null }))));
+        break;
+      }
+      case 'circulator': {
+        // fibre circulator: port 1 → port 2 straight through; light coming back into port 2 leaves at port 3
+        const ax = V.norm(U.dirToWorld(s.obj, [1, 0]));
+        if (vert) { record(s.obj, rayAt); break; }
+        const along = V.dot(d, ax);
+        if (along > 0.5) { out.push(child(ray, Object.assign({}, base, { P: ray.P * (s.T == null ? 0.9 : s.T) }))); break; }
+        if (along < -0.5) {
+          const o3 = U.toWorld(s.obj, s.port3), d3 = V.norm(U.dirToWorld(s.obj, [0, 1]));
+          out.push(child(ray, Object.assign({}, base, { o: o3, d: d3, P: ray.P * (s.T == null ? 0.9 : s.T), ignore: s.obj.id, last: -1 })));
+          break;
+        }
+        record(s.obj, rayAt);
         break;
       }
       case 'retro': {
@@ -448,7 +509,7 @@ RNBX.trace = function trace(doc) {
     return {
       a, b, len, s0: s0 == null ? ray.s : s0, opl0: opl0 == null ? ray.opl : opl0, lambda: ray.lambda, P: ray.P, P0: ray.P0,
       E: ray.E, w0: ray.w, dw: ray.dw, q0: ray.q || null, M2: ray.M2 || 1, nmed: ray.nmed || 1,
-      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost,
+      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray,
       kind, end, za: za == null ? (ray.z || 0) : za, zb: zb == null ? (ray.z || 0) : zb, vertical: kind === 'vertical',
     };
   }
@@ -488,7 +549,7 @@ RNBX.trace = function trace(doc) {
       if (ray.ignore && ray.ignore === s.obj.id) continue;
       if (ray.vlast && ray.vlast === s.obj.id) continue;
       if (Math.abs((ray.z || 0) - s.z) > s.hz) continue;          // passes above / below
-      const h = U.raySeg(ray.o, ray.d, s.a, s.b);
+      const h = s.arcC ? rayArc(ray.o, ray.d, s) : U.raySeg(ray.o, ray.d, s.a, s.b);
       if (h && h.t > EPS && (!best || h.t < best.t)) { best = h; bi = i; }
     }
     const len = best ? best.t : exitBox(ray.o, ray.d, box);
@@ -499,7 +560,7 @@ RNBX.trace = function trace(doc) {
 
     const s = surfaces[bi];
     const w = ray.w + ray.dw * len;
-    const nm = ray.inside ? (ray.nmed || 1) : 1;
+    const nm = ray.inside || ray.glass ? (ray.nmed || 1) : 1;
     const base = { o: end, last: bi, s: ray.s + len, opl: ray.opl + len * scale * nm, w, ignore: null, vlast: null, q: ray.q ? O.qProp(ray.q, len * scale) : null };
     const out = [];
     interact(ray, s, end, base, out, { vertical: false, index: bi });

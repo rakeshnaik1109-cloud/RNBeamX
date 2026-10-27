@@ -89,7 +89,7 @@ B.groups = segs => {
   const canon = s => (s.a[0] < s.b[0] - 1e-6) || (Math.abs(s.a[0] - s.b[0]) <= 1e-6 && s.a[1] <= s.b[1]);
   const key = s => { const c = canon(s), p = c ? [s.a, s.b] : [s.b, s.a]; return [p[0][0], p[0][1], p[1][0], p[1][1]].map(v => Math.round(v * 50)).join(','); };
   const by = new Map();
-  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
+  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost || s.ray) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
   const out = new Map();
   by.forEach(list => {
     const ls = [...new Set(list.map(s => s.lambda))];
@@ -101,6 +101,8 @@ B.groups = segs => {
   });
   return out;
 };
+/* single rays of a ray bundle: fine lines of a fixed width */
+B.rayLine = (doc, seg) => `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.min(1, B.opacity(doc, seg) + 0.05))}" stroke-width="${n(doc.style.rayWidth || 0.16)}" stroke-linecap="round"/>`;
 B.signalScale = 1;     // relative width of emitted (Raman / fluorescence) beams
 
 B.draw2D = (trace, doc, opt = {}) => {
@@ -115,6 +117,7 @@ B.draw2D = (trace, doc, opt = {}) => {
   if (st.beamStyle === 'ribbon') return B.ribbon2D(trace, doc, opt);
   for (const seg of segs) {
     if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ray) { core += B.rayLine(doc, seg); continue; }
     if (seg.ghost) {
       // ghost reflections: thin dashed lines, as reviewers expect to see them
       const w = Math.max(0.12, (lineMode ? lineW : 2 * B.hw(seg, 0)) * 0.45);
@@ -170,6 +173,7 @@ B.ribbon2D = (trace, doc, opt = {}) => {
   let ghosts = '', deco = '';
   for (const seg of trace.segments) {
     if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ray) { ghosts += B.rayLine(doc, seg); continue; }
     const col = B.color(doc, seg);
     if (seg.ghost) { ghosts += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${col}" stroke-opacity="0.45" stroke-width="${n(Math.max(0.15, W * 0.12))}" stroke-dasharray="${n(W * 0.4)} ${n(W * 0.3)}"/>`; continue; }
     const k = (seg.emitted ? B.signalScale : 1);

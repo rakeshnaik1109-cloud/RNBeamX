@@ -991,6 +991,8 @@ O.MATERIALS = {
   'SF11': { name: 'SF11 (dense flint)', B: [1.73759695, 0.313747346, 1.89878101], C: [0.013188707, 0.0623068142, 155.23629] },
   'CaF2': { name: 'CaF₂', B: [0.5675888, 0.4710914, 3.8484723], C: [0.00252643, 0.0100783, 1200.556] },
   'Sapphire': { name: 'Sapphire (o-ray)', B: [1.4313493, 0.65054713, 5.3414021], C: [0.00527992, 0.0142383, 325.0178] },
+  'N-SF5': { name: 'N-SF5 (flint)', B: [1.52481889, 0.187085527, 1.42729015], C: [0.011254756, 0.0588995392, 129.141675] },
+  'N-F2': { name: 'N-F2 (flint)', B: [1.39757037, 0.159201403, 1.2686543], C: [0.00995906143, 0.0546931752, 119.248346] },
   'custom': { name: 'Custom index' },
 };
 O.index = (mat, nm, custom = 1.5) => {
@@ -1039,6 +1041,81 @@ O.qRadius = (q, lamMm, M2 = 1, n = 1) => {
 };
 /* waist radius and its distance ahead (+) or behind (−) of the current point */
 O.qWaistInfo = (q, lamMm, M2 = 1, n = 1) => ({ zToWaist: -q.re, zR: q.im, w0: Math.sqrt(Math.max(0, q.im) * M2 * lamMm / (Math.PI * n)) });
+
+/* ---------- real lenses (spherical surfaces) ----------
+   Designs a lens of the given shape, drawn focal length fd, clear
+   radius r and minimum drawn thickness, in the part's own frame
+   (optical axis +x, centred on x = 0). Radii are chosen from the
+   thin-lens formulas and then rescaled so that the paraxial focal
+   length at 587.6 nm is exactly fd. Returns the surfaces from left
+   to right: {x (vertex), c (curvature 1/R, 0 = flat), mat after}. */
+const ND = 587.56;
+O.paraxialEFL = (surfs, lam = ND, nc = 1.5) => {
+  // y–nu ray trace of a ray parallel to the axis at height 1
+  let y = 1, nu = 0, nPrev = 1;
+  for (let i = 0; i < surfs.length; i++) {
+    const S = surfs[i], n2 = S.mat === 'air' ? 1 : O.index(S.mat, lam, nc);
+    nu = nu - y * (n2 - nPrev) * S.c;
+    if (i < surfs.length - 1) y += (surfs[i + 1].x - S.x) * nu / n2;
+    nPrev = n2;
+  }
+  return nu === 0 ? Infinity : -1 / nu;
+};
+const sagOf = (c, h) => { if (!c) return 0; const R = 1 / c; return R - Math.sign(R) * Math.sqrt(Math.max(0, R * R - h * h)); };
+O.lensDesign = (shape, fd, r, tMin, mat = 'N-BK7', nc = 1.5) => {
+  const n = O.index(mat, ND, nc), fl = 'N-SF5';
+  const margin = Math.max(0.12, r * 0.04);
+  const build = (k, dc = 0) => {
+    // k scales every curvature; thicknesses follow from the sags
+    let cs, mats;
+    if (shape === 'ball') { cs = [1 / r, -1 / r]; mats = [mat, 'air']; }
+    else if (shape === 'doublet') {
+      const n1 = n, n2 = O.index(fl, ND), V1 = (n1 - 1) / (O.index(mat, 486.13, nc) - O.index(mat, 656.27, nc)), V2 = (n2 - 1) / (O.index(fl, 486.13) - O.index(fl, 656.27));
+      const phi = 1 / fd, p1 = phi * V1 / (V1 - V2), p2 = -phi * V2 / (V1 - V2);
+      const c1 = p1 / (2 * (n1 - 1)), c2 = -c1, c3 = c2 - p2 / (n2 - 1);
+      cs = [c1, c2, c3 + dc]; mats = [mat, fl, 'air'];
+    } else {
+      const conc = /concave/.test(shape), f = conc ? -Math.abs(fd) : Math.abs(fd);
+      if (shape === 'biconvex' || shape === 'biconcave') { const c = 1 / (2 * (n - 1) * f); cs = [c, -c]; }
+      else cs = [1 / ((n - 1) * f), 0];                        // plano: curved side towards the incoming light
+      mats = [mat, 'air'];
+    }
+    cs = cs.map(c => c * k);
+    if (shape === 'ball') cs = [1 / r, -1 / r];
+    // centre thicknesses so that no element gets thinner than the margin at its rim
+    const xs = [0];
+    for (let i = 0; i < cs.length - 1; i++) {
+      const edge = sagOf(cs[i + 1], r) - sagOf(cs[i], r);       // centre minus edge thickness, up to sign
+      const tc = shape === 'ball' ? 2 * r : Math.max(i === 0 ? tMin * (cs.length > 2 ? 0.6 : 1) : tMin * 0.4, margin - edge, margin);
+      xs.push(xs[i] + tc);
+    }
+    const mid = xs[xs.length - 1] / 2;
+    return cs.map((c, i) => ({ x: xs[i] - mid, c, mat: mats[i] }));
+  };
+  if (shape === 'ball') return build(1);
+  // rescale curvatures until the paraxial focal length is exact
+  const fit = dc => {
+    let k = 1, surfs = build(k, dc);
+    for (let it = 0; it < 30; it++) {
+      const e = O.paraxialEFL(surfs, ND, nc);
+      if (!isFinite(e) || Math.abs(e / fd - 1) < 1e-10) break;
+      k *= e / fd; surfs = build(k, dc);
+    }
+    return surfs;
+  };
+  let surfs = fit(0);
+  if (shape === 'doublet') {
+    // thick elements spoil the thin-lens achromat: retouch the last curvature so that F and C focus together
+    const err = dc => { const S = fit(dc); return O.paraxialEFL(S, 486.13, nc) - O.paraxialEFL(S, 656.27, nc); };
+    let a = 0, b = 0.02 / fd, ea = err(a), eb = err(b);
+    for (let it = 0; it < 25 && Math.abs(eb) > 1e-9 * Math.abs(fd) && eb !== ea; it++) { const c = b - eb * (b - a) / (eb - ea); a = b; ea = eb; b = c; eb = err(b); }
+    const S1 = fit(b), ok = Math.abs(O.paraxialEFL(S1, ND, nc) / fd - 1) < 1e-6 && S1.every(q => !q.c || Math.abs(1 / q.c) > r);
+    if (ok && Math.abs(eb) < Math.abs(err(0))) surfs = S1;
+  }
+  // a surface steeper than a hemisphere cannot reach the clear aperture
+  surfs.forEach(S => { if (S.c && Math.abs(1 / S.c) < r) S.tooSteep = true; });
+  return surfs;
+};
 
 /* Spectral transmission of filters and dichroics (sharp-edge model). */
 O.filterT = (p, nm) => {
@@ -1733,7 +1810,11 @@ function buildScene(doc) {
           } else {
             const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
             const t = V.norm(V.sub(b, a));
-            surfaces.push(Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz }));
+            const sf = Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz });
+            // spherical surface of a real lens: exact circle, limited to the arc between a and b
+            if (s.arc) Object.assign(sf, { arcC: U.toWorld(obj, s.arc.c), arcR: s.arc.R * (obj.scale || 1), arcM: U.toWorld(obj, s.arc.m) });
+            if (s.kind === 'iface') sf.ax = V.norm(U.dirToWorld(obj, [1, 0]));
+            surfaces.push(sf);
             // fold mirrors also act on vertical beams arriving at their height
             if (s.kind === 'vfold') vertical.push(Object.assign({}, s, { obj, r: Math.max(1, V.dist(s.a, s.b) / 2 * (obj.scale || 1)), zc: z, c: [obj.x, obj.y], scale, port: s.port }));
           }
@@ -1761,6 +1842,19 @@ function lensDeflect(d, s, hit, f) {
   if (Math.abs(dn) < 1e-9) return d;
   const u = dt / dn - h / f;
   return V.norm(V.add(n, V.mul(s.t, u)));
+}
+
+/* nearest hit of a ray with the arc of a spherical surface */
+function rayArc(o, d, s) {
+  const oc = V.sub(o, s.arcC), b = V.dot(d, oc), cc = V.dot(oc, oc) - s.arcR * s.arcR, disc = b * b - cc;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc), ab = V.sub(s.b, s.a), side = V.cross(ab, V.sub(s.arcM, s.a));
+  for (const t of [-b - sq, -b + sq]) {
+    if (t <= EPS) continue;
+    const p = V.add(o, V.mul(d, t));
+    if (V.cross(ab, V.sub(p, s.a)) * side >= 0) return { t };
+  }
+  return null;
 }
 
 function exitBox(o, d, box) {
@@ -1806,6 +1900,8 @@ RNBX.trace = function trace(doc) {
     acc[0] = C.add(acc[0], f[0]); acc[1] = C.add(acc[1], f[1]);
     (h.parts[key] = h.parts[key] || []).push({ f, P: ray.P, lambda: ray.lambda });
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
+    // ray bundles: where each ray lands across the detector (for the spot readout)
+    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }
   };
 
   /* Fresnel ghost: a weak reflection at a glass surface */
@@ -1838,7 +1934,7 @@ RNBX.trace = function trace(doc) {
     const w = base.w;
     // the beam as it arrives at this surface (q, path length) — not as it left the last one
     const qa = base.q;
-    const rayAt = Object.assign({}, ray, { q: qa, opl: base.opl, w });
+    const rayAt = Object.assign({}, ray, { q: qa, opl: base.opl, w, o: hit });
     const lensQ = f => (qa ? { q: O.qLens(qa, f * scale) } : {});
     switch (s.kind) {
       case 'mirror': {
@@ -1959,10 +2055,30 @@ RNBX.trace = function trace(doc) {
         out.push(child(ray, Object.assign({}, base, qn, tPatch, { d: td, inside: entering ? s.poly : null, nmed: n2 })));
         break;
       }
+      case 'iface': {
+        // interface between two media of a real lens (flat or spherical), traced exactly with Snell's law
+        if (vert) { out.push(child(ray, Object.assign({}, base))); break; }
+        const nrm0 = s.arcC ? V.norm(V.sub(hit, s.arcC)) : s.n;
+        const fwd = V.dot(d, s.ax) >= 0;
+        const nA = s.matA === 'air' ? 1 : O.index(s.matA, ray.lambda, s.nc || 1.5), nB = s.matB === 'air' ? 1 : O.index(s.matB, ray.lambda, s.nc || 1.5);
+        const n1 = fwd ? nA : nB, n2 = fwd ? nB : nA;
+        const facing = V.dot(d, nrm0) < 0 ? nrm0 : V.mul(nrm0, -1);
+        const td = O.refract(d, facing, n1 / n2);
+        if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, nrm0) }))); break; }
+        // paraxial envelope and Gaussian q: surface power (n2 − n1)·c, c > 0 when the centre lies ahead
+        const c = s.arcC ? (V.dot(V.sub(s.arcC, hit), d) > 0 ? 1 : -1) / s.arcR : 0, Pw = (n2 - n1) * c;
+        const dw = (n1 * ray.dw - w * Pw) / n2;
+        let qp = {};
+        if (qa) { const Cq = -Pw / scale / n2, Dq = n1 / n2; qp = { q: O.cdiv(qa, { re: Cq * qa.re + Dq, im: Cq * qa.im }) }; }
+        out.push(child(ray, Object.assign({}, base, qp, { d: td, dw, nmed: n2, glass: n2 > 1.0001 })));
+        break;
+      }
       case 'aom': {
         const eff = U.clamp(s.eff == null ? 0.8 : s.eff, 0, 1);
         if (eff < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - eff) })));
-        if (eff > 0) out.push(child(ray, Object.assign({}, base, vert ? {} : { d: V.rot(d, (s.order || 1) * (s.angle || 3)) }, { P: ray.P * eff })));
+        // driven at an RF frequency the Bragg deflection follows θ = λ·f / v (so it depends on the wavelength)
+        const ang = s.rf ? U.deg(ray.lambda * 1e-9 * s.rf * 1e6 / (s.vel || 4200)) : (s.angle || 3);
+        if (eff > 0) out.push(child(ray, Object.assign({}, base, vert ? {} : { d: V.rot(d, (s.order || 1) * ang) }, { P: ray.P * eff, fshift: (ray.fshift || 0) + (s.rf || 0) * (s.order || 1) })));
         break;
       }
       case 'shg': {
@@ -1985,6 +2101,28 @@ RNBX.trace = function trace(doc) {
           if (s.emitDir !== 'forward') out.push(child(ray, Object.assign({}, base, em, qBack, vert ? { vz: -ray.vz } : { d: V.mul(d, -1) }, { dw: -ray.dw, last: -1, ignore: s.obj.id })));
           if (s.emitDir === 'forward' || s.emitDir === 'both') out.push(child(ray, Object.assign({}, base, em)));
         }
+        break;
+      }
+      case 'convert': {
+        // nonlinear conversion (OPO, supercontinuum…): part of the input leaves at new wavelengths, the rest passes
+        const outs = (s.outs ? s.outs(ray.lambda) : []).filter(o => o.frac > 0 && o.lambda > 0);
+        const used = Math.min(1, outs.reduce((a, o) => a + o.frac, 0));
+        if (used < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - used), E: O.scaleJ(ray.E, Math.sqrt(1 - used)) })));
+        outs.forEach(o => out.push(child(ray, Object.assign({}, base, { P: ray.P * o.frac, E: null, lambda: o.lambda, color: null, pulsed: ray.pulsed, q: qa ? O.qWaist(Math.max(1e-4, O.qRadius(qa, ray.lambda * 1e-6, ray.M2) || 0.3), o.lambda * 1e-6, ray.M2) : null }))));
+        break;
+      }
+      case 'circulator': {
+        // fibre circulator: port 1 → port 2 straight through; light coming back into port 2 leaves at port 3
+        const ax = V.norm(U.dirToWorld(s.obj, [1, 0]));
+        if (vert) { record(s.obj, rayAt); break; }
+        const along = V.dot(d, ax);
+        if (along > 0.5) { out.push(child(ray, Object.assign({}, base, { P: ray.P * (s.T == null ? 0.9 : s.T) }))); break; }
+        if (along < -0.5) {
+          const o3 = U.toWorld(s.obj, s.port3), d3 = V.norm(U.dirToWorld(s.obj, [0, 1]));
+          out.push(child(ray, Object.assign({}, base, { o: o3, d: d3, P: ray.P * (s.T == null ? 0.9 : s.T), ignore: s.obj.id, last: -1 })));
+          break;
+        }
+        record(s.obj, rayAt);
         break;
       }
       case 'retro': {
@@ -2105,7 +2243,7 @@ RNBX.trace = function trace(doc) {
     return {
       a, b, len, s0: s0 == null ? ray.s : s0, opl0: opl0 == null ? ray.opl : opl0, lambda: ray.lambda, P: ray.P, P0: ray.P0,
       E: ray.E, w0: ray.w, dw: ray.dw, q0: ray.q || null, M2: ray.M2 || 1, nmed: ray.nmed || 1,
-      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost,
+      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray,
       kind, end, za: za == null ? (ray.z || 0) : za, zb: zb == null ? (ray.z || 0) : zb, vertical: kind === 'vertical',
     };
   }
@@ -2145,7 +2283,7 @@ RNBX.trace = function trace(doc) {
       if (ray.ignore && ray.ignore === s.obj.id) continue;
       if (ray.vlast && ray.vlast === s.obj.id) continue;
       if (Math.abs((ray.z || 0) - s.z) > s.hz) continue;          // passes above / below
-      const h = U.raySeg(ray.o, ray.d, s.a, s.b);
+      const h = s.arcC ? rayArc(ray.o, ray.d, s) : U.raySeg(ray.o, ray.d, s.a, s.b);
       if (h && h.t > EPS && (!best || h.t < best.t)) { best = h; bi = i; }
     }
     const len = best ? best.t : exitBox(ray.o, ray.d, box);
@@ -2156,7 +2294,7 @@ RNBX.trace = function trace(doc) {
 
     const s = surfaces[bi];
     const w = ray.w + ray.dw * len;
-    const nm = ray.inside ? (ray.nmed || 1) : 1;
+    const nm = ray.inside || ray.glass ? (ray.nmed || 1) : 1;
     const base = { o: end, last: bi, s: ray.s + len, opl: ray.opl + len * scale * nm, w, ignore: null, vlast: null, q: ray.q ? O.qProp(ray.q, len * scale) : null };
     const out = [];
     interact(ray, s, end, base, out, { vertical: false, index: bi });
@@ -2393,10 +2531,20 @@ const beamParams = [
   { key: 'power', label: 'Power', type: 'number', unit: 'mW', min: 0, max: 1e6, step: 0.1 },
   { key: 'M2', label: 'Beam quality M²', type: 'number', min: 1, max: 100, step: 0.1, hint: 'Gaussian model' },
   { key: 'color', label: 'Beam colour override', type: 'color', allowEmpty: true },
+  { key: 'bundle', label: 'Draw as a ray bundle (rays, 0 = off)', type: 'number', min: 0, max: 41, step: 1, hint: 'parallel rays across the beam; shows aberrations of real lenses' },
 ];
 
 function rays(p, lambdas, o = [0, 0]) {
   const P = (p.power == null ? 1 : p.power) / lambdas.length;
+  const N = Math.round(p.bundle || 0);
+  if (N >= 2) {
+    // ray bundle: N parallel rays spread over the beam diameter
+    const W = (p.beamWidth || 0.7) / 2, dv = Math.tan(U.rad(p.divergence || 0));
+    return lambdas.flatMap(l => Array.from({ length: N }, (_, i) => {
+      const f = -1 + 2 * i / (N - 1), J = RNBX.optics.jones(p.pol, p.polAngle);
+      return { o: [o[0], o[1] + f * W], d: [1, f * dv], lambda: l, P: P / N, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P / N)) : null, w: 0, dw: 0, ray: true, pulsed: !!p.pulsed, color: p.color || null };
+    }));
+  }
   return lambdas.map(l => {
     const J = RNBX.optics.jones(p.pol, p.polAngle);
     return { o, d: [1, 0], lambda: l, P, M2: p.M2 || 1, E: J ? RNBX.optics.scaleJ(J, Math.sqrt(P)) : null, w: (p.beamWidth || 0.7) / 2, dw: Math.tan(U.rad(p.divergence || 0)), pulsed: !!p.pulsed, color: p.color || null };
@@ -2678,29 +2826,73 @@ lib.register({
 });
 
 /* ================= Lenses & objectives ================= */
+/* real lens: surfaces designed for the drawn focal length (see optics.lensDesign) */
+const lensReal = (p, doc) => {
+  if (p.model !== 'real' || (p.asph && p.shape !== 'ball')) return null;
+  const sc = (doc && doc.style.scale) || 10, r = p.d / 2;
+  const fd = (/concave/.test(p.shape) ? -Math.abs(p.f) : p.f) / sc;
+  if (!fd && p.shape !== 'ball') return null;
+  const key = [p.shape, fd, r, p.t, p.mat, p.n].join('|');
+  if (lensReal.cache.key === key) return lensReal.cache.val;
+  const surfs = RNBX.optics.lensDesign(p.shape === 'cylindrical' ? 'planoconvex' : p.shape, fd, r, p.t, p.mat, p.n);
+  const geo = surfs.map((S, i) => {
+    const matA = i === 0 ? 'air' : surfs[i - 1].mat;
+    if (!S.c) return { x: S.x, R: 0, h: r, xe: S.x, matA, matB: S.mat };
+    const R = 1 / S.c, h = Math.min(r, Math.abs(R) * 0.999), xe = S.x + R - Math.sign(R) * Math.sqrt(R * R - h * h);
+    return { x: S.x, R, h, xe, matA, matB: S.mat };
+  });
+  lensReal.cache = { key, val: geo };
+  return geo;
+};
+lensReal.cache = {};
+const lensRealPath = geo => {
+  // outline of each element: front surface down, rim, back surface up
+  const arc = (g, down) => g.R ? `A ${n(Math.abs(g.R))} ${n(Math.abs(g.R))} 0 0 ${(g.R > 0) === down ? 0 : 1} ${n(g.xe)} ${n(down ? g.h : -g.h)}` : `L ${n(g.xe)} ${n(down ? g.h : -g.h)}`;
+  const out = [];
+  for (let i = 0; i < geo.length - 1; i++) {
+    const A = geo[i], B = geo[i + 1], h = Math.min(A.h, B.h);
+    const a = Object.assign({}, A, { h }), b = Object.assign({}, B, { h });
+    if (a.R) a.xe = a.x + a.R - Math.sign(a.R) * Math.sqrt(a.R * a.R - h * h);
+    if (b.R) b.xe = b.x + b.R - Math.sign(b.R) * Math.sqrt(b.R * b.R - h * h);
+    out.push({ d: `M ${n(a.xe)} ${n(-h)} ${arc(a, true)} L ${n(b.xe)} ${n(h)} ${arc(b, false)} Z`, mat: A.matB });
+  }
+  return out;
+};
+lib.lensReal = lensReal;
+
 lib.register({
   type: 'lens', name: 'Lens', abbr: 'L', category: 'Lenses & objectives', keywords: 'lens convex concave focusing collimating achromat',
-  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6 },
+  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false },
   params: [P.diameter(),
-    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale' },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale', show: p => !(p.model === 'real' && p.shape === 'ball') },
     { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave'], ['doublet', 'Achromatic doublet'], ['cylindrical', 'Cylindrical (plano-convex)'], ['ball', 'Ball lens']] },
-    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1 }],
+    { key: 'model', label: 'Optics model', type: 'select', options: [['thin', 'Ideal thin lens'], ['real', 'Real glass surfaces (aberrations, colour)']], hint: 'Real: spherical surfaces traced exactly with Snell’s law. Try it with a ray bundle.' },
+    Object.assign(P.material(), { label: 'Glass', show: p => p.model === 'real' }),
+    { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.model === 'real' && p.mat === 'custom' },
+    { key: 'asph', label: 'Aspheric (aberration-free on axis)', type: 'bool', show: p => p.model === 'real' && p.shape !== 'ball' },
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' }],
   variants: [
     { name: 'Plano-convex lens', props: { shape: 'planoconvex' } },
     { name: 'Concave (diverging) lens', props: { shape: 'biconcave', f: -100 }, keywords: 'negative diverging' },
     { name: 'Achromatic doublet', props: { shape: 'doublet', t: 2.4 }, keywords: 'achromat doublet cemented colour corrected' },
     { name: 'Cylindrical lens', props: { shape: 'cylindrical', t: 1.8 }, keywords: 'cylindrical lens line focus anamorphic' },
     { name: 'Ball lens', props: { shape: 'ball', d: 4, f: 5 }, keywords: 'ball lens sphere fibre coupling' },
-    { name: 'Aspheric lens', props: { shape: 'planoconvex', t: 2.4, f: 20 }, keywords: 'asphere aspheric collimating short focal length' },
+    { name: 'Aspheric lens', props: { shape: 'planoconvex', t: 2.4, f: 20, asph: true }, keywords: 'asphere aspheric collimating short focal length' },
     { name: 'Tube lens', props: { shape: 'doublet', d: 10, t: 2.6, f: 200 }, category: 'Imaging', keywords: 'tube lens microscope infinity corrected imaging' },
     { name: 'Condenser lens', props: { shape: 'planoconvex', d: 12, t: 3, f: 30 }, category: 'Imaging', keywords: 'condenser illumination kohler' },
     { name: 'Scan lens', props: { shape: 'doublet', d: 10, t: 3, f: 50 }, category: 'Imaging', keywords: 'scan lens telecentric laser scanning f-theta' },
   ],
   snap: 'perp', mount: true, labelPos: [0, 7],
   init(obj) { obj.label.text = obj.label.text; },
-  bbox: p => p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2],
+  bbox: (p, obj) => {
+    const g = lensReal(p, RNBX.state && RNBX.state.doc);
+    if (g) { const xs = g.flatMap(q => [q.x, q.xe]); return [Math.min(...xs) - 0.2, -p.d / 2, Math.max(...xs) + 0.2, p.d / 2]; }
+    return p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2];
+  },
   draw(p, S) {
     const r = p.d / 2, glass = `fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}`;
+    const real = lensReal(p, S.doc);
+    if (real) return lensRealPath(real).map((e, i) => `<path d="${e.d}" ${i === 0 ? glass : `fill="${S.shaded ? '#9fc2dd' : '#cfe0ee'}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S)}`}/>`).join('');
     if (p.shape === 'ball') return `<circle cx="0" cy="0" r="${n(r)}" ${glass}/>` + (S.shaded ? `<circle cx="${n(-r * 0.35)}" cy="${n(-r * 0.35)}" r="${n(r * 0.22)}" fill="#ffffff" opacity="0.7"/>` : '');
     if (p.shape === 'doublet') {
       // crown biconvex element cemented to a flint meniscus (darker)
@@ -2714,7 +2906,11 @@ lib.register({
     if (S.shaded) s += `<path d="M ${n(-p.t * 0.12)} ${n(-r * 0.7)} Q ${n(p.t * 0.25)} ${n(-r * 0.2)} ${n(-p.t * 0.05)} ${n(r * 0.35)}" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="${n(S.lw * 1.4)}" stroke-linecap="round"/>`;
     return s;
   },
-  optics: p => [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: /concave/.test(p.shape) ? -Math.abs(p.f) : p.f }],
+  optics: (p, obj, doc) => {
+    const real = lensReal(p, doc);
+    if (real) return real.map(g => ({ kind: 'iface', a: [g.xe, -g.h], b: [g.xe, g.h], arc: g.R ? { c: [g.x + g.R, 0], R: Math.abs(g.R), m: [g.x, 0] } : null, matA: g.matA, matB: g.matB, nc: p.n }));
+    return [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: /concave/.test(p.shape) ? -Math.abs(p.f) : p.f }];
+  },
   solid: (p, bh) => [{ kind: 'cyl', x: [-p.t / 2, p.t / 2], r: [p.d / 2, p.d / 2], mat: 'glass', lens: ['ball', 'doublet', 'cylindrical'].includes(p.shape) ? 'biconvex' : p.shape }, { kind: 'cyl', x: [-p.t / 2 - 0.35, -p.t / 2], r: [p.d / 2 + 0.7, p.d / 2 + 0.7], mat: 'anod', ring: true }],
 });
 
@@ -2962,8 +3158,11 @@ lib.register({
 /* ================= Modulators & nonlinear ================= */
 boxDevice('aom', 'Acousto-optic modulator', 'AOM', 'Modulators & nonlinear', {
   keywords: 'aom acousto optic modulator deflector frequency shifter bragg',
-  defaults: { L: 9, H: 5.5, angle: 4, eff: 0.8, order: 1 },
-  params: [{ key: 'angle', label: 'Deflection angle', type: 'number', unit: '°', min: 0.1, max: 30, step: 0.1 },
+  defaults: { L: 9, H: 5.5, angle: 4, eff: 0.8, order: 1, drive: 'angle', rf: 80, vel: 4200 },
+  params: [{ key: 'drive', label: 'Set by', type: 'select', options: [['angle', 'Deflection angle'], ['rf', 'RF frequency (Bragg: θ = λf / v)']] },
+    { key: 'angle', label: 'Deflection angle', type: 'number', unit: '°', min: 0.1, max: 30, step: 0.1, show: p => p.drive !== 'rf' },
+    { key: 'rf', label: 'RF frequency', type: 'number', unit: 'MHz', min: 1, max: 2000, step: 1, animatable: true, show: p => p.drive === 'rf', hint: 'the first order is also shifted by this frequency' },
+    { key: 'vel', label: 'Acoustic velocity', type: 'number', unit: 'm/s', min: 500, max: 12000, step: 10, show: p => p.drive === 'rf', hint: 'TeO₂ ≈ 4200, fused silica ≈ 5960, quartz ≈ 5720' },
     { key: 'order', label: 'Diffraction order', type: 'select', options: [[1, '+1'], [-1, '−1']] },
     { key: 'eff', label: 'First-order efficiency', type: 'range', min: 0, max: 1, step: 0.01 }],
   mat3d: 'glass',
@@ -2973,7 +3172,7 @@ boxDevice('aom', 'Acousto-optic modulator', 'AOM', 'Modulators & nonlinear', {
     for (let i = 1; i < 6; i++) s += H.line(S, -p.L / 2 + i * p.L / 6, -p.H / 2 + 0.6, -p.L / 2 + i * p.L / 6, p.H / 2 - 0.4, 'stroke-dasharray="0.5 0.45"', 0.5, '#5b7fa6');
     return s;
   },
-  optics: p => [{ kind: 'aom', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, eff: p.eff, order: Number(p.order) }],
+  optics: p => [{ kind: 'aom', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, eff: p.eff, order: Number(p.order), rf: p.drive === 'rf' ? p.rf : 0, vel: p.vel }],
   solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh - p.H / 2, bh + p.H / 2], mat: 'glass' }, { kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh + p.H / 2, bh + p.H / 2 + 0.8], mat: 'gold' }],
 });
 boxDevice('eom', 'Electro-optic modulator', 'EOM', 'Modulators & nonlinear', {
@@ -2987,6 +3186,7 @@ boxDevice('eom', 'Electro-optic modulator', 'EOM', 'Modulators & nonlinear', {
     return s;
   },
   mat3d: 'crystal',
+  variants: [{ name: 'Pockels cell', abbr: 'PC', props: { L: 8, H: 6, retardance: 180 }, keywords: 'pockels cell q switch pulse picker half wave voltage' }],
   optics: p => [{ kind: 'waveplate', a: [0, -p.H / 2], b: [0, p.H / 2], angle: p.angle, retardance: p.retardance }],
 });
 boxDevice('crystal', 'Nonlinear crystal', 'BBO', 'Modulators & nonlinear', {
@@ -3003,6 +3203,37 @@ boxDevice('crystal', 'Nonlinear crystal', 'BBO', 'Modulators & nonlinear', {
   },
   optics: p => [{ kind: 'shg', a: [0, -p.H / 2], b: [0, p.H / 2], eff: p.eff, harmonic: Number(p.harmonic) }],
 });
+boxDevice('opo', 'Optical parametric oscillator', 'OPO', 'Modulators & nonlinear', {
+  keywords: 'opo optical parametric oscillator amplifier opa signal idler tunable mid infrared nonlinear',
+  defaults: { L: 16, H: 7, signal: 1550, eff: 0.4 },
+  params: [{ key: 'signal', label: 'Signal wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 12000, step: 1, animatable: true, hint: 'the idler follows from 1/λp = 1/λs + 1/λi' },
+    { key: 'eff', label: 'Conversion (pump depletion)', type: 'range', min: 0, max: 1, step: 0.01 }],
+  variants: [{ name: 'Optical parametric amplifier (OPA)', abbr: 'OPA', props: { L: 14, H: 6, signal: 1300 }, keywords: 'opa amplifier' }],
+  mat3d: 'dark',
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.H / 2, p.L, p.H, S.fill('dark'), 'rx="0.7"') + H.sheen(S, -p.L / 2, -p.H / 2, p.L, p.H * 0.45, 0.7);
+    s += H.rect(S, -p.L * 0.18, -p.H * 0.22, p.L * 0.36, p.H * 0.44, S.fill('crystal'));
+    for (const x of [-p.L * 0.38, p.L * 0.38]) s += H.rect(S, x - 0.3, -p.H * 0.32, 0.6, p.H * 0.64, S.fill('mirror'));
+    return s;
+  },
+  // photon energy is shared: the pump splits into signal and idler (power shared in proportion to photon energy)
+  optics: p => [{ kind: 'convert', a: [0, -p.H / 2], b: [0, p.H / 2], outs: lp => { const ls = p.signal, li = 1 / (1 / lp - 1 / ls); if (!(ls > lp) || !(li > 0)) return []; return [{ lambda: ls, frac: p.eff * lp / ls }, { lambda: U.round(li, 2), frac: p.eff * lp / li }]; } }],
+});
+boxDevice('scfiber', 'Supercontinuum fibre', 'SC', 'Modulators & nonlinear', {
+  keywords: 'supercontinuum photonic crystal fibre fiber pcf white light generation broadband',
+  defaults: { L: 14, H: 5, lmin: 450, lmax: 1600, count: 8, eff: 0.5 },
+  params: [{ key: 'lmin', label: 'Shortest wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 5 }, { key: 'lmax', label: 'Longest wavelength', type: 'wavelength', unit: 'nm', min: 250, max: 6000, step: 5 },
+    { key: 'count', label: 'Wavelengths drawn', type: 'number', min: 2, max: 16, step: 1 }, { key: 'eff', label: 'Converted fraction', type: 'range', min: 0, max: 1, step: 0.01 }],
+  mat3d: 'metal',
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.H / 2, p.L, p.H, S.fill('metal'), 'rx="0.6"') + H.sheen(S, -p.L / 2, -p.H / 2, p.L, p.H * 0.45, 0.6);
+    let d = `M ${n(-p.L * 0.4)} 0`;
+    for (let k = 0; k < 6; k++) d += ` C ${n(-p.L * 0.4 + p.L * 0.8 * (k + 0.3) / 6)} ${n(-p.H * 0.28)} ${n(-p.L * 0.4 + p.L * 0.8 * (k + 0.7) / 6)} ${n(p.H * 0.28)} ${n(-p.L * 0.4 + p.L * 0.8 * (k + 1) / 6)} 0`;
+    return s + `<path d="${d}" fill="none" stroke="#f2b33d" stroke-width="${n(S.lw * 1.6)}"/>`;
+  },
+  optics: p => [{ kind: 'convert', a: [0, -p.H / 2], b: [0, p.H / 2], outs: () => { const N = Math.max(2, Math.round(p.count)); return Array.from({ length: N }, (_, i) => ({ lambda: U.round(p.lmin + (p.lmax - p.lmin) * i / (N - 1), 1), frac: p.eff / N })); } }],
+});
+
 lib.register({
   type: 'chopper', name: 'Optical chopper', abbr: 'CH', category: 'Modulators & nonlinear', keywords: 'chopper lock in modulation wheel',
   defaults: { r: 5 }, params: [{ key: 'r', label: 'Wheel radius', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
@@ -3965,6 +4196,47 @@ lib.register({
   },
   solid: (p, bh) => [anodBox(-p.s / 2, p.s / 2, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
 });
+/* ray bundle for imaging diagrams: a point object, an object arrow or a parallel bundle */
+const FDC = [486.13, 587.56, 656.27];
+lib.register({
+  type: 'raysource', name: 'Ray bundle / object', abbr: 'OB', category: IM, labelTemplate: 'Object',
+  keywords: 'ray fan ray bundle object point source imaging ray diagram aberration chromatic spot field',
+  defaults: { mode: 'arrow', h: 4, rays: 7, fan: 14, tilt: 0, colors: 'single', lambda: 587.56, color: '' },
+  params: [{ key: 'mode', label: 'Type', type: 'select', options: [['arrow', 'Object arrow (fans from tip and base)'], ['point', 'Point source (one fan)'], ['parallel', 'Parallel bundle (object at infinity)']] },
+    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 0.2, max: 40, step: 0.1, hint: 'arrow height or bundle diameter (drawn)' },
+    { key: 'rays', label: 'Rays per fan', type: 'number', min: 2, max: 41, step: 1 },
+    { key: 'fan', label: 'Fan angle (full)', type: 'number', unit: '°', min: 0.1, max: 120, step: 0.5, show: p => p.mode !== 'parallel' },
+    { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
+    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)']] },
+    { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
+    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
+  variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
+  hint: 'Pair it with lenses set to Real glass surfaces to see spherical and chromatic aberration; a screen or camera reports the spot size.',
+  labelPos: [0, 6],
+  bbox: p => p.mode === 'arrow' ? [-0.8, -p.h - 0.6, 0.8, 0.6] : [-0.8, -p.h / 2 - 0.4, 0.8, p.h / 2 + 0.4],
+  draw(p, S) {
+    const col = p.colors === 'fdc' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
+    if (p.mode === 'arrow') return H.line(S, 0, 0, 0, -p.h + 0.8, '', 1.6, S.ink) + H.arrowHead(0, -p.h, -Math.PI / 2, 1.6, S.ink) + H.line(S, -0.9, 0, 0.9, 0, '', 0.8, S.ink);
+    if (p.mode === 'point') return `<circle cx="0" cy="0" r="0.55" fill="${col}" ${H.stroke(S, 0.6)}/>`;
+    let s = H.rect(S, -0.5, -p.h / 2, 0.5, p.h, S.fill('dark'));
+    for (let k = 0; k < 5; k++) { const y = -p.h / 2 + p.h * (k + 0.5) / 5; s += H.line(S, 0, y, 0.7, y, '', 0.6, col); }
+    return s;
+  },
+  source(p) {
+    const ls = p.colors === 'fdc' ? FDC : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
+    const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
+    const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
+    ls.forEach((l, k) => {
+      if (p.mode === 'arrow') { fan([0, -p.h], k); fan([0, 0], k); }
+      else if (p.mode === 'point') fan([0.6, 0], k);
+      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null });
+    });
+    return out;
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-0.4, 0.4], y: [-0.4, 0.4], z: [bh - 0.2, bh + (p.mode === 'arrow' ? p.h : 0.4)], mat: 'dark' }],
+  noPost: true,
+});
+
 lib.register({
   type: 'eyepiece', name: 'Eyepiece', abbr: 'EP', category: IM,
   keywords: 'eyepiece ocular microscope telescope viewing',
@@ -4020,6 +4292,85 @@ lib.register({
   optics: () => [{ kind: 'absorb', a: [0, -1], b: [0, 1] }],
   // a sphere built from cone slices along the axis
   solid: (p) => { const N = 10, out = []; for (let i = 0; i < N; i++) { const a = Math.PI * i / N, b = Math.PI * (i + 1) / N; out.push({ kind: 'cyl', x: [0.6 + p.r * (1 - Math.cos(a)), 0.6 + p.r * (1 - Math.cos(b))], r: [Math.max(0.05, p.r * Math.sin(a)), Math.max(0.05, p.r * Math.sin(b))], mat: 'body' }); } return out; },
+});
+
+/* ================= Fibre-optic devices ================= */
+const pigtail = (S, x0, y0, x1, y1) => `<path d="M ${n(x0)} ${n(y0)} L ${n(x1)} ${n(y1)}" stroke="${S.shaded ? '#f2b33d' : '#e0a030'}" stroke-width="${n(Math.max(0.35, S.lw * 2.2))}" stroke-linecap="round"/>`;
+lib.register({
+  type: 'circulator', name: 'Fibre circulator', abbr: 'CIR', category: 'Fibre optics',
+  keywords: 'circulator fibre fiber optical circulator three port reflection isolate back reflected',
+  defaults: { L: 9, H: 6, T: 0.9 },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'T', label: 'Transmission per pass', type: 'range', min: 0, max: 1, step: 0.01 }],
+  hint: 'Port 1 (left) → port 2 (right). Light coming back into port 2 leaves at port 3 (bottom), e.g. the reflection from a fibre Bragg grating or a sample.',
+  snap: 'perp', mount: true, labelPos: [0, -6],
+  bbox: p => [-p.L / 2 - 1.4, -p.H / 2, p.L / 2 + 1.4, p.H / 2 + 1.6],
+  draw(p, S) {
+    const L = p.L, h = p.H / 2, r = Math.min(L, p.H) * 0.26;
+    let s = pigtail(S, -L / 2 - 1.4, 0, -L / 2, 0) + pigtail(S, L / 2, 0, L / 2 + 1.4, 0) + pigtail(S, 0, h, 0, h + 1.6);
+    s += H.rect(S, -L / 2, -h, L, p.H, S.fill('dark'), 'rx="0.7"') + H.sheen(S, -L / 2, -h, L, h * 0.9, 0.7);
+    const ink = S.shaded ? '#eef1f5' : '#ffffff';
+    s += `<path d="M ${n(r)} ${n(-r * 0.15)} A ${n(r)} ${n(r)} 0 1 0 ${n(r * 0.2)} ${n(r * 0.98)}" fill="none" ${H.stroke(S, 0.9, ink)}/>` + H.arrowHead(r * 0.2, r * 0.98, Math.PI * 0.95, 0.9, ink);
+    const fs = Math.min(1.3, h * 0.42), lab = (x, y, t) => `<text x="${n(x)}" y="${n(y)}" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="middle" dominant-baseline="central">${t}</text>`;
+    return s + lab(-L / 2 + fs * 0.8, -h + fs * 0.9, '1') + lab(L / 2 - fs * 0.8, -h + fs * 0.9, '2') + lab(fs * 1.4, h - fs * 0.8, '3');
+  },
+  optics: p => [{ kind: 'circulator', a: [0, -p.H / 2], b: [0, p.H / 2], T: p.T, port3: [0, p.H / 2 + 1.7] }],
+  solid: (p, bh) => [anodBox(-p.L / 2, p.L / 2, -p.H / 2, p.H / 2, bh - p.H / 2, bh + p.H / 2)],
+});
+lib.register({
+  type: 'fibersplit', name: 'Fibre splitter / WDM', abbr: 'FS', category: 'Fibre optics',
+  keywords: 'fibre fiber coupler splitter 50 50 tap wdm wavelength division multiplexer combiner 2x2',
+  defaults: { L: 10, H: 5, mode: 'split', R: 0.5, edge: 1000, pass: 'longpass' },
+  params: [{ key: 'mode', label: 'Type', type: 'select', options: [['split', 'Power splitter'], ['wdm', 'WDM (by wavelength)']] },
+    { key: 'R', label: 'Ratio to the side port', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode === 'split', hint: '0.5 = 50:50, 0.01 = 99:1 tap' },
+    { key: 'edge', label: 'Crossover wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 1, show: p => p.mode === 'wdm' },
+    { key: 'pass', label: 'Straight through', type: 'select', options: [['longpass', 'Longer wavelengths'], ['shortpass', 'Shorter wavelengths']], show: p => p.mode === 'wdm' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
+  variants: [{ name: 'Fibre WDM', abbr: 'WDM', props: { mode: 'wdm', edge: 1000 }, keywords: 'wdm 980 1550 pump combiner' }],
+  hint: 'Straight-through port on the right; the side port leaves upwards.',
+  snap: 'perp', mount: true, labelPos: [0, 6],
+  bbox: p => [-p.L / 2 - 1.4, -p.H / 2 - 1.6, p.L / 2 + 1.4, p.H / 2],
+  draw(p, S) {
+    const L = p.L, h = p.H / 2;
+    let s = pigtail(S, -L / 2 - 1.4, 0, -L / 2, 0) + pigtail(S, L / 2, 0, L / 2 + 1.4, 0) + pigtail(S, 0, -h, 0, -h - 1.6);
+    s += H.rect(S, -L / 2, -h, L, p.H, S.fill('metal'), 'rx="0.6"') + H.sheen(S, -L / 2, -h, L, h * 0.9, 0.6);
+    // two fibre cores that come close in the middle (fused coupler)
+    s += `<path d="M ${n(-L * 0.42)} 0 C ${n(-L * 0.1)} 0 ${n(-L * 0.1)} ${n(-h * 0.1)} 0 ${n(-h * 0.1)} C ${n(L * 0.1)} ${n(-h * 0.1)} ${n(L * 0.12)} 0 ${n(L * 0.42)} 0 M ${n(-L * 0.1)} ${n(-h * 0.25)} C 0 ${n(-h * 0.25)} 0 ${n(-h * 0.5)} 0 ${n(-h * 0.92)}" fill="none" stroke="${p.mode === 'wdm' ? U.wavelengthColor(p.edge > 780 ? 700 : p.edge) : '#3c6e9e'}" stroke-width="${n(S.lw * 1.4)}"/>`;
+    return s;
+  },
+  optics: p => {
+    const k = Math.min(p.L, p.H) * 0.45;
+    return [p.mode === 'wdm' ? { kind: 'dichroic', a: [-k, k], b: [k, -k], edge: p.edge, mode: p.pass } : { kind: 'splitter', a: [-k, k], b: [k, -k], R: p.R }];
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh - p.H / 2, bh + p.H / 2], mat: 'metal' }],
+});
+
+/* ================= Spatial filter (objective, pinhole, collimating lens) ================= */
+lib.register({
+  type: 'spatialfilter', name: 'Spatial filter assembly', abbr: 'SF', category: OM,
+  keywords: 'spatial filter pinhole objective beam cleanup expander mode cleaning',
+  defaults: { L: 26, D: 8, mag: 4, r: 0.12 },
+  params: [{ key: 'mag', label: 'Expansion', type: 'number', unit: '×', min: 0.2, max: 20, step: 0.1, hint: 'output ÷ input diameter' },
+    { key: 'r', label: 'Pinhole radius (drawn)', type: 'number', unit: 'mm', min: 0.02, max: 3, step: 0.01, hint: 'light beyond it is blocked' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 10, max: 120, step: 0.5 }, { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 3, max: 30, step: 0.5 }],
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-p.L / 2, -p.D / 2 - 2, p.L / 2, p.D / 2 + 0.6],
+  geo: (p, sc) => { const x1 = -p.L / 2 + 2.6, x2 = p.L / 2 - 1.2, sep = (x2 - x1) * sc, f1 = sep / (1 + p.mag); return { x1, x2, xp: x1 + f1 / sc, f1, f2: sep - f1 }; },
+  draw(p, S) {
+    const L = p.L, R = p.D / 2, g = lib.get('spatialfilter').geo(p, (S.doc && S.doc.style.scale) || 10);
+    let s = '';
+    // objective body, pinhole mount with two micrometers, tube to the output lens
+    s += `<path d="M ${n(-L / 2)} ${n(-R * 0.6)} L ${n(g.x1 - 0.6)} ${n(-R * 0.6)} L ${n(g.x1)} ${n(-R * 0.35)} L ${n(g.x1)} ${n(R * 0.35)} L ${n(g.x1 - 0.6)} ${n(R * 0.6)} L ${n(-L / 2)} ${n(R * 0.6)} Z" fill="${S.fill('metal')}" ${H.stroke(S)}/>`;
+    s += H.rect(S, g.x1, -R * 0.35, g.xp - g.x1 - 0.5, R * 0.7, S.shaded ? 'url(#rbx-metal)' : '#eef0f2');
+    s += H.rect(S, g.xp - 0.5, -R - 0.6, 1, p.D + 1.2, S.fill('anod'), 'rx="0.3"') + knob(S, g.xp, -R - 1.3, 0.6);
+    s += H.rect(S, g.xp + 0.5, -R, g.x2 - g.xp + 0.7, p.D, S.shaded ? 'url(#rbx-metal)' : '#eef0f2', 'rx="0.4"');
+    s += `<path d="${H.lensPath('planoconvex', R * 0.85, 1.1)}" transform="translate(${n(g.x2)} 0) scale(-1 1)" fill="${S.fill('glass')}" ${H.stroke(S, 0.7)}/>`;
+    return s;
+  },
+  optics: (p, obj, doc) => {
+    const sc = (doc && doc.style.scale) || 10, g = lib.get('spatialfilter').geo(p, sc), R = p.D / 2 * 0.8;
+    return [{ kind: 'lens', a: [g.x1, -R * 0.4], b: [g.x1, R * 0.4], f: g.f1 }, { kind: 'aperture', a: [g.xp, -R], b: [g.xp, R], r: p.r }, { kind: 'lens', a: [g.x2, -R], b: [g.x2, R], f: g.f2 }];
+  },
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2, -p.L / 2 + 2.6], r: [p.D * 0.3, p.D * 0.18], mat: 'metal' }, { kind: 'cyl', x: [-p.L / 2 + 2.6, p.L / 2], r: [p.D / 2, p.D / 2], mat: 'metal' }],
 });
 
 /* ================= more types of existing parts (variants) ================= */
@@ -6177,7 +6528,7 @@ B.groups = segs => {
   const canon = s => (s.a[0] < s.b[0] - 1e-6) || (Math.abs(s.a[0] - s.b[0]) <= 1e-6 && s.a[1] <= s.b[1]);
   const key = s => { const c = canon(s), p = c ? [s.a, s.b] : [s.b, s.a]; return [p[0][0], p[0][1], p[1][0], p[1][1]].map(v => Math.round(v * 50)).join(','); };
   const by = new Map();
-  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
+  segs.forEach(s => { if (s.len < 1e-4 || s.vertical || s.ghost || s.ray) return; s.canon = canon(s); const k = key(s); (by.get(k) || by.set(k, []).get(k)).push(s); });
   const out = new Map();
   by.forEach(list => {
     const ls = [...new Set(list.map(s => s.lambda))];
@@ -6189,6 +6540,8 @@ B.groups = segs => {
   });
   return out;
 };
+/* single rays of a ray bundle: fine lines of a fixed width */
+B.rayLine = (doc, seg) => `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.min(1, B.opacity(doc, seg) + 0.05))}" stroke-width="${n(doc.style.rayWidth || 0.16)}" stroke-linecap="round"/>`;
 B.signalScale = 1;     // relative width of emitted (Raman / fluorescence) beams
 
 B.draw2D = (trace, doc, opt = {}) => {
@@ -6203,6 +6556,7 @@ B.draw2D = (trace, doc, opt = {}) => {
   if (st.beamStyle === 'ribbon') return B.ribbon2D(trace, doc, opt);
   for (const seg of segs) {
     if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ray) { core += B.rayLine(doc, seg); continue; }
     if (seg.ghost) {
       // ghost reflections: thin dashed lines, as reviewers expect to see them
       const w = Math.max(0.12, (lineMode ? lineW : 2 * B.hw(seg, 0)) * 0.45);
@@ -6258,6 +6612,7 @@ B.ribbon2D = (trace, doc, opt = {}) => {
   let ghosts = '', deco = '';
   for (const seg of trace.segments) {
     if (seg.len < 1e-4 || seg.vertical) continue;
+    if (seg.ray) { ghosts += B.rayLine(doc, seg); continue; }
     const col = B.color(doc, seg);
     if (seg.ghost) { ghosts += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${col}" stroke-opacity="0.45" stroke-width="${n(Math.max(0.15, W * 0.12))}" stroke-dasharray="${n(W * 0.4)} ${n(W * 0.3)}"/>`; continue; }
     const k = (seg.emitted ? B.signalScale : 1);
@@ -6843,7 +7198,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
       const s0 = seg.len * i / steps, s1 = seg.len * (i + 1) / steps;
       const a = at(seg, s0), b = at(seg, s1);
       let pa = cam.p(a[0], a[1], a[2]), pb = cam.p(b[0], b[1], b[2]);
-      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : doc.style.beamStyle === 'ribbon' ? (doc.style.ribbonWidth || 3) * 0.7 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1);
+      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : doc.style.beamStyle === 'ribbon' ? (doc.style.ribbonWidth || 3) * 0.7 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1) * (seg.ray ? 0 : 1) + (seg.ray ? (doc.style.rayWidth || 0.16) * sk : 0);
       const w = Math.max(0.12, wm * k);
       if (seg.ghost) {
         items.push({ z: (pa[2] + pb[2]) / 2 + 0.01, svg: `<line x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}" stroke="${col}" stroke-opacity="${n(Math.max(0.35, op))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 3)} ${n(w * 3)}"/>` });
@@ -8333,6 +8688,110 @@ T.list.push({
     return d;
   },
 });
+/* ---------- Epi-fluorescence microscope ---------- */
+T.list.push({
+  id: 'epifluor', name: 'Epi-fluorescence microscope', desc: 'LED, filter cube, objective, tube lens and camera; the sample emits at 525 nm',
+  build() {
+    const d = base('nature-2', 183, 100, 'Epi-fluorescence microscope');
+    const led = mk('led', 22, 58, 0, { lambda: 470, beamWidth: 1.2, divergence: 8, power: 20 }, 'LED 470 nm', [0, 6]);
+    const col = mk('lens', 33.3, 58, 0, { f: 150, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
+    const cube = mk('filtercube', 90, 58, 0, { exc: 470, excW: 40, edge: 495, em: 525, emW: 50 }, 'Filter cube', [-12, 7]);
+    const obj = mk('objective', 90, 36, -90, { fd: 3, mag: '40×' }, 'Objective 40×', [13, 0]);
+    const smp = mk('sample', 90, 27.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 525, emitFrac: 0.4, spot: '#3fb26b' }, 'Labelled cells', [15, -2]);
+    const tl = mk('lens', 90, 74, 90, { f: 160, d: 9, shape: 'doublet', t: 2.2 }, 'Tube lens', [12, 0]);
+    const cam = mk('camera', 90, 90, 90, { L: 10, H: 10 }, 'sCMOS camera', [15, 0]);
+    const t1 = mk('text', 60, 53, 0, { text: 'excitation 470 nm', size: 6, color: '#1f6fb5', italic: true });
+    const t2 = mk('text', 112, 82, 0, { text: 'emission 525 nm', size: 6, color: '#2e8b3e', italic: true, anchor: 'start' });
+    d.objects.push(led, col, cube, obj, smp, tl, cam, t1, t2);
+    return d;
+  },
+});
+
+/* ---------- Laser-scanning confocal microscope ---------- */
+T.list.push({
+  id: 'confocal', name: 'Laser-scanning confocal microscope', desc: 'Galvo scanner, scan and tube lenses, descanned detection through a pinhole onto a PMT (animated scan)',
+  build() {
+    const d = base('nature-2', 183, 108, 'Confocal microscope');
+    const laser = mk('laser', 18, 74, 0, { lambda: 488, L: 16, H: 5.5, power: 5 }, 'Laser 488 nm', [0, 7]);
+    const ex = mk('lenstube', 44, 74, 0, { content: 'expander', L: 18, D: 7, mag: 2.5 }, 'Expander', [0, 7]);
+    const dm = mk('dichroic', 70, 74, ang(R, UP), { edge: 500, mode: 'longpass' }, 'DM', [-7, 4]);
+    const gv = mk('galvo', 70, 36, ang(UP, R), { scan: 0 }, 'Galvo', [-4, -8]);
+    const sl = mk('lens', 82, 36, 0, { f: 120, d: 8, shape: 'doublet', t: 2 }, 'Scan lens', [0, -7]);
+    const tl = mk('lens', 112, 36, 0, { f: 180, d: 10, shape: 'doublet', t: 2.2 }, 'Tube lens', [0, -8]);
+    const fm = mk('mirror', 142, 36, ang(R, UP), {}, 'M', [6, 5]);
+    const obj = mk('objective', 142, 22, -90, { fd: 3, mag: '60×' }, 'Objective 60×', [14, 1]);
+    const smp = mk('sample', 142, 13.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 520, emitFrac: 0.4, spot: '#3fb26b' }, 'Sample', [-12, -1]);
+    const l3 = mk('lens', 70, 86, 90, { f: 80, d: 7 }, 'L', [7, 0]);
+    const ph = mk('iris', 70, 94, 90, { r: 0.25, d: 7 }, 'Pinhole', [9, 0]);
+    const em = mk('filter', 70, 98.5, 90, { mode: 'bandpass', center: 525, width: 40, d: 7 }, '', null);
+    const pmt = mk('pmt', 70, 104, 90, {}, 'PMT', [10, 0]);
+    const t1 = mk('text', 104, 50, 0, { text: 'scan', size: 6, italic: true, color: '#555555' });
+    d.objects.push(laser, ex, dm, gv, sl, tl, fm, obj, smp, l3, ph, em, pmt, t1);
+    d.animation.duration = 4;
+    const k = (t, a) => ({ t, ease: 'inout', x: gv.x, y: gv.y, rot: gv.rot, scale: 1, opacity: 1, props: Object.assign(U.deepClone(gv.props), { scan: a }) });
+    d.animation.tracks[gv.id] = [k(0, 0), k(1, 0.6), k(3, -0.6), k(4, 0)];
+    return d;
+  },
+});
+
+/* ---------- 4f imaging with a Fourier plane ---------- */
+T.list.push({
+  id: 'fourf', name: '4f imaging system (ray diagram)', desc: 'Object, two lenses and the Fourier plane, drawn with ray fans; the image is inverted',
+  build() {
+    const d = base('nature-15', 120, 56, '4f imaging system');
+    const ob = mk('raysource', 14, 30, 0, { mode: 'arrow', h: 5, rays: 5, fan: 10, lambda: 532 }, 'Object', [0, 6]);
+    const l1 = mk('lens', 38, 30, 0, { f: 240, d: 16 }, 'L1', [0, 11]);
+    const fp = mk('iris', 62, 30, 0, { r: 4, d: 16 }, 'Fourier plane', [0, 11]);
+    const l2 = mk('lens', 86, 30, 0, { f: 240, d: 16 }, 'L2', [0, 11]);
+    const im = mk('screen', 110, 30, 0, { d: 14 }, 'Image', [0, 10]);
+    const dims = [14, 38, 62, 86].map(x => mk('dimension', x, 47, 0, { dx: 24, dy: 0, label: 'f', ends: 'arrows' }));
+    d.objects.push(ob, l1, fp, l2, im, ...dims);
+    return d;
+  },
+});
+
+/* ---------- Light-sheet microscope ---------- */
+T.list.push({
+  id: 'lightsheet', name: 'Light-sheet microscope', desc: 'Cylindrical lens forms the sheet; fluorescence collected at 90° by a detection objective',
+  build() {
+    const d = base('nature-2', 183, 92, 'Light-sheet fluorescence microscope');
+    const laser = mk('laser', 18, 30, 0, { lambda: 488, L: 16, H: 5.5 }, 'Laser 488 nm', [0, 7]);
+    const ex = mk('lenstube', 42, 30, 0, { content: 'expander', L: 16, D: 7, mag: 2 }, 'Expander', [0, 7]);
+    const cyl = mk('lens', 62, 30, 0, { f: 150, d: 9, shape: 'cylindrical', t: 1.8 }, 'Cylindrical lens', [0, 8]);
+    const io = mk('objective', 84, 30, 0, { fd: 7, mag: '10×', L: 8 }, 'Illumination obj.', [0, -7]);
+    const cuv = mk('sample', 98, 30, 0, { look: 'cuvette', w: 9, h: 9, T: 1, spot: '#cfe8d2' }, '', null);
+    const fl = mk('raysource', 95, 30, 90, { mode: 'point', h: 0.5, rays: 7, fan: 26, lambda: 520 }, '', null);
+    const dobj = mk('objective', 95, 44.5, -90, { fd: 7, mag: '20×', L: 9 }, 'Detection objective 20×', [17, 0]);
+    const tl = mk('lens', 95, 58, 90, { f: 150, d: 10, shape: 'doublet', t: 2.2 }, 'Tube lens', [10, 0]);
+    const em = mk('filter', 95, 64, 90, { mode: 'longpass', edge: 500, d: 9 }, 'LP', [7, 0]);
+    const cam = mk('camera', 95, 79, 90, { L: 10, H: 10 }, 'Camera', [12, 0]);
+    const bd = mk('beamdump', 125, 30, 0, {}, '', null);
+    const t1 = mk('text', 110, 20, 0, { text: 'light sheet in the sample', size: 6, italic: true, color: '#1f6fb5' });
+    const t2 = mk('text', 120, 39, 0, { text: 'fluorescence 520 nm', size: 6, italic: true, color: '#2e8b3e', anchor: 'start' });
+    d.objects.push(cuv, laser, ex, cyl, io, fl, dobj, tl, em, cam, bd, t1, t2);
+    return d;
+  },
+});
+
+/* ---------- Aberrations: singlet vs achromatic doublet (real glass) ---------- */
+T.list.push({
+  id: 'aberration', name: 'Lens aberrations: singlet vs doublet', desc: 'Real glass surfaces traced exactly: spherical and chromatic aberration of a singlet, corrected by an achromat',
+  build() {
+    const d = base('nature-15', 132, 66, 'Lens aberrations', { rayWidth: 0.1 });
+    // the insets magnify the focus (positions from the exact trace)
+    const rows = [[17, 'biconvex', 'Singlet (N-BK7)', 54.4], [49, 'doublet', 'Achromatic doublet', 54.32]];
+    rows.forEach(([y, shape, name, xf]) => {
+      d.objects.push(mk('raysource', 12, y, 0, { mode: 'parallel', h: 10, rays: 9, colors: 'fdc' }, '', null));
+      d.objects.push(mk('lens', 30, y, 0, { f: 250, d: 12, shape, model: 'real' }, name, [0, 9.5]));
+      d.objects.push(mk('inset', xf, y, 0, { r: 1.6, dx: 30, dy: 0, R: 11 }));
+      d.objects.push(mk('screen', 62, y, 0, { d: 5 }, '', null));
+    });
+    d.objects.push(mk('text', 118, 17, 0, { text: 'blue focuses first;\nedge rays focus short', size: 5.5, italic: true, color: '#555555' }));
+    d.objects.push(mk('text', 118, 49, 0, { text: 'blue and red\nshare one focus', size: 5.5, italic: true, color: '#555555' }));
+    return d;
+  },
+});
+
 })();
 
 </script>
@@ -9503,6 +9962,13 @@ function readout(obj) {
       html += `<br><b>Interference</b> (${U.fmt(I.lambda, 1)} nm): coherent ${fmtP(h.Pcoh)} · Δφ = ${U.fmt(dphi, 1)}° · visibility ${U.fmt(I.vis, 2)}`;
       if (I.overlap < 0.99) html += ` · polarisation overlap ${U.fmt(I.overlap, 2)}`;
     }
+    if (h.rays && h.rays.length > 1) {
+      // ray bundle: spread of the ray landing points (RMS about their mean), per wavelength and in total
+      const sc = (S.doc.style.scale || 10), rms = a => { const m = a.reduce((x, r) => x + r.y, 0) / a.length; return Math.sqrt(a.reduce((x, r) => x + (r.y - m) * (r.y - m), 0) / a.length); };
+      const ls = [...new Set(h.rays.map(r => r.lambda))].sort((a, b) => a - b);
+      const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
+      html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+    }
     if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
     return el('div', { class: 'readout', html });
   }
@@ -9760,6 +10226,7 @@ function docPanel() {
       control({ key: 'waistLabels', label: 'Label foci (2w₀)', type: 'bool' }, k => st[k], dset('style')))] : []),
     control({ key: 'ghosts', label: 'Surface reflections (ghosts)', type: 'select', options: [['off', 'Off'], ['uncoated', 'Uncoated glass (Fresnel)'], ['ar', 'AR-coated (0.25 % per surface)']] }, k => st[k] || 'off', dset('style')),
     control({ key: 'beamWidth', label: 'Default beam diameter', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05, hint: 'new sources' }, k => st[k], dset('style')),
+    control({ key: 'rayWidth', label: 'Ray width (ray bundles)', type: 'number', unit: 'mm', min: 0.02, max: 2, step: 0.02 }, k => st[k] == null ? 0.16 : st[k], dset('style')),
     control({ key: 'beamOpacity', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01 }, k => st[k], dset('style')),
     control({ key: 'colorMode', label: 'Colours', type: 'select', options: [['physical', 'From wavelength'], ['safe', 'Colour-blind safe (Okabe–Ito)'], ['mono', 'Monochrome (black)']] }, k => st[k], dset('style')),
     el('div', { class: 'grid2' },

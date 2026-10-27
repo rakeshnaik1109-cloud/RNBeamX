@@ -327,6 +327,47 @@ lib.register({
   },
   solid: (p, bh) => [anodBox(-p.s / 2, p.s / 2, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
 });
+/* ray bundle for imaging diagrams: a point object, an object arrow or a parallel bundle */
+const FDC = [486.13, 587.56, 656.27];
+lib.register({
+  type: 'raysource', name: 'Ray bundle / object', abbr: 'OB', category: IM, labelTemplate: 'Object',
+  keywords: 'ray fan ray bundle object point source imaging ray diagram aberration chromatic spot field',
+  defaults: { mode: 'arrow', h: 4, rays: 7, fan: 14, tilt: 0, colors: 'single', lambda: 587.56, color: '' },
+  params: [{ key: 'mode', label: 'Type', type: 'select', options: [['arrow', 'Object arrow (fans from tip and base)'], ['point', 'Point source (one fan)'], ['parallel', 'Parallel bundle (object at infinity)']] },
+    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 0.2, max: 40, step: 0.1, hint: 'arrow height or bundle diameter (drawn)' },
+    { key: 'rays', label: 'Rays per fan', type: 'number', min: 2, max: 41, step: 1 },
+    { key: 'fan', label: 'Fan angle (full)', type: 'number', unit: '°', min: 0.1, max: 120, step: 0.5, show: p => p.mode !== 'parallel' },
+    { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
+    { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)']] },
+    { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
+    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
+  variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
+  hint: 'Pair it with lenses set to Real glass surfaces to see spherical and chromatic aberration; a screen or camera reports the spot size.',
+  labelPos: [0, 6],
+  bbox: p => p.mode === 'arrow' ? [-0.8, -p.h - 0.6, 0.8, 0.6] : [-0.8, -p.h / 2 - 0.4, 0.8, p.h / 2 + 0.4],
+  draw(p, S) {
+    const col = p.colors === 'fdc' ? S.ink : lib.colorOf(S.doc, p.lambda, p.color);
+    if (p.mode === 'arrow') return H.line(S, 0, 0, 0, -p.h + 0.8, '', 1.6, S.ink) + H.arrowHead(0, -p.h, -Math.PI / 2, 1.6, S.ink) + H.line(S, -0.9, 0, 0.9, 0, '', 0.8, S.ink);
+    if (p.mode === 'point') return `<circle cx="0" cy="0" r="0.55" fill="${col}" ${H.stroke(S, 0.6)}/>`;
+    let s = H.rect(S, -0.5, -p.h / 2, 0.5, p.h, S.fill('dark'));
+    for (let k = 0; k < 5; k++) { const y = -p.h / 2 + p.h * (k + 0.5) / 5; s += H.line(S, 0, y, 0.7, y, '', 0.6, col); }
+    return s;
+  },
+  source(p) {
+    const ls = p.colors === 'fdc' ? FDC : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
+    const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
+    const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
+    ls.forEach((l, k) => {
+      if (p.mode === 'arrow') { fan([0, -p.h], k); fan([0, 0], k); }
+      else if (p.mode === 'point') fan([0.6, 0], k);
+      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null });
+    });
+    return out;
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-0.4, 0.4], y: [-0.4, 0.4], z: [bh - 0.2, bh + (p.mode === 'arrow' ? p.h : 0.4)], mat: 'dark' }],
+  noPost: true,
+});
+
 lib.register({
   type: 'eyepiece', name: 'Eyepiece', abbr: 'EP', category: IM,
   keywords: 'eyepiece ocular microscope telescope viewing',
@@ -382,6 +423,85 @@ lib.register({
   optics: () => [{ kind: 'absorb', a: [0, -1], b: [0, 1] }],
   // a sphere built from cone slices along the axis
   solid: (p) => { const N = 10, out = []; for (let i = 0; i < N; i++) { const a = Math.PI * i / N, b = Math.PI * (i + 1) / N; out.push({ kind: 'cyl', x: [0.6 + p.r * (1 - Math.cos(a)), 0.6 + p.r * (1 - Math.cos(b))], r: [Math.max(0.05, p.r * Math.sin(a)), Math.max(0.05, p.r * Math.sin(b))], mat: 'body' }); } return out; },
+});
+
+/* ================= Fibre-optic devices ================= */
+const pigtail = (S, x0, y0, x1, y1) => `<path d="M ${n(x0)} ${n(y0)} L ${n(x1)} ${n(y1)}" stroke="${S.shaded ? '#f2b33d' : '#e0a030'}" stroke-width="${n(Math.max(0.35, S.lw * 2.2))}" stroke-linecap="round"/>`;
+lib.register({
+  type: 'circulator', name: 'Fibre circulator', abbr: 'CIR', category: 'Fibre optics',
+  keywords: 'circulator fibre fiber optical circulator three port reflection isolate back reflected',
+  defaults: { L: 9, H: 6, T: 0.9 },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'T', label: 'Transmission per pass', type: 'range', min: 0, max: 1, step: 0.01 }],
+  hint: 'Port 1 (left) → port 2 (right). Light coming back into port 2 leaves at port 3 (bottom), e.g. the reflection from a fibre Bragg grating or a sample.',
+  snap: 'perp', mount: true, labelPos: [0, -6],
+  bbox: p => [-p.L / 2 - 1.4, -p.H / 2, p.L / 2 + 1.4, p.H / 2 + 1.6],
+  draw(p, S) {
+    const L = p.L, h = p.H / 2, r = Math.min(L, p.H) * 0.26;
+    let s = pigtail(S, -L / 2 - 1.4, 0, -L / 2, 0) + pigtail(S, L / 2, 0, L / 2 + 1.4, 0) + pigtail(S, 0, h, 0, h + 1.6);
+    s += H.rect(S, -L / 2, -h, L, p.H, S.fill('dark'), 'rx="0.7"') + H.sheen(S, -L / 2, -h, L, h * 0.9, 0.7);
+    const ink = S.shaded ? '#eef1f5' : '#ffffff';
+    s += `<path d="M ${n(r)} ${n(-r * 0.15)} A ${n(r)} ${n(r)} 0 1 0 ${n(r * 0.2)} ${n(r * 0.98)}" fill="none" ${H.stroke(S, 0.9, ink)}/>` + H.arrowHead(r * 0.2, r * 0.98, Math.PI * 0.95, 0.9, ink);
+    const fs = Math.min(1.3, h * 0.42), lab = (x, y, t) => `<text x="${n(x)}" y="${n(y)}" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="middle" dominant-baseline="central">${t}</text>`;
+    return s + lab(-L / 2 + fs * 0.8, -h + fs * 0.9, '1') + lab(L / 2 - fs * 0.8, -h + fs * 0.9, '2') + lab(fs * 1.4, h - fs * 0.8, '3');
+  },
+  optics: p => [{ kind: 'circulator', a: [0, -p.H / 2], b: [0, p.H / 2], T: p.T, port3: [0, p.H / 2 + 1.7] }],
+  solid: (p, bh) => [anodBox(-p.L / 2, p.L / 2, -p.H / 2, p.H / 2, bh - p.H / 2, bh + p.H / 2)],
+});
+lib.register({
+  type: 'fibersplit', name: 'Fibre splitter / WDM', abbr: 'FS', category: 'Fibre optics',
+  keywords: 'fibre fiber coupler splitter 50 50 tap wdm wavelength division multiplexer combiner 2x2',
+  defaults: { L: 10, H: 5, mode: 'split', R: 0.5, edge: 1000, pass: 'longpass' },
+  params: [{ key: 'mode', label: 'Type', type: 'select', options: [['split', 'Power splitter'], ['wdm', 'WDM (by wavelength)']] },
+    { key: 'R', label: 'Ratio to the side port', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode === 'split', hint: '0.5 = 50:50, 0.01 = 99:1 tap' },
+    { key: 'edge', label: 'Crossover wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 1, show: p => p.mode === 'wdm' },
+    { key: 'pass', label: 'Straight through', type: 'select', options: [['longpass', 'Longer wavelengths'], ['shortpass', 'Shorter wavelengths']], show: p => p.mode === 'wdm' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
+  variants: [{ name: 'Fibre WDM', abbr: 'WDM', props: { mode: 'wdm', edge: 1000 }, keywords: 'wdm 980 1550 pump combiner' }],
+  hint: 'Straight-through port on the right; the side port leaves upwards.',
+  snap: 'perp', mount: true, labelPos: [0, 6],
+  bbox: p => [-p.L / 2 - 1.4, -p.H / 2 - 1.6, p.L / 2 + 1.4, p.H / 2],
+  draw(p, S) {
+    const L = p.L, h = p.H / 2;
+    let s = pigtail(S, -L / 2 - 1.4, 0, -L / 2, 0) + pigtail(S, L / 2, 0, L / 2 + 1.4, 0) + pigtail(S, 0, -h, 0, -h - 1.6);
+    s += H.rect(S, -L / 2, -h, L, p.H, S.fill('metal'), 'rx="0.6"') + H.sheen(S, -L / 2, -h, L, h * 0.9, 0.6);
+    // two fibre cores that come close in the middle (fused coupler)
+    s += `<path d="M ${n(-L * 0.42)} 0 C ${n(-L * 0.1)} 0 ${n(-L * 0.1)} ${n(-h * 0.1)} 0 ${n(-h * 0.1)} C ${n(L * 0.1)} ${n(-h * 0.1)} ${n(L * 0.12)} 0 ${n(L * 0.42)} 0 M ${n(-L * 0.1)} ${n(-h * 0.25)} C 0 ${n(-h * 0.25)} 0 ${n(-h * 0.5)} 0 ${n(-h * 0.92)}" fill="none" stroke="${p.mode === 'wdm' ? U.wavelengthColor(p.edge > 780 ? 700 : p.edge) : '#3c6e9e'}" stroke-width="${n(S.lw * 1.4)}"/>`;
+    return s;
+  },
+  optics: p => {
+    const k = Math.min(p.L, p.H) * 0.45;
+    return [p.mode === 'wdm' ? { kind: 'dichroic', a: [-k, k], b: [k, -k], edge: p.edge, mode: p.pass } : { kind: 'splitter', a: [-k, k], b: [k, -k], R: p.R }];
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [bh - p.H / 2, bh + p.H / 2], mat: 'metal' }],
+});
+
+/* ================= Spatial filter (objective, pinhole, collimating lens) ================= */
+lib.register({
+  type: 'spatialfilter', name: 'Spatial filter assembly', abbr: 'SF', category: OM,
+  keywords: 'spatial filter pinhole objective beam cleanup expander mode cleaning',
+  defaults: { L: 26, D: 8, mag: 4, r: 0.12 },
+  params: [{ key: 'mag', label: 'Expansion', type: 'number', unit: '×', min: 0.2, max: 20, step: 0.1, hint: 'output ÷ input diameter' },
+    { key: 'r', label: 'Pinhole radius (drawn)', type: 'number', unit: 'mm', min: 0.02, max: 3, step: 0.01, hint: 'light beyond it is blocked' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 10, max: 120, step: 0.5 }, { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 3, max: 30, step: 0.5 }],
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-p.L / 2, -p.D / 2 - 2, p.L / 2, p.D / 2 + 0.6],
+  geo: (p, sc) => { const x1 = -p.L / 2 + 2.6, x2 = p.L / 2 - 1.2, sep = (x2 - x1) * sc, f1 = sep / (1 + p.mag); return { x1, x2, xp: x1 + f1 / sc, f1, f2: sep - f1 }; },
+  draw(p, S) {
+    const L = p.L, R = p.D / 2, g = lib.get('spatialfilter').geo(p, (S.doc && S.doc.style.scale) || 10);
+    let s = '';
+    // objective body, pinhole mount with two micrometers, tube to the output lens
+    s += `<path d="M ${n(-L / 2)} ${n(-R * 0.6)} L ${n(g.x1 - 0.6)} ${n(-R * 0.6)} L ${n(g.x1)} ${n(-R * 0.35)} L ${n(g.x1)} ${n(R * 0.35)} L ${n(g.x1 - 0.6)} ${n(R * 0.6)} L ${n(-L / 2)} ${n(R * 0.6)} Z" fill="${S.fill('metal')}" ${H.stroke(S)}/>`;
+    s += H.rect(S, g.x1, -R * 0.35, g.xp - g.x1 - 0.5, R * 0.7, S.shaded ? 'url(#rbx-metal)' : '#eef0f2');
+    s += H.rect(S, g.xp - 0.5, -R - 0.6, 1, p.D + 1.2, S.fill('anod'), 'rx="0.3"') + knob(S, g.xp, -R - 1.3, 0.6);
+    s += H.rect(S, g.xp + 0.5, -R, g.x2 - g.xp + 0.7, p.D, S.shaded ? 'url(#rbx-metal)' : '#eef0f2', 'rx="0.4"');
+    s += `<path d="${H.lensPath('planoconvex', R * 0.85, 1.1)}" transform="translate(${n(g.x2)} 0) scale(-1 1)" fill="${S.fill('glass')}" ${H.stroke(S, 0.7)}/>`;
+    return s;
+  },
+  optics: (p, obj, doc) => {
+    const sc = (doc && doc.style.scale) || 10, g = lib.get('spatialfilter').geo(p, sc), R = p.D / 2 * 0.8;
+    return [{ kind: 'lens', a: [g.x1, -R * 0.4], b: [g.x1, R * 0.4], f: g.f1 }, { kind: 'aperture', a: [g.xp, -R], b: [g.xp, R], r: p.r }, { kind: 'lens', a: [g.x2, -R], b: [g.x2, R], f: g.f2 }];
+  },
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2, -p.L / 2 + 2.6], r: [p.D * 0.3, p.D * 0.18], mat: 'metal' }, { kind: 'cyl', x: [-p.L / 2 + 2.6, p.L / 2], r: [p.D / 2, p.D / 2], mat: 'metal' }],
 });
 
 /* ================= more types of existing parts (variants) ================= */

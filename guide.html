@@ -67,7 +67,7 @@ footer .bar { padding: 20px 16px; }
   <div class="bar">
     <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
     <nav>
-      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#optomech">Optomechanics</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
+      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#optomech">Optomechanics</a><a href="#rays">Ray diagrams</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
       <a href="#data">Panels &amp; data</a><a href="#layout">Groups &amp; layout</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
     </nav>
   </div>
@@ -96,7 +96,7 @@ footer .bar { padding: 20px 16px; }
       <li><b>Tune in the inspector</b>Wavelength, focal length, reflectance, wave-plate angle… the beams update live.</li>
       <li><b>Export</b>Press <i>Export</i>, choose the width and format, and get a file ready to submit.</li>
     </ol>
-    <div class="tip"><b>Faster:</b> press <i>Templates</i> and start from a finished setup: interferometers, a Raman microscope, pump–probe, SPR, FTIR, a coated grating and more.</div>
+    <div class="tip"><b>Faster:</b> press <i>Templates</i> and start from a finished setup: interferometers, Raman, epi-fluorescence, confocal and light-sheet microscopes, 4f imaging, pump–probe, SPR, FTIR, a coated grating and more.</div>
   </section>
 
   <section id="build">
@@ -152,6 +152,20 @@ footer .bar { padding: 20px 16px; }
       <div class="card"><h3>Epi-fluorescence</h3><p>The filter cube sends excitation up to the objective and passes only the emission band down to the camera, so a microscope sketch traces correctly.</p></div>
       <div class="card"><h3>Prisms and the rest</h3><p>Right-angle prisms turn the beam by total internal reflection; Dove, wedge and axicon shapes refract. Shutters block when closed; breadboards, rails and stages sit under the optics.</p></div>
     </div>
+  </section>
+
+  <section id="rays">
+    <h2>Ray diagrams, real lenses and microscope templates</h2>
+    <p class="lead">Draw light as rays when the figure is about imaging. Switch a lens to <i>Real glass surfaces</i> and the rays are traced through its curved faces, so aberrations appear by themselves.</p>
+    <img class="shot" src="assets/guide/rays.png" alt="Singlet versus achromatic doublet with zoomed foci, and a 4f imaging system with ray fans">
+    <div class="grid" style="margin-top:16px">
+      <div class="card"><h3>Ray bundle / object</h3><p>An object arrow, a point source or a parallel bundle, in one colour or the F, d, C lines. Any laser can also be drawn as parallel rays (<i>Draw as a ray bundle</i>).</p></div>
+      <div class="card"><h3>Real glass lenses</h3><p>Spherical surfaces in N-BK7, flint, fused silica, CaF₂… designed for the focal length you set. Edge rays focus short; a singlet focuses blue about f/V before red; the doublet fixes it.</p></div>
+      <div class="card"><h3>Spot size</h3><p>A screen or camera hit by rays reports the RMS ray spot per wavelength, so you can check the focus numerically.</p></div>
+      <div class="card"><h3>Microscope templates</h3><p>Epi-fluorescence, laser-scanning confocal with an animated galvo and a pinhole, light-sheet, 4f imaging with its Fourier plane, and the aberration demo above.</p></div>
+    </div>
+    <img class="shot" style="margin-top:16px" src="assets/guide/tpl-confocal.png" alt="Confocal microscope template: laser, expander, dichroic, galvo, scan and tube lenses, objective, sample, pinhole and PMT">
+    <div class="tip">New active parts: an OPO (signal and idler from photon energy), a supercontinuum fibre, an AOM driven by its RF frequency, a Pockels cell, a fibre circulator, a fibre splitter / WDM and a one-piece spatial filter.</div>
   </section>
 
   <section id="response">
