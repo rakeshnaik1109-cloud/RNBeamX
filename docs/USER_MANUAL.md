@@ -102,9 +102,9 @@ there is room, otherwise below it, growing the page). In its inspector:
 colours and axis titles. Set axis titles, ranges, a reversed axis, stacked
 offsets and legend in the inspector.
 
-## 5b2. Device sketches and lab equipment
+## 5b2. Device sketches
 
-Two library groups cover figures that are more than an optical table. These
+The *Structures* group covers figures that are more than an optical table. These
 parts are illustrations: beams are not traced through them (use the optical
 parts for that).
 
@@ -112,10 +112,8 @@ parts for that).
 |---|---|
 | **Multilayer / grating stack** | Edit the layers bottom → top in the inspector: colour, name, drawn thickness, tag; ↑ reorders, the bin removes, **+ Layer on top** adds. Surface profile flat, sinusoidal, trapezoid or square; period, ridge fraction and depth; period and ridge dimension labels; layer key; view angle and depth (oblique projection). Variants: MIM grating stack, corrugated film stack, sensor chip. For stacks built part by part, see the building blocks below |
 | **3D cylinder**, **3D block / slab** | Detector housings with coaxial face rings, substrates, chips |
-| **Thermal / IR camera**, **Laptop**, **Pipette with droplet**, **Flow cell (inlet / outlet)**, **Light bulb** | Lab equipment for measurement sketches; texts and colours are editable |
 | **Angle marker (θ)** | Arc between two directions with an optional dashed normal |
 | **Dimension line (Λ = …)** | Arrows or ticks, label follows the line |
-| **Angle fan (θ arrows)** | Observation or emission angles, with an arc and label |
 
 Optical parts for these figures:
 

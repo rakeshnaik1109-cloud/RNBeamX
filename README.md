@@ -65,7 +65,7 @@ The tracer is a real 2D optical model, not just a line router:
 - **Style presets and house styles**: one-click journal looks, plus your group's own style saved and shared as a file.
 - **Touch and tablets**: pinch-zoom, two-finger pan, long-press menus and a touch toolbar.
 - **Building blocks for device sketches**: substrate and film slabs, grating ridges, conformal coatings, nano-object arrays (disks, pillars, cones, spheres, core–shell, rods) and 2D-material sheets that stack onto each other and can be calculated as a stack.
-- **Device sketches and lab illustration**: multilayer / grating stacks with a layer key, IR camera, laptop, pipette, flow cell, angle fans and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
+- **Device sketches**: multilayer / grating stacks with a layer key, angle markers and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
 - **One-click reset** (↺ next to undo) that is itself undoable.
 - **Calculated spectra**: layer stacks and the SPR prism compute reflectance, transmittance and absorptance against wavelength or angle (transfer-matrix method, measured n, k for metals, oxides, semiconductors, liquids and polymers), shown in a data panel that updates live, and the traced beam carries the SPR dip.
 

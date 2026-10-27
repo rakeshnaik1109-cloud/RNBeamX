@@ -1,13 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — components/illustration.js
    Scientific-illustration parts for figures that are more than
-   an optical table: device cross-sections, lab equipment and
-   measurement geometry.
+   an optical table: device cross-sections and measurement
+   geometry.
 
    • Structures: multilayer / grating stack (conformal coatings on
      a sine, square or trapezoid grating), 3D cylinder, block.
-   • Lab: IR camera, laptop, pipette, flow cell, light bulb.
-   • Geometry: angle marker (θ), dimension line (Λ = …), angle fan.
+   • Geometry: angle marker (θ), dimension line (Λ = …).
 
    Solid-looking parts use an oblique ("cabinet") projection: the
    front face keeps its true shape, depth recedes up and to the
@@ -17,8 +16,8 @@
 (function () {
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
-const CAT_S = 'Structures', CAT_L = 'Lab & illustration';
-lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Annotations'), 0, CAT_S, CAT_L);
+const CAT_S = 'Structures';
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Annotations'), 0, CAT_S);
 
 /* ---------- oblique projection kit ---------- */
 const OB = lib.oblique = {};
@@ -283,139 +282,6 @@ lib.register({
     const mx = p.dx / 2 - uy * p.offset, my = p.dy / 2 + ux * p.offset;
     let deg = U.deg(ang); if (deg > 90) deg -= 180; if (deg < -90) deg += 180;
     return s + txt(S, mx, my, p.label, U.pt2mm(p.size), p.color, p.tilt ? `transform="rotate(${n(deg)} ${n(mx)} ${n(my)})"` : '');
-  },
-});
-lib.register({
-  type: 'fan', name: 'Angle fan (θ arrows)', category: 'Annotations', annotation: true, autoLabel: false, abbr: '',
-  keywords: 'angle fan observation angles arrows detection angular emission scan theta',
-  defaults: { r: 24, angles: '0,15,30,45,60', zero: 180, sense: 'cw', fmt: '{a}°', arc: true, arcLabel: 'θ', color: '#111111', width: 0.7, size: 7 },
-  params: [{ key: 'angles', label: 'Angles (comma-separated)', type: 'text' }, { key: 'fmt', label: 'Label format ({a} = angle)', type: 'text' },
-    { key: 'zero', label: 'Direction of 0° on the page', type: 'number', unit: '°', step: 1, hint: '0 = right, 180 = left' },
-    { key: 'sense', label: 'Angles increase', type: 'select', options: [['cw', 'Upwards from 0°'], ['ccw', 'Downwards from 0°']] },
-    { key: 'r', label: 'Arrow length', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
-    { key: 'arc', label: 'Arc with arrow', type: 'bool' }, { key: 'arcLabel', label: 'Arc label', type: 'text', show: p => p.arc },
-    { key: 'size', label: 'Label size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5 }, { key: 'color', label: 'Colour', type: 'color' }, { key: 'width', label: 'Line weight', type: 'number', unit: 'pt', min: 0.1, max: 6, step: 0.05 }],
-  bbox: p => { const R = p.r + 6; return [-R, -R, R, R]; },
-  draw(p, S) {
-    const w = U.pt2mm(p.width), fs = U.pt2mm(p.size), sg = p.sense === 'cw' ? 1 : -1;
-    const list = String(p.angles).split(/[,;\s]+/).map(Number).filter(isFinite);
-    const dir = a => U.rad(p.zero + sg * (p.zero > 90 && p.zero < 270 ? 1 : -1) * a);
-    let s = '';
-    list.forEach(a => {
-      const t = dir(a), e = [Math.cos(t) * p.r, Math.sin(t) * p.r];
-      s += `<line x1="0" y1="0" x2="${n(e[0] * 0.97)}" y2="${n(e[1] * 0.97)}" stroke="${p.color}" stroke-width="${n(w)}"/>` + H.arrowHead(e[0], e[1], t, 1.6, p.color);
-      s += txt(S, Math.cos(t) * (p.r + fs * 1.2), Math.sin(t) * (p.r + fs * 1.2), p.fmt.replace('{a}', a), fs, p.color, 'font-weight="700"');
-    });
-    if (p.arc && list.length > 1) {
-      const t0 = dir(Math.min(...list)), t1 = dir(Math.max(...list)), R = p.r * 0.55;
-      const A = [Math.cos(t0) * R, Math.sin(t0) * R], B = [Math.cos(t1) * R, Math.sin(t1) * R];
-      const sweep = (t1 - t0) > 0 ? 1 : 0;
-      s += `<path d="M ${n(A[0])} ${n(A[1])} A ${n(R)} ${n(R)} 0 0 ${sweep} ${n(B[0])} ${n(B[1])}" fill="none" stroke="${p.color}" stroke-width="${n(w * 1.4)}"/>` + H.arrowHead(B[0], B[1], t1 + (sweep ? Math.PI / 2 : -Math.PI / 2), 1.6, p.color);
-      if (p.arcLabel) { const tm = (t0 + t1) / 2; s += txt(S, Math.cos(tm) * (R + fs * 1.3), Math.sin(tm) * (R + fs * 1.3), p.arcLabel, fs * 1.1, p.color, 'font-style="italic"'); }
-    }
-    return s;
-  },
-});
-
-/* ================= Lab equipment ================= */
-const lab = cfg => lib.register(Object.assign({ category: CAT_L, annotation: true, autoLabel: false, abbr: '' }, cfg));
-lab({
-  type: 'ircam', name: 'Thermal / IR camera', keywords: 'thermal camera flir infrared imager ir camera bolometer',
-  defaults: { W: 16, Hh: 9, D: 12, color: '#c9ced6', text: 'IR camera', ang: 32, depthK: 0.55 },
-  params: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
-    { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 100, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 100, step: 0.5 }, ...obliqueParams],
-  bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2, -p.Hh / 2 - p.D * c.ky, p.W / 2 + p.D * c.kx, p.Hh / 2]; },
-  draw(p, S) {
-    const c = OB.cam(p.ang, p.depthK);
-    let s = `<g transform="translate(${n(-p.W / 2)} ${n(p.Hh / 2)})">${OB.box(c, 0, 0, p.W, p.Hh, p.D, p.color, S)}</g>`;
-    [-0.22, 0.22].forEach(k => { const cx = p.W * k, r = Math.min(p.Hh, p.W) * 0.3; s += `<circle cx="${n(cx)}" cy="0" r="${n(r)}" fill="#20232a" stroke="#0d0f12" stroke-width="${n(S.lw * 0.6)}"/><circle cx="${n(cx)}" cy="0" r="${n(r * 0.55)}" fill="#3c4250"/><circle cx="${n(cx - r * 0.25)}" cy="${n(-r * 0.25)}" r="${n(r * 0.15)}" fill="#fff" opacity="0.5"/>`; });
-    if (p.text) { // lying on the top face: x along the width, text "up" along the depth
-      const q = OB.P(c, p.W / 2, p.Hh / 2, p.D * 0.5), fs = Math.min(p.D * 0.42, p.W * 1.7 / Math.max(4, p.text.length));
-      s += `<text transform="matrix(1 0 ${n(-c.kx)} ${n(c.ky)} ${n(q[0] - p.W / 2)} ${n(q[1])})" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="#111" text-anchor="middle" dominant-baseline="central" font-weight="700">${RNBX.text.markup(p.text, fs)}</text>`;
-    }
-    return s;
-  },
-});
-lab({
-  type: 'laptop', name: 'Laptop / computer', keywords: 'laptop computer pc acquisition software screen spectrum plot',
-  defaults: { W: 24, color: '#7a8090', screen: '#eaf2fb', curves: '#c0392b, #1f77b4, #7d3c98', ang: 30, depthK: 0.6, open: 105 },
-  params: [{ key: 'color', label: 'Body colour', type: 'color' }, { key: 'screen', label: 'Screen colour', type: 'color' }, { key: 'curves', label: 'Curve colours (comma)', type: 'text' },
-    { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 6, max: 150, step: 0.5 }, { key: 'open', label: 'Lid angle', type: 'range', min: 80, max: 140, step: 1 }, ...obliqueParams],
-  bbox(p) { const c = OB.cam(p.ang, p.depthK), D = p.W * 0.62; return [-p.W / 2, -p.W * 0.62 - D * c.ky, p.W / 2 + D * c.kx, 1]; },
-  draw(p, S) {
-    const c = OB.cam(p.ang, p.depthK), W = p.W, D = W * 0.62, Hs = W * 0.6, t = Math.max(0.5, W * 0.03), x0 = -W / 2;
-    const P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + x0, q[1]]; };
-    let s = `<g transform="translate(${n(x0)} 0)">${OB.box(c, 0, 0, W, t, D, p.color, S)}</g>`;
-    // keyboard
-    s += OB.poly([P(W * 0.1, t, D * 0.15), P(W * 0.9, t, D * 0.15), P(W * 0.9, t, D * 0.7), P(W * 0.1, t, D * 0.7)], U.darken(p.color, 0.3), `stroke="none"`);
-    // lid: leaning back by (open − 90)
-    const lean = Math.cos(U.rad(p.open)) * -1;
-    const Lp = (x, z) => P(x, t + z, D + lean * z * 0.8);
-    s += OB.poly([Lp(0, 0), Lp(W, 0), Lp(W, Hs), Lp(0, Hs)], U.darken(p.color, 0.15), `stroke="${U.darken(p.color, 0.5)}" stroke-width="${n(S.lw * 0.6)}"`);
-    const scr = [Lp(W * 0.05, Hs * 0.06), Lp(W * 0.95, Hs * 0.06), Lp(W * 0.95, Hs * 0.94), Lp(W * 0.05, Hs * 0.94)];
-    s += OB.poly(scr, p.screen, `stroke="none"`);
-    String(p.curves).split(/[,;\s]+/).filter(x => /^#/.test(x)).forEach((col, k) => {
-      let d = '';
-      for (let i = 0; i <= 40; i++) { const u = i / 40, v = 0.25 + 0.5 * Math.exp(-Math.pow((u - 0.35 - k * 0.12) / 0.07, 2)) + 0.12 * k; const q = Lp(W * (0.1 + 0.8 * u), Hs * (0.12 + 0.75 * (1 - v) * 0.6 + 0.12)); d += (i ? ' L ' : 'M ') + n(q[0]) + ' ' + n(q[1]); }
-      s += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.12, W * 0.008))}"/>`;
-    });
-    return s;
-  },
-});
-lab({
-  type: 'pipette', name: 'Pipette with droplet', keywords: 'pipette micropipette drop casting droplet analyte dispense liquid',
-  defaults: { L: 26, color: '#9aa5b3', drop: '#5fa8d3', tilt: -28, showDrop: true },
-  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 5, max: 150, step: 0.5 }, { key: 'color', label: 'Body colour', type: 'color' },
-    { key: 'showDrop', label: 'Droplet', type: 'bool' }, { key: 'drop', label: 'Droplet colour', type: 'color', show: p => p.showDrop }, { key: 'tilt', label: 'Tilt', type: 'range', min: -90, max: 90, step: 1 }],
-  bbox: p => [-p.L * 0.45, -p.L * 0.55, p.L * 0.45, p.L * 0.6],
-  draw(p, S) {
-    const L = p.L, w = L * 0.11;
-    let g = '';
-    g += `<rect x="${n(-w * 0.35)}" y="${n(-L * 0.55)}" width="${n(w * 0.7)}" height="${n(L * 0.12)}" rx="${n(w * 0.2)}" fill="#e9ecf1" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    g += `<rect x="${n(-w / 2)}" y="${n(-L * 0.43)}" width="${n(w)}" height="${n(L * 0.48)}" rx="${n(w * 0.35)}" fill="url(#rbx-pip)" stroke="${U.darken(p.color, 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    g += `<defs><linearGradient id="rbx-pip" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${U.lighten(p.color, 0.3)}"/><stop offset="0.5" stop-color="${p.color}"/><stop offset="1" stop-color="${U.darken(p.color, 0.3)}"/></linearGradient></defs>`;
-    g += `<rect x="${n(-w * 0.62)}" y="${n(-L * 0.36)}" width="${n(w * 1.24)}" height="${n(L * 0.05)}" rx="${n(w * 0.1)}" fill="${U.darken(p.color, 0.25)}"/>`;
-    g += `<path d="M ${n(-w * 0.32)} ${n(L * 0.05)} L ${n(w * 0.32)} ${n(L * 0.05)} L ${n(w * 0.06)} ${n(L * 0.42)} L ${n(-w * 0.06)} ${n(L * 0.42)} Z" fill="#f3f5f8" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>`;
-    if (p.showDrop) { const r = w * 0.32, y = L * 0.42 + r * 1.6; g += `<path d="M 0 ${n(y - r * 1.9)} C ${n(r * 0.3)} ${n(y - r * 1.2)} ${n(r)} ${n(y - r * 0.6)} ${n(r)} ${n(y)} A ${n(r)} ${n(r)} 0 0 1 ${n(-r)} ${n(y)} C ${n(-r)} ${n(y - r * 0.6)} ${n(-r * 0.3)} ${n(y - r * 1.2)} 0 ${n(y - r * 1.9)} Z" fill="${p.drop}" stroke="${U.darken(p.drop, 0.35)}" stroke-width="${n(S.lw * 0.5)}"/>`; }
-    return `<g transform="rotate(${n(p.tilt)})">${g}</g>`;
-  },
-});
-lab({
-  type: 'flowcell', name: 'Flow cell (inlet / outlet)', keywords: 'flow cell microfluidic channel inlet outlet liquid cell sensor',
-  defaults: { W: 30, Hh: 5, D: 16, color: '#d6eaf3', fluid: '#4f9fd1', ang: 32, depthK: 0.5, title: 'Flow cell', labels: true },
-  params: [{ key: 'title', label: 'Text', type: 'text' }, { key: 'labels', label: 'Inlet / outlet labels', type: 'bool' }, { key: 'color', label: 'Cell colour', type: 'color' }, { key: 'fluid', label: 'Fluid colour', type: 'color' },
-    { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 200, step: 0.5 }, { key: 'Hh', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 }, ...obliqueParams],
-  bbox(p) { const c = OB.cam(p.ang, p.depthK); return [-p.W / 2 - 9, -p.Hh / 2 - p.D * c.ky - 6, p.W / 2 + p.D * c.kx + 9, p.Hh / 2 + 1]; },
-  draw(p, S) {
-    const c = OB.cam(p.ang, p.depthK), x0 = -p.W / 2, z0 = -p.Hh / 2;
-    const P = (x, z, d) => { const q = OB.P(c, x, z, d); return [q[0] + x0, q[1] - z0]; };
-    let s = `<g transform="translate(${n(x0)} ${n(-z0)})">${OB.box(c, 0, 0, p.W, p.Hh, p.D, p.color, S)}</g>`;
-    // fluid channel seen on the front: a row of droplets
-    for (let i = 0; i < 7; i++) { const q = P(p.W * (0.1 + i * 0.13), p.Hh * 0.2, 0); s += `<path d="M ${n(q[0])} ${n(q[1] - p.Hh * 0.5)} q ${n(p.W * 0.04)} ${n(p.Hh * 0.3)} 0 ${n(p.Hh * 0.5)} q ${n(-p.W * 0.04)} ${n(-p.Hh * 0.2)} 0 ${n(-p.Hh * 0.5)} Z" fill="${p.fluid}" opacity="0.85"/>`; }
-    // tubes
-    [[0.12, 'Inlet', -1], [0.88, 'Outlet', 1]].forEach(([u, lab2, sg]) => {
-      const b = P(p.W * u, p.Hh, p.D * 0.5), t = [b[0], b[1] - 4];
-      s += `<rect x="${n(b[0] - 0.7)}" y="${n(t[1])}" width="1.4" height="${n(b[1] - t[1])}" fill="#d9a441" stroke="${S.ink}" stroke-width="${n(S.lw * 0.5)}"/>`;
-      if (p.labels) s += `<line x1="${n(b[0] + sg * 1.5)}" y1="${n(t[1] + 1)}" x2="${n(b[0] + sg * 6)}" y2="${n(t[1] + 1)}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>` + H.arrowHead(b[0] + sg * (sg > 0 ? 6 : 1.5), t[1] + 1, sg > 0 ? 0 : Math.PI, 1, S.ink) + `<text x="${n(b[0] + sg * 6.6)}" y="${n(t[1] + 1)}" font-family="${U.esc(S.font)}" font-size="${n(S.fs * 0.85)}" fill="${S.ink}" text-anchor="${sg > 0 ? 'start' : 'end'}" dominant-baseline="central">${lab2}</text>`;
-    });
-    if (p.title) { const q = P(p.W * 0.5, p.Hh * 0.75, 0); s += txt(S, q[0], q[1], p.title, Math.min(S.fs, p.Hh * 0.45), '#1d3a4a', 'font-weight="700"'); }
-    return s;
-  },
-});
-lib.register({
-  type: 'bulb', name: 'Light bulb', category: 'Graphical abstract', annotation: true, autoLabel: false, abbr: '',
-  keywords: 'light bulb lamp source glow illumination incandescent',
-  defaults: { r: 6, glow: '#ffe27a', on: true, rot: 0 },
-  params: [{ key: 'r', label: 'Size', type: 'number', unit: 'mm', min: 1, max: 80, step: 0.5 }, { key: 'on', label: 'Glowing', type: 'bool' }, { key: 'glow', label: 'Glow colour', type: 'color' }],
-  bbox: p => [-p.r * (p.on ? 2 : 1.1), -p.r * (p.on ? 2 : 1.1), p.r * (p.on ? 2 : 1.1), p.r * 2.6],
-  draw(p, S, obj) {
-    const r = p.r, id = 'rbx-bulb-' + (obj ? obj.id : 'x');
-    let s = '';
-    if (p.on) s += `<defs><radialGradient id="${id}"><stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/><stop offset="0.35" stop-color="${p.glow}" stop-opacity="0.75"/><stop offset="1" stop-color="${p.glow}" stop-opacity="0"/></radialGradient></defs><circle cx="0" cy="0" r="${n(r * 2.1)}" fill="url(#${id})"/>`;
-    s += `<path d="M ${n(-r * 0.42)} ${n(r * 0.95)} C ${n(-r * 0.5)} ${n(r * 0.55)} ${n(-r)} ${n(r * 0.3)} ${n(-r)} ${n(-r * 0.15)} A ${n(r)} ${n(r)} 0 1 1 ${n(r)} ${n(-r * 0.15)} C ${n(r)} ${n(r * 0.3)} ${n(r * 0.5)} ${n(r * 0.55)} ${n(r * 0.42)} ${n(r * 0.95)} Z" fill="${p.on ? U.lighten(p.glow, 0.55) : '#f4f6f8'}" fill-opacity="0.92" stroke="${S.ink}" stroke-width="${n(S.lw * 0.7)}"/>`;
-    s += `<path d="M ${n(-r * 0.25)} ${n(r * 0.9)} L ${n(-r * 0.18)} ${n(-r * 0.1)} L 0 ${n(-r * 0.4)} L ${n(r * 0.18)} ${n(-r * 0.1)} L ${n(r * 0.25)} ${n(r * 0.9)} M ${n(-r * 0.18)} ${n(-r * 0.1)} L ${n(-r * 0.35)} ${n(-r * 0.55)} M ${n(r * 0.18)} ${n(-r * 0.1)} L ${n(r * 0.35)} ${n(-r * 0.55)}" fill="none" stroke="${p.on ? '#9a5b00' : '#666'}" stroke-width="${n(S.lw)}" stroke-linecap="round"/>`;
-    for (let i = 0; i < 3; i++) s += `<rect x="${n(-r * 0.45)}" y="${n(r * (0.98 + i * 0.32))}" width="${n(r * 0.9)}" height="${n(r * 0.28)}" rx="${n(r * 0.1)}" fill="${i === 2 ? '#3a3d42' : '#b9bec6'}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.5)}"/>`;
-    return s;
   },
 });
 })();

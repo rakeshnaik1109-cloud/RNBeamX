@@ -298,7 +298,7 @@ T.list.push({
 
 /* ---------- SPR sensor (Kretschmann) ---------- */
 T.list.push({
-  id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with sensor chip and flow cell, fibre to spectrometer',
+  id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with a gold sensor chip, fibre to spectrometer, calculated SPR dip',
   build() {
     const d = base('nature-2', 160, 150, 'SPR sensor setup', { polarization: true });
     const a = -32, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];   // meets the chip near 52°: dip inside the lamp band
@@ -309,8 +309,8 @@ T.list.push({
     const ap = mk('iris', ...at(p0, 26), a, { r: 1 }, 'Aperture', [-3, 8]);
     const pol = mk('polarizer', ...at(p0, 38), a, { angle: 0 }, 'Polariser', [-3, 8]);
     const prism = mk('prism', 74, 40, 0, { s: 20, apex: 90, inverted: true, chip: true, mat: 'SF11' }, 'Prism', [0, 13]);
-    const fc = mk('flowcell', 74, 28.6, 0, { W: 26, Hh: 4, D: 12, title: '' });
-    d.objects.push(lamp, l1, ap, pol, prism, fc);
+    const an = mk('text', 74, 31, 0, { text: 'Analyte (water)', size: 6.5, color: '#3d6f8f', anchor: 'middle', italic: true });
+    d.objects.push(lamp, l1, ap, pol, prism, an);
     // the exit beam leaves the prism heading down-right: place the collection optics on it
     const tr = RNBX.trace(d), last = tr.segments.filter(s => !s.ghost && s.b[0] > 82).sort((x, y) => y.len - x.len)[0];
     const e = last ? last.a : [90, 45], ed = last ? U.v.norm(U.v.sub(last.b, last.a)) : [0.8, 0.6], er = U.round(U.deg(Math.atan2(ed[1], ed[0])), 2);
@@ -319,7 +319,7 @@ T.list.push({
     const fc1 = mk('coupler', ...q(22), er + 180, {}, 'Fibre', [9, -4]);
     const fc2 = mk('coupler', 112, 84, 0, {}, '', null);
     const spec = mk('spectrometer', 132, 84, 0, { L: 18, H: 9 }, 'Spectrometer', [0, -7.5]);
-    const pc = mk('laptop', 138, 58, 0, { W: 22 });
+    const pc = mk('instrument', 138, 62, 0, { text: 'PC', icon: 'computer', w: 13, h: 10 });
     const fib = link('fiber', fc1, fc2, { bend: 0.4 });
     const usb = link('wire', spec, pc, { route: 'straight' });
     const pa = mk('panel', 4, 7, 0, { text: 'c' });
