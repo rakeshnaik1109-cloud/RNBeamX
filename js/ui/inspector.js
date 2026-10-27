@@ -217,14 +217,14 @@ const fieldSetter = (objs, path) => (key, v, rebuild) => {
 
 /* ---------- lens focus (drawn mm, along the lens's own +x axis) ----------
    real lenses: paraxial y–nu trace through the designed surfaces at 587.6 nm */
-function lensFocus(obj) {
+function lensFocus(obj, lam = 587.56) {
   const p = obj.props, sc = S.doc.style.scale || 10;
   if (obj.type === 'objective') return { real: false, efl: p.fd, at: p.L / 2 + p.fd };
   const geo = lib.lensReal ? lib.lensReal(p, S.doc) : null;
   if (!geo) { const f = (/concave/.test(p.shape) ? -Math.abs(p.f) : p.f) / sc; return f ? { real: false, efl: f, at: f } : null; }
   let y = 1, nu = 0, nPrev = 1;
   geo.forEach((g, i) => {
-    const n2 = g.matB === 'air' ? 1 : RNBX.optics.index(g.matB, 587.56, p.n || 1.5), c = g.R ? 1 / g.R : 0;
+    const n2 = g.matB === 'air' ? 1 : RNBX.optics.index(g.matB, lam, p.n || 1.5), c = g.R ? 1 / g.R : 0;
     nu -= y * (n2 - nPrev) * c;
     if (i < geo.length - 1) y += (geo[i + 1].x - g.x) * nu / n2;
     nPrev = n2;
@@ -305,6 +305,11 @@ function readout(obj) {
     let html = f.real
       ? `Real ${U.esc(RNBX.optics.MATERIALS[obj.props.mat] ? RNBX.optics.MATERIALS[obj.props.mat].name : obj.props.mat)} lens: focal length <b>${U.fmt(f.efl * sc, 4)} mm</b> at 587.6 nm · back focal distance <b>${U.fmt(f.bfd * sc, 4)} mm</b> (paraxial)`
       : `Ideal thin lens: focus <b>${U.fmt(f.efl * sc, 4)} mm</b> from the lens`;
+    if (f.real) {
+      // longitudinal colour: back focus at the F (blue), d (yellow) and C (red) lines
+      const [F, Cc] = [lensFocus(obj, 486.13), lensFocus(obj, 656.27)];
+      if (F && Cc) html += `<br>Focal length F / d / C: ${U.fmt(F.efl * sc, 4)} / ${U.fmt(f.efl * sc, 4)} / ${U.fmt(Cc.efl * sc, 4)} mm · colour focal shift (C − F) <b>${U.fmt((Cc.at - F.at) * sc, 3)} mm</b>`;
+    }
     if (f.real && obj.props.shape !== 'ball') html += `<br>${f.radii.map((R, i) => `R${i + 1} = ${R ? U.fmt(R * sc, 4) + ' mm' : '∞'}`).join(' · ')}`;
     return el('div', { class: 'readout', html });
   }

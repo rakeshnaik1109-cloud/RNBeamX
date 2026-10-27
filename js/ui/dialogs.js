@@ -102,7 +102,7 @@ Dl.exporter = (initial = 'svg') => {
 /* ---------- templates ---------- */
 Dl.templates = () => {
   const T = RNBX.templates, body = el('div', {});
-  const search = el('input', { type: 'search', placeholder: 'Search templates (e.g. confocal, SPR, interferometer)…', class: 'tpl-search' });
+  const search = el('input', { type: 'search', placeholder: 'Search templates (e.g. confocal, SPR, interferometer) · Enter opens the first', class: 'tpl-search' });
   const cards = [];
   const groups = T.GROUPS.map(g => g[0]).concat(['More']);
   const sections = {};
@@ -136,6 +136,7 @@ Dl.templates = () => {
     none.style.display = shown ? 'none' : '';
   };
   search.oninput = filter;
+  search.onkeydown = e => { if (e.key === 'Enter') { const c = cards.find(k => k.card.style.display !== 'none'); if (c) { e.preventDefault(); c.card.click(); } } };
   filter();
   const m = D.modal({ title: 'Templates', sub: `${T.list.length} complete, physically traced setups to start from`, wide: true, body: [search, body] });
   setTimeout(() => search.focus(), 30);
