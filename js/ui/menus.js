@@ -51,6 +51,7 @@ M.items = {
     { label: 'Templates…', icon: 'grid', action: () => RNBX.dialogs.templates() },
     { label: 'Open project…', key: mod + 'O', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.project.openFile(f)) },
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
+    { label: 'Copy share link', action: () => RNBX.share.copyLink() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
     { label: 'Import component file…', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.groups.importFile(f).catch(e => RNBX.toast(e.message, 'error'))) },

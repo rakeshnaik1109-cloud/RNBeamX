@@ -15,6 +15,8 @@ const FORMATS = [
   { id: 'tiff', name: 'TIFF', desc: 'Raster with DPI tags · many journals' },
   { id: 'png', name: 'PNG', desc: 'Raster with DPI · slides, web' },
   { id: 'jpeg', name: 'JPEG', desc: 'Raster · small files' },
+  { id: 'pptx', name: 'PowerPoint (.pptx)', desc: 'Vector picture on a slide · Convert to Shape to edit' },
+  { id: 'tikz', name: 'TikZ (.tex)', desc: 'LaTeX drawing commands · theses and papers' },
   { id: 'video', name: 'Video (MP4 / WebM)', desc: 'Animation · talks, social media' },
   { id: 'project', name: 'Project (.rnbx.json)', desc: 'Save to edit later or share' },
 ];
@@ -65,6 +67,8 @@ Dl.exporter = (initial = 'svg') => {
         el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s at ${an.fps} fps. Recording runs in real time, so keep this tab visible.` : 'Nothing is animated yet. Add keyframes, or tick “Light flow” in the timeline, to make the video move.' }), prog);
     }
     if (fmt === 'project') right.append(el('div', { class: 'note', text: 'A small JSON file with everything needed to continue editing: components, labels, styles, 3D camera and animation.' }));
+    if (fmt === 'pptx') right.append(el('div', { class: 'note', text: 'One slide the size of the figure, with the figure as a vector picture (and a 300 dpi fallback for old versions). In PowerPoint, right-click the picture ▸ Convert to Shape to edit every line and label.' }));
+    if (fmt === 'tikz') right.append(el('div', { class: 'note', text: 'A standalone LaTeX file with TikZ commands for every path and label, coordinates in mm. Compile with LuaLaTeX or XeLaTeX (Unicode letters); \\input the tikzpicture into your document. Gradients become their average colour.' }));
     if (fmt !== 'video' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
       el('button', { class: 'btn small', type: 'button', text: 'Copy as PNG', onclick: () => RNBX.exporter.copyPng(300).then(() => RNBX.toast('Copied: paste into slides or documents'), e => RNBX.toast('Clipboard not available: ' + e.message, 'error')) }),
       el('button', { class: 'btn small', type: 'button', text: 'Copy SVG code', onclick: () => RNBX.exporter.copySvg().then(() => RNBX.toast('SVG copied')) })));
@@ -81,6 +85,8 @@ Dl.exporter = (initial = 'svg') => {
       else if (fmt === 'tiff') await X.tiff(opts);
       else if (fmt === 'jpeg') await X.jpeg(opts);
       else if (fmt === 'project') RNBX.project.save();
+      else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
+      else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');
       else if (fmt === 'video') {
         prog.hidden = false;
         go.textContent = 'Recording…';
