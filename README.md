@@ -110,6 +110,15 @@ js/vendor/              jsPDF + svg2pdf (MIT), loaded only for PDF export
 dist/                   single-file build (python3 build-standalone.py)
 ```
 
+## Privacy
+
+Your figures stay in your browser: nothing you draw is uploaded. The only thing
+recorded is an anonymous visit count, plus which features were used (for example
+"template-spr", "export-pdf" or "style-3d"), sent with
+[GoatCounter](https://www.goatcounter.com): no cookies, no personal data, and
+nothing about your figures or files. Opened from a local file (the offline
+single-file build), RNBeamX is not counted.
+
 ## Licence
 
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. See [LICENSE](LICENSE).

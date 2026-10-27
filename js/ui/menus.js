@@ -15,6 +15,7 @@ M.setMode = mode => {
   if (S.doc.style.mode === mode) return;
   RNBX.history.checkpoint();
   S.doc.style.mode = mode;
+  U.track('style-' + mode);
   RNBX.emit('styleMode', mode);
   RNBX.changed();
   M.syncTools();
@@ -39,6 +40,7 @@ M.resetAll = () => {
   M.syncTools(); RNBX.inspector.build();
   setTimeout(() => RNBX.canvas.fit(), 30);
   RNBX.toast('Everything reset to the start', '', { label: 'Undo', fn: () => RNBX.history.undo() });
+  U.track('reset');
 };
 const sel = () => S.selection.length > 0;
 

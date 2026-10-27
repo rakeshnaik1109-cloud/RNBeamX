@@ -161,5 +161,17 @@ U.loadScript = src => new Promise((res, rej) => {
   s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src));
   document.head.appendChild(s);
 });
+/* Anonymous feature-usage count (GoatCounter: no cookies, no personal data).
+   Each feature is counted at most once per visit and only its name is sent,
+   never figure content, file names or settings. Does nothing when GoatCounter
+   is not loaded (offline, file://, blocked). */
+const tracked = new Set();
+U.track = feature => {
+  if (tracked.has(feature)) return;
+  tracked.add(feature);
+  try {
+    if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: 'rnbeamx-feature/' + feature, title: 'RNBeamX: ' + feature, event: true });
+  } catch (e) { /* counting must never break the app */ }
+};
 U.slug = s => String(s || 'figure').trim().replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 60) || 'figure';
 })();

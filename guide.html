@@ -192,7 +192,21 @@ footer .bar { padding: 20px 16px; }
 </main>
 
 <footer>
-  <div class="bar">© 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. · <a href="index.html">RNBeamX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer">RNSpectraX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer">Website</a></div>
+  <div class="bar">© 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. · <a href="index.html">RNBeamX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer">RNSpectraX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer">Website</a><span data-visit-counter="/RNBeamX/" hidden title="Visitors to RNBeamX (GoatCounter)"> · <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="vertical-align:-2px"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg> <span data-count></span> visitors</span></div>
 </footer>
+<!-- Anonymous visit and feature-usage counts (GoatCounter: no cookies, no personal data, never any figure content) -->
+<script>window.goatcounter = { path: function (p) { return p.replace(/index\.html$/, ''); } };</script>
+<script data-goatcounter="https://rakeshnaik.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<script>
+/* Public visitor count (GoatCounter counter API). Stays hidden until
+   GoatCounter answers, e.g. if "Allow adding visitor counts" is off. */
+(function () {
+  var el = document.querySelector('[data-visit-counter]'); if (!el || !window.fetch) return;
+  fetch('https://rakeshnaik.goatcounter.com/counter/' + encodeURIComponent(el.getAttribute('data-visit-counter')) + '.json')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) { if (d && d.count) { el.querySelector('[data-count]').textContent = d.count; el.hidden = false; } })
+    .catch(function () {});
+})();
+</script>
 </body>
 </html>

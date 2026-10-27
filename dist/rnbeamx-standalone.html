@@ -448,6 +448,7 @@ a.icon-btn { text-decoration: none; }
     <span id="stInfo"></span>
     <span class="grow"></span>
     <span id="stBeams"></span>
+    <span data-visit-counter="/RNBeamX/" hidden title="Visitors to RNBeamX (GoatCounter)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="vertical-align:-2px"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg> <span data-count></span> visitors</span>
     <button class="link" id="btnTimeline" title="Animation timeline (T)">▶ Animation</button>
   </footer>
 </div>
@@ -635,6 +636,18 @@ U.loadScript = src => new Promise((res, rej) => {
   s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src));
   document.head.appendChild(s);
 });
+/* Anonymous feature-usage count (GoatCounter: no cookies, no personal data).
+   Each feature is counted at most once per visit and only its name is sent,
+   never figure content, file names or settings. Does nothing when GoatCounter
+   is not loaded (offline, file://, blocked). */
+const tracked = new Set();
+U.track = feature => {
+  if (tracked.has(feature)) return;
+  tracked.add(feature);
+  try {
+    if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: 'rnbeamx-feature/' + feature, title: 'RNBeamX: ' + feature, event: true });
+  } catch (e) { /* counting must never break the app */ }
+};
 U.slug = s => String(s || 'figure').trim().replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 60) || 'figure';
 })();
 
@@ -3268,6 +3281,7 @@ DataIO.addCalcPanel = src => {
   Object.assign(plot.props, { link: src.id, linkAuto: true, series: [], legend: true, legendPos: res.calc.scan === 'angle' ? 'bl' : 'tr', yNumbers: true });
   RNBX.changed(); RNBX.inspector.build();
   RNBX.toast('Data panel linked: it follows every change to the stack');
+  U.track('calc-panel-' + src.type);
   return plot;
 };
 DataIO.downloadCsv = src => {
@@ -3275,6 +3289,7 @@ DataIO.downloadCsv = src => {
   if (!res) return;
   const q = ['R', 'T', 'A'], head = [res.xlabel].concat(q.map(k => CALC_STYLE[k][0] + ' (' + res.calc.pol + ')'));
   const rows = res.x.map((x, i) => [x].concat(q.map(k => res.series[k][i].toPrecision(6))).join(','));
+  U.track('calc-csv');
   U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(src.kindName || lib.get(src.type).name) + '_response.csv');
 };
 DataIO.sourcesDialog = src => {
@@ -8298,6 +8313,7 @@ Dl.exporter = (initial = 'svg') => {
         await X.video(opts, f => { prog.firstChild.style.width = (f * 100).toFixed(1) + '%'; });
       }
       if (fmt !== 'project') RNBX.toast('Exported ' + FORMATS.find(f => f.id === fmt).name);
+      U.track('export-' + fmt);
     } catch (e) { console.error(e); RNBX.toast(e.message || 'Export failed', 'error'); }
     go.disabled = false; go.textContent = 'Export';
   };
@@ -8317,6 +8333,7 @@ Dl.templates = () => {
       RNBX.setDocument(RNBX.normalizeDocument(t.build()), true);
       m.close();
       RNBX.toast(t.name + ' loaded. Drag anything; the beams follow.');
+      U.track('template-' + t.id);
     };
     grid.append(card);
   });
@@ -8438,6 +8455,7 @@ M.setMode = mode => {
   if (S.doc.style.mode === mode) return;
   RNBX.history.checkpoint();
   S.doc.style.mode = mode;
+  U.track('style-' + mode);
   RNBX.emit('styleMode', mode);
   RNBX.changed();
   M.syncTools();
@@ -8462,6 +8480,7 @@ M.resetAll = () => {
   M.syncTools(); RNBX.inspector.build();
   setTimeout(() => RNBX.canvas.fit(), 30);
   RNBX.toast('Everything reset to the start', '', { label: 'Undo', fn: () => RNBX.history.undo() });
+  U.track('reset');
 };
 const sel = () => S.selection.length > 0;
 
@@ -8749,6 +8768,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 })();
 
+</script>
+<!-- Anonymous visit and feature-usage counts (GoatCounter: no cookies, no personal data, never any figure content) -->
+<script>window.goatcounter = { path: function (p) { return p.replace(/index\.html$/, ''); } };</script>
+<script data-goatcounter="https://rakeshnaik.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<script>
+/* Public visitor count (GoatCounter counter API). Stays hidden until
+   GoatCounter answers, e.g. if "Allow adding visitor counts" is off. */
+(function () {
+  var el = document.querySelector('[data-visit-counter]'); if (!el || !window.fetch) return;
+  fetch('https://rakeshnaik.goatcounter.com/counter/' + encodeURIComponent(el.getAttribute('data-visit-counter')) + '.json')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) { if (d && d.count) { el.querySelector('[data-count]').textContent = d.count; el.hidden = false; } })
+    .catch(function () {});
+})();
 </script>
 <script>
 /* js/vendor/jspdf.umd.min.js */

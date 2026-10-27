@@ -218,7 +218,9 @@ wave plate changes the light after a PBS.
 | Project (.rnbx.json) | Continue editing later or share with co-authors |
 
 **Copy as PNG** puts the figure on the clipboard for slides. The work is also
-autosaved in your browser.
+autosaved in your browser and never uploaded. RNBeamX counts visits and which
+features are used (feature names only, no figure content, no cookies) with
+GoatCounter; the visitor total appears at the bottom right of the window.
 
 ## 8. Before you submit
 

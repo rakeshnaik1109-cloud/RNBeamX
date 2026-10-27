@@ -80,6 +80,7 @@ DataIO.addCalcPanel = src => {
   Object.assign(plot.props, { link: src.id, linkAuto: true, series: [], legend: true, legendPos: res.calc.scan === 'angle' ? 'bl' : 'tr', yNumbers: true });
   RNBX.changed(); RNBX.inspector.build();
   RNBX.toast('Data panel linked: it follows every change to the stack');
+  U.track('calc-panel-' + src.type);
   return plot;
 };
 DataIO.downloadCsv = src => {
@@ -87,6 +88,7 @@ DataIO.downloadCsv = src => {
   if (!res) return;
   const q = ['R', 'T', 'A'], head = [res.xlabel].concat(q.map(k => CALC_STYLE[k][0] + ' (' + res.calc.pol + ')'));
   const rows = res.x.map((x, i) => [x].concat(q.map(k => res.series[k][i].toPrecision(6))).join(','));
+  U.track('calc-csv');
   U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(src.kindName || lib.get(src.type).name) + '_response.csv');
 };
 DataIO.sourcesDialog = src => {

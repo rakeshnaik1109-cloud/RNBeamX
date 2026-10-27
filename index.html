@@ -15,8 +15,8 @@
 (function(){try{var t=localStorage.getItem('rnbx_theme');t=t?JSON.parse(t):null;
 if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();
 </script>
-<link href="css/style.css?v=202610270252" rel="stylesheet"/>
-<link href="css/layout.css?v=202610270252" rel="stylesheet"/>
+<link href="css/style.css?v=202610270313" rel="stylesheet"/>
+<link href="css/layout.css?v=202610270313" rel="stylesheet"/>
 </head>
 <body>
 <div id="app">
@@ -104,6 +104,7 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
     <span id="stInfo"></span>
     <span class="grow"></span>
     <span id="stBeams"></span>
+    <span data-visit-counter="/RNBeamX/" hidden title="Visitors to RNBeamX (GoatCounter)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="vertical-align:-2px"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg> <span data-count></span> visitors</span>
     <button class="link" id="btnTimeline" title="Animation timeline (T)">▶ Animation</button>
   </footer>
 </div>
@@ -111,41 +112,55 @@ if(t==='dark'||(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)'
 <div id="modalRoot"></div>
 <div id="toastRoot" aria-live="polite"></div>
 
-<script src="js/config.js?v=202610270252"></script>
-<script src="js/core/utils.js?v=202610270252"></script>
-<script src="js/core/state.js?v=202610270252"></script>
-<script src="js/engine/optics.js?v=202610270252"></script>
-<script src="js/engine/nkdata.js?v=202610270252"></script>
-<script src="js/engine/thinfilm.js?v=202610270252"></script>
-<script src="js/engine/tracer.js?v=202610270252"></script>
-<script src="js/components/library.js?v=202610270252"></script>
-<script src="js/components/sources.js?v=202610270252"></script>
-<script src="js/components/optics.js?v=202610270252"></script>
-<script src="js/components/detectors.js?v=202610270252"></script>
-<script src="js/components/vertical.js?v=202610270252"></script>
-<script src="js/components/photonics.js?v=202610270252"></script>
-<script src="js/components/plot.js?v=202610270252"></script>
-<script src="js/components/illustration.js?v=202610270252"></script>
-<script src="js/components/annotations.js?v=202610270252"></script>
-<script src="js/render/text.js?v=202610270252"></script>
-<script src="js/render/defs.js?v=202610270252"></script>
-<script src="js/render/beams.js?v=202610270252"></script>
-<script src="js/render/renderer.js?v=202610270252"></script>
-<script src="js/render/renderer3d.js?v=202610270252"></script>
-<script src="js/render/labels.js?v=202610270252"></script>
-<script src="js/anim/animation.js?v=202610270252"></script>
-<script src="js/io/project.js?v=202610270252"></script>
-<script src="js/io/export.js?v=202610270252"></script>
-<script src="js/io/templates.js?v=202610270252"></script>
-<script src="js/io/styles.js?v=202610270252"></script>
-<script src="js/ui/dom.js?v=202610270252"></script>
-<script src="js/ui/canvas.js?v=202610270252"></script>
-<script src="js/ui/palette.js?v=202610270252"></script>
-<script src="js/ui/inspector.js?v=202610270252"></script>
-<script src="js/ui/layers.js?v=202610270252"></script>
-<script src="js/ui/timeline.js?v=202610270252"></script>
-<script src="js/ui/dialogs.js?v=202610270252"></script>
-<script src="js/ui/menus.js?v=202610270252"></script>
-<script src="js/app.js?v=202610270252"></script>
+<script src="js/config.js?v=202610270313"></script>
+<script src="js/core/utils.js?v=202610270313"></script>
+<script src="js/core/state.js?v=202610270313"></script>
+<script src="js/engine/optics.js?v=202610270313"></script>
+<script src="js/engine/nkdata.js?v=202610270313"></script>
+<script src="js/engine/thinfilm.js?v=202610270313"></script>
+<script src="js/engine/tracer.js?v=202610270313"></script>
+<script src="js/components/library.js?v=202610270313"></script>
+<script src="js/components/sources.js?v=202610270313"></script>
+<script src="js/components/optics.js?v=202610270313"></script>
+<script src="js/components/detectors.js?v=202610270313"></script>
+<script src="js/components/vertical.js?v=202610270313"></script>
+<script src="js/components/photonics.js?v=202610270313"></script>
+<script src="js/components/plot.js?v=202610270313"></script>
+<script src="js/components/illustration.js?v=202610270313"></script>
+<script src="js/components/annotations.js?v=202610270313"></script>
+<script src="js/render/text.js?v=202610270313"></script>
+<script src="js/render/defs.js?v=202610270313"></script>
+<script src="js/render/beams.js?v=202610270313"></script>
+<script src="js/render/renderer.js?v=202610270313"></script>
+<script src="js/render/renderer3d.js?v=202610270313"></script>
+<script src="js/render/labels.js?v=202610270313"></script>
+<script src="js/anim/animation.js?v=202610270313"></script>
+<script src="js/io/project.js?v=202610270313"></script>
+<script src="js/io/export.js?v=202610270313"></script>
+<script src="js/io/templates.js?v=202610270313"></script>
+<script src="js/io/styles.js?v=202610270313"></script>
+<script src="js/ui/dom.js?v=202610270313"></script>
+<script src="js/ui/canvas.js?v=202610270313"></script>
+<script src="js/ui/palette.js?v=202610270313"></script>
+<script src="js/ui/inspector.js?v=202610270313"></script>
+<script src="js/ui/layers.js?v=202610270313"></script>
+<script src="js/ui/timeline.js?v=202610270313"></script>
+<script src="js/ui/dialogs.js?v=202610270313"></script>
+<script src="js/ui/menus.js?v=202610270313"></script>
+<script src="js/app.js?v=202610270313"></script>
+<!-- Anonymous visit and feature-usage counts (GoatCounter: no cookies, no personal data, never any figure content) -->
+<script>window.goatcounter = { path: function (p) { return p.replace(/index\.html$/, ''); } };</script>
+<script data-goatcounter="https://rakeshnaik.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<script>
+/* Public visitor count (GoatCounter counter API). Stays hidden until
+   GoatCounter answers, e.g. if "Allow adding visitor counts" is off. */
+(function () {
+  var el = document.querySelector('[data-visit-counter]'); if (!el || !window.fetch) return;
+  fetch('https://rakeshnaik.goatcounter.com/counter/' + encodeURIComponent(el.getAttribute('data-visit-counter')) + '.json')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) { if (d && d.count) { el.querySelector('[data-count]').textContent = d.count; el.hidden = false; } })
+    .catch(function () {});
+})();
+</script>
 </body>
 </html>

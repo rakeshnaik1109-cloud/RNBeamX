@@ -87,6 +87,7 @@ Dl.exporter = (initial = 'svg') => {
         await X.video(opts, f => { prog.firstChild.style.width = (f * 100).toFixed(1) + '%'; });
       }
       if (fmt !== 'project') RNBX.toast('Exported ' + FORMATS.find(f => f.id === fmt).name);
+      U.track('export-' + fmt);
     } catch (e) { console.error(e); RNBX.toast(e.message || 'Export failed', 'error'); }
     go.disabled = false; go.textContent = 'Export';
   };
@@ -106,6 +107,7 @@ Dl.templates = () => {
       RNBX.setDocument(RNBX.normalizeDocument(t.build()), true);
       m.close();
       RNBX.toast(t.name + ' loaded. Drag anything; the beams follow.');
+      U.track('template-' + t.id);
     };
     grid.append(card);
   });
