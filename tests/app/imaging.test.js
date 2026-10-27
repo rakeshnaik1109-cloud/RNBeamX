@@ -142,7 +142,7 @@ module.exports = async ({ base, getBrowser, H }) => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     return { heads, shown, drawn, n: m ? 1 : 0 };
   });
-  H.check('template picker is grouped by topic', pick.heads.includes('Microscopy & imaging') && pick.heads.includes('Interferometers & polarisation'), pick.heads);
+  H.check('template picker is grouped by topic', pick.heads.includes('Microscopy & imaging · 7') && pick.heads.includes('Interferometers & polarisation · 4'), pick.heads);
   H.check('template search finds the confocal microscope and draws its preview', pick.shown.length === 1 && /Laser-scanning confocal/.test(pick.shown[0]) && pick.drawn, pick.shown);
   for (const id of ['aberration', 'fourf']) {
     await page.evaluate(i => { RNBX.setDocument(RNBX.templates.list.find(t => t.id === i).build()); RNBX.canvas.fit(); }, id);

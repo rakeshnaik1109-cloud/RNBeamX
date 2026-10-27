@@ -132,7 +132,7 @@ Dl.templates = () => {
     const q = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     let shown = 0;
     cards.forEach(c => { const ok = q.every(w => c.text.includes(w)); c.card.style.display = ok ? '' : 'none'; if (ok) { shown++; if (c.card.firstChild.draw) c.card.firstChild.draw(); } });
-    groups.forEach(g => { const any = cards.some(c => c.g === g && c.card.style.display !== 'none'); sections[g].head.style.display = sections[g].grid.style.display = any ? '' : 'none'; });
+    groups.forEach(g => { const k = cards.filter(c => c.g === g && c.card.style.display !== 'none').length; sections[g].head.textContent = `${g} · ${k}`; sections[g].head.style.display = sections[g].grid.style.display = k ? '' : 'none'; });
     none.style.display = shown ? 'none' : '';
   };
   search.oninput = filter;
