@@ -115,6 +115,13 @@ js/vendor/              jsPDF + svg2pdf (MIT), loaded only for PDF export
 dist/                   single-file build (python3 build-standalone.py)
 ```
 
+## Tests
+
+`npm test` runs about 110 checks: the physics (thin films, SPR and gratings against
+closed forms, published values and limiting cases) and the app itself in headless
+Chromium (every part and template, exports, share links, touch devices). GitHub runs
+them on every push. See [tests/README.md](tests/README.md).
+
 ## Privacy
 
 Your figures stay in your browser: nothing you draw is uploaded. The only thing

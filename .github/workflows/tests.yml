@@ -1,0 +1,23 @@
+# Runs the RNBeamX test suite (physics + the app in headless Chromium) on every push.
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - name: Screenshots and exported files (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: tests/output
