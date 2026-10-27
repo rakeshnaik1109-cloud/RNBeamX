@@ -42,6 +42,35 @@ focuses 10 mm away on the page.
   dropped onto the raised beam take its height automatically; a part at another
   height lets the beam pass over or under it.
 
+### Optomechanics and imaging parts
+
+The *Optomechanics* and *Imaging* groups hold generic lab hardware, drawn in the
+app's own style (they are not copies of any maker's catalogue drawings). Each one
+traces like the optic it holds:
+
+| Part | Behaviour in the beam |
+|---|---|
+| Kinematic, gimbal and flip mirror mounts | Mirror. *Fine tilt* turns the mirror (a tilt of θ steers the beam by 2θ, and it can be keyframed). A flip mount that is flipped out lets the beam pass. |
+| Galvo scanning mirror | Mirror with a *scan angle*; keyframe it to scan the beam. |
+| Lens tube | Empty, a lens, a band-pass filter or a **beam expander**: a Keplerian pair whose focal lengths fit the drawn tube length, so the beam leaves *mag*× wider and collimated. |
+| Cage cube, cage plate | A beam splitter, PBS, turning mirror or dichroic in a cube; a lens, an iris or nothing in a plate. |
+| Beam shutter | Open passes the beam, closed blocks it (keyframe *Open* to switch it in an animation). |
+| Breadboard, rail with carriers, rotation / XYZ stage, tilt platform | Drawn under the optics; no effect on the beam. |
+| Right-angle, Dove and wedge prisms, axicon (*Filters & dispersion*) | Glass with real refraction and total internal reflection: the right-angle prism turns the beam by 90°. |
+| Diffuser | Opens the beam up to the set full angle. |
+| Fluorescence filter cube | Excitation filter on the left face, long-pass dichroic on the diagonal, emission filter on the bottom face. Excitation entering from the left goes up towards the objective; fluorescence coming back down passes to the camera, and laser light does not. |
+| Eyepiece, camera lens, telecentric lens | Thin lenses with the set focal length. |
+| Integrating sphere (*Detectors*) | Collects the beam. |
+
+More types of existing parts are listed with them: tunable, fibre, Ti:sapphire,
+quantum-cascade and diode-module lasers; xenon and halogen lamps; achromatic
+doublet, cylindrical, ball, aspheric, tube, condenser and scan lenses; wave
+plates and polarisers in rotation mounts; D-shaped pick-off mirrors, pellicle
+and wedged beam samplers, hot and cold mirrors; quadrant and balanced
+photodiodes, a wavefront sensor and a scientific camera; and lab electronics
+(lock-in amplifier, laser-diode driver, temperature controller, photodiode
+amplifier, motion controller, power supply, DAQ). Search the library by name.
+
 ## 3. Labels and text
 
 Every component gets a label (M1, L2, PBS…), placed clear of parts and beams.

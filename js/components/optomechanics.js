@@ -1,0 +1,425 @@
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/optomechanics.js
+   Optomechanics and imaging hardware of the kind found on any
+   optics bench, drawn in RNBeamX's own generic style (no product
+   names or catalogue artwork). Parts that touch the beam are real
+   optics for the tracer: mounted mirrors reflect, lens tubes and
+   cage plates focus, the filter cube splits excitation from
+   emission, prisms refract and totally reflect, shutters block.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
+const OM = 'Optomechanics', IM = 'Imaging';
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Samples & mechanics'), 0, OM);
+lib.CATEGORIES.splice(lib.CATEGORIES.indexOf('Lenses & objectives') + 1, 0, IM);
+
+const rot = (p, deg) => { const a = U.rad(deg), c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; };
+const knob = (S, x, y, r) => `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}" fill="${S.fill('metal')}" ${H.stroke(S, 0.7)}/><circle cx="${n(x)}" cy="${n(y)}" r="${n(r * 0.45)}" fill="${S.shaded ? '#59616c' : '#ffffff'}" ${H.stroke(S, 0.5)}/>`;
+const label = (S, x, y, t, size) => `<text x="${n(x)}" y="${n(y)}" font-family="${U.esc(S.font)}" font-size="${n(size || S.fs * 0.7)}" fill="${S.shaded ? '#e8ecf2' : S.ink}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(t)}</text>`;
+const anodBox = (x0, x1, y0, y1, z0, z1) => ({ kind: 'box', x: [x0, x1], y: [y0, y1], z: [z0, z1], mat: 'anod' });
+
+/* ================= Mirror mounts ================= */
+lib.register({
+  type: 'kmount', name: 'Kinematic mirror mount', abbr: 'M', category: OM,
+  keywords: 'kinematic mirror mount adjustable tip tilt steering mount screws gimbal flip',
+  defaults: { d: 8, R: 1, style: 'kinematic', tilt: 0, flipped: false, piezo: 0 },
+  params: [lib.P.diameter(), { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'style', label: 'Mount', type: 'select', options: [['kinematic', 'Kinematic (two adjusters)'], ['gimbal', 'Gimbal (centred pivot)'], ['flip', 'Flip mount (in / out of the beam)']] },
+    { key: 'tilt', label: 'Fine tilt', type: 'number', unit: '°', min: -20, max: 20, step: 0.1, animatable: true, hint: 'turn the adjusters' },
+    { key: 'flipped', label: 'Flipped out of the beam', type: 'bool', show: p => p.style === 'flip' },
+    { key: 'piezo', label: 'Piezo displacement', type: 'number', unit: 'nm', step: 10, animatable: true }],
+  variants: [{ name: 'Gimbal mirror mount', props: { style: 'gimbal' } }, { name: 'Flip mirror mount', props: { style: 'flip' }, keywords: 'flip mount flipper switch beam path' }],
+  snap: 'mirror', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-0.4, -p.d / 2 - 1.6, 4.6, p.d / 2 + 1.6],
+  draw(p, S) {
+    const r = p.d / 2, out = p.style === 'flip' && p.flipped;
+    let s = '';
+    // mount plate behind the mirror, with adjusters (kinematic) or a pivot ring (gimbal)
+    s += H.rect(S, 1.6, -r - 1.6, 2.4, p.d + 3.2, S.fill('anod'), 'rx="0.5"');
+    if (p.style === 'kinematic') s += knob(S, 4.1, -r - 0.4, 0.75) + knob(S, 4.1, r + 0.4, 0.75);
+    if (p.style === 'gimbal') s += `<circle cx="2.8" cy="0" r="${n(Math.min(1.4, r * 0.45))}" fill="none" ${H.stroke(S, 0.8, S.shaded ? '#c9ced6' : S.ink)}/>`;
+    if (p.style === 'flip') s += H.rect(S, 1.2, r + 1.6, 3.2, 0.9, S.fill('metal')) + knob(S, 2.8, r + 2.05, 0.45);
+    const g = `<g transform="rotate(${n(out ? -80 : p.tilt)} 0 ${n(out ? r + 1.6 : 0)})"${out ? ' opacity="0.45"' : ''}>` +
+      H.rect(S, 0, -r, 1.3, p.d, S.fill('mirror')) + H.line(S, 0, -r, 0, r, '', 2.2) + '</g>';
+    return s + g;
+  },
+  optics: p => {
+    if (p.style === 'flip' && p.flipped) return [];
+    const r = p.d / 2;
+    return [{ kind: 'mirror', a: rot([0, -r], p.tilt || 0), b: rot([0, r], p.tilt || 0), R: p.R }];
+  },
+  solid: (p, bh) => [{ kind: 'cyl', x: [0, 1.3], r: [p.d / 2, p.d / 2], mat: 'mirror' }, anodBox(1.6, 4, -p.d / 2 - 1.6, p.d / 2 + 1.6, bh - p.d / 2 - 1.6, bh + p.d / 2 + 1.6)],
+});
+
+lib.register({
+  type: 'galvo', name: 'Galvo scanning mirror', abbr: 'GM', category: OM,
+  keywords: 'galvo galvanometer scanner scanning mirror laser scanning microscope raster resonant',
+  defaults: { d: 6, scan: 0, R: 1 },
+  params: [lib.P.diameter(6), { key: 'scan', label: 'Scan angle (mechanical)', type: 'number', unit: '°', min: -20, max: 20, step: 0.1, animatable: true, hint: 'keyframe it to scan the beam' },
+    { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 }],
+  snap: 'mirror', mount: true, labelPos: [0, 8],
+  bbox: p => [-0.6, -p.d / 2 - 0.6, 7, p.d / 2 + 0.6],
+  draw(p, S) {
+    const r = p.d / 2;
+    let s = H.rect(S, 2.2, -2, 4.6, 4, S.fill('dark'), 'rx="0.8"') + H.rect(S, 1.2, -0.5, 1.2, 1, S.fill('metal'));
+    s += `<g transform="rotate(${n(p.scan)})">${H.rect(S, 0, -r, 1, p.d, S.fill('mirror'))}${H.line(S, 0, -r, 0, r, '', 2)}</g>`;
+    return s + `<path d="M ${n(-0.4)} ${n(-r - 0.4)} A ${n(r + 0.4)} ${n(r + 0.4)} 0 0 0 ${n(-0.4)} ${n(r + 0.4)}" fill="none" ${H.stroke(S, 0.5)} stroke-dasharray="0.5 0.5"/>`;
+  },
+  optics: p => [{ kind: 'mirror', a: rot([0, -p.d / 2], p.scan || 0), b: rot([0, p.d / 2], p.scan || 0), R: p.R }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [0, 1], r: [p.d / 2, p.d / 2], mat: 'mirror' }, { kind: 'cyl', x: [2.2, 6.8], r: [2, 2], mat: 'dark' }],
+});
+
+/* ================= Lens tubes and cage system ================= */
+lib.register({
+  type: 'lenstube', name: 'Lens tube', abbr: 'LT', category: OM,
+  keywords: 'lens tube threaded tube beam expander telescope collimator enclosure',
+  defaults: { L: 14, D: 7, content: 'lens', f: 100, mag: 3, center: 532, width: 10 },
+  params: [{ key: 'content', label: 'Inside', type: 'select', options: [['empty', 'Empty (beam passes)'], ['lens', 'Lens'], ['expander', 'Beam expander (two lenses)'], ['filter', 'Band-pass filter']] },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -5000, max: 5000, step: 1, show: p => p.content === 'lens' },
+    { key: 'mag', label: 'Magnification', type: 'number', unit: '×', min: 0.1, max: 20, step: 0.1, show: p => p.content === 'expander', hint: 'beam diameter out ÷ in' },
+    { key: 'center', label: 'Pass-band centre', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.content === 'filter' },
+    { key: 'width', label: 'Bandwidth', type: 'number', unit: 'nm', min: 0.1, max: 2000, step: 0.5, show: p => p.content === 'filter' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 80, step: 0.5 }, { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
+  variants: [{ name: 'Beam expander (tube)', props: { content: 'expander', L: 22, D: 8, mag: 3 }, keywords: 'beam expander galilean keplerian telescope' }],
+  snap: 'perp', mount: true, labelPos: [0, 7],
+  bbox: p => [-p.L / 2, -p.D / 2 - 0.4, p.L / 2, p.D / 2 + 0.4],
+  draw(p, S) {
+    const L = p.L, R = p.D / 2, x1 = -L * 0.32, x2 = L * 0.32;
+    let s = H.rect(S, -L / 2, -R, L, p.D, S.shaded ? 'url(#rbx-metal)' : '#eef0f2', 'rx="0.4"');
+    // threads at both ends
+    for (const xe of [-L / 2, L / 2 - 1.2]) for (let k = 0; k < 4; k++) s += H.line(S, xe + k * 0.3 + 0.15, -R - 0.35, xe + k * 0.3 + 0.15, R + 0.35, '', 0.4);
+    const lensAt = (x, sz, conv) => `<path d="${H.lensPath(conv ? 'biconvex' : 'biconcave', sz, 1.2)}" transform="translate(${n(x)} 0)" fill="${S.fill('glass')}" ${H.stroke(S, 0.7)}/>`;
+    if (p.content === 'lens') s += lensAt(0, R * 0.8, p.f >= 0);
+    if (p.content === 'expander') s += lensAt(x1, R * 0.45, true) + lensAt(x2, R * 0.8, true);
+    if (p.content === 'filter') s += H.rect(S, -0.4, -R * 0.8, 0.8, R * 1.6, U.wavelengthColor(p.center));
+    return s;
+  },
+  optics: (p, obj, doc) => {
+    const R = p.D / 2 * 0.8;
+    if (p.content === 'lens') return [{ kind: 'lens', a: [0, -R], b: [0, R], f: p.f }];
+    if (p.content === 'filter') return [{ kind: 'filter', a: [0, -R], b: [0, R], mode: 'bandpass', center: p.center, width: p.width, T: 0.95 }];
+    if (p.content === 'expander') {
+      // Keplerian pair whose focal lengths fit the drawn spacing: f1 + f2 = spacing, f2 / f1 = magnification
+      const sc = (doc && doc.style.scale) || 10, sep = p.L * 0.64 * sc, m = Math.max(0.05, p.mag), f1 = sep / (1 + m), f2 = m * f1;
+      return [{ kind: 'lens', a: [-p.L * 0.32, -R], b: [-p.L * 0.32, R], f: f1 }, { kind: 'lens', a: [p.L * 0.32, -R], b: [p.L * 0.32, R], f: f2 }];
+    }
+    return [{ kind: 'pass', a: [0, -R], b: [0, R] }];
+  },
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2, p.L / 2], r: [p.D / 2, p.D / 2], mat: 'metal' }],
+});
+
+lib.register({
+  type: 'cagecube', name: 'Cage cube', abbr: 'CC', category: OM,
+  keywords: 'cage cube system rods beam splitter turning mirror dichroic insert 30 mm 60 mm',
+  defaults: { s: 8, insert: 'bs', R: 0.5, edge: 550, mode: 'longpass' },
+  params: [{ key: 'insert', label: 'Insert', type: 'select', options: [['bs', 'Beam splitter'], ['pbs', 'Polarising beam splitter'], ['mirror', 'Turning mirror'], ['dichroic', 'Dichroic mirror']] },
+    { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.insert === 'bs' },
+    { key: 'edge', label: 'Edge', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 1, show: p => p.insert === 'dichroic' },
+    { key: 'mode', label: 'Dichroic', type: 'select', options: [['longpass', 'Long-pass (reflects short)'], ['shortpass', 'Short-pass (reflects long)']], show: p => p.insert === 'dichroic' },
+    { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  variants: [{ name: 'Cage turning mirror', props: { insert: 'mirror' } }, { name: 'Cage dichroic cube', props: { insert: 'dichroic' } }],
+  snap: 'cube', mount: true, labelPos: [0, 7],
+  bbox: p => [-p.s / 2 - 0.8, -p.s / 2 - 0.8, p.s / 2 + 0.8, p.s / 2 + 0.8],
+  draw(p, S) {
+    const h = p.s / 2;
+    let s = H.rect(S, -h, -h, p.s, p.s, S.shaded ? 'url(#rbx-metal)' : '#f1f3f5', 'rx="0.6"');
+    s += H.rect(S, -h + 1, -h + 1, p.s - 2, p.s - 2, S.shaded ? '#2b3038' : '#ffffff');
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => { s += `<circle cx="${n(a * (h - 0.45))}" cy="${n(b * (h - 0.45))}" r="0.42" fill="${S.fill('metal')}" ${H.stroke(S, 0.5)}/>`; });
+    const col = p.insert === 'mirror' ? S.ink : p.insert === 'pbs' ? '#3d5a80' : p.insert === 'dichroic' ? U.wavelengthColor(p.edge - 40) : '#4a7fb5';
+    s += H.line(S, -h + 1, h - 1, h - 1, -h + 1, '', p.insert === 'mirror' ? 2 : 1.4, col);
+    return s;
+  },
+  optics: p => {
+    const h = p.s / 2 - 1, seg = { a: [-h, h], b: [h, -h] };
+    if (p.insert === 'mirror') return [Object.assign({ kind: 'mirror', R: 1 }, seg)];
+    if (p.insert === 'pbs') return [Object.assign({ kind: 'pbs' }, seg)];
+    if (p.insert === 'dichroic') return [Object.assign({ kind: 'dichroic', edge: p.edge, mode: p.mode }, seg)];
+    return [Object.assign({ kind: 'splitter', R: p.R }, seg)];
+  },
+  solid: (p, bh) => [anodBox(-p.s / 2, p.s / 2, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
+});
+
+lib.register({
+  type: 'cageplate', name: 'Cage plate', abbr: 'CP', category: OM,
+  keywords: 'cage plate rods mount lens iris filter holder cage system',
+  defaults: { s: 9, content: 'lens', f: 100, r: 1.2 },
+  params: [{ key: 'content', label: 'Holds', type: 'select', options: [['lens', 'Lens'], ['iris', 'Iris'], ['empty', 'Nothing (beam passes)']] },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -5000, max: 5000, step: 1, show: p => p.content === 'lens' },
+    { key: 'r', label: 'Iris opening (drawn radius)', type: 'number', unit: 'mm', min: 0.05, max: 20, step: 0.05, show: p => p.content === 'iris' },
+    { key: 's', label: 'Plate size', type: 'number', unit: 'mm', min: 4, max: 40, step: 0.5 }],
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-1, -p.s / 2, 1, p.s / 2],
+  draw(p, S) {
+    const h = p.s / 2;
+    let s = H.rect(S, -0.9, -h, 1.8, p.s, S.fill('anod'), 'rx="0.3"');
+    s += H.rect(S, -2.6, -h + 0.3, 5.2, 0.6, S.fill('metal')) + H.rect(S, -2.6, h - 0.9, 5.2, 0.6, S.fill('metal'));   // rods
+    if (p.content === 'lens') s += `<path d="${H.lensPath(p.f >= 0 ? 'biconvex' : 'biconcave', h * 0.6, 1.3)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.7)}/>`;
+    if (p.content === 'iris') { const o = Math.min(p.r, h * 0.7); s += H.rect(S, -0.3, -h * 0.75, 0.6, h * 0.75 - o, S.fill('dark')) + H.rect(S, -0.3, o, 0.6, h * 0.75 - o, S.fill('dark')); }
+    return s;
+  },
+  optics: p => {
+    const h = p.s / 2 * 0.75;
+    if (p.content === 'lens') return [{ kind: 'lens', a: [0, -h], b: [0, h], f: p.f }];
+    if (p.content === 'iris') return [{ kind: 'aperture', a: [0, -h], b: [0, h], r: p.r }];
+    return [{ kind: 'pass', a: [0, -h], b: [0, h] }];
+  },
+  solid: (p, bh) => [anodBox(-0.9, 0.9, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
+});
+
+/* ================= Shutter ================= */
+lib.register({
+  type: 'shutter', name: 'Beam shutter', abbr: 'SH', category: OM,
+  keywords: 'shutter beam block safety electronic mechanical open closed',
+  defaults: { d: 7, open: true },
+  params: [lib.P.diameter(7), { key: 'open', label: 'Open', type: 'bool', animatable: true }],
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-2.4, -p.d / 2 - 1.4, 2.4, p.d / 2 + 1.4],
+  draw(p, S) {
+    const r = p.d / 2;
+    let s = H.rect(S, -2.2, -r - 1.2, 4.4, p.d + 2.4, S.fill('dark'), 'rx="0.7"');
+    s += H.rect(S, -2.2, -r * 0.55, 4.4, r * 1.1, S.shaded ? '#14171c' : '#ffffff');
+    if (!p.open) s += H.rect(S, -0.5, -r * 0.6, 1, r * 1.2, '#e2b33c');
+    return s + label(S, 0, -r - 0.55, p.open ? 'open' : 'closed', 0.9);
+  },
+  optics: p => [{ kind: p.open ? 'pass' : 'absorb', a: [0, -p.d / 2 * 0.55], b: [0, p.d / 2 * 0.55] }],
+  solid: (p, bh) => [{ kind: 'box', x: [-2.2, 2.2], y: [-p.d / 2 - 1.2, p.d / 2 + 1.2], z: [bh - p.d / 2 - 1.2, bh + p.d / 2 + 1.2], mat: 'dark' }],
+});
+
+/* ================= Breadboard, rail, stages ================= */
+lib.register({
+  type: 'breadboard', name: 'Optical breadboard', abbr: '', category: OM, annotation: true, under: true, autoLabel: false,
+  keywords: 'breadboard optical table tapped holes grid honeycomb base plate',
+  defaults: { w: 80, h: 50, pitch: 5, color: '#d7dbe0', holes: true },
+  params: [{ key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 400, step: 1 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 5, max: 400, step: 1 },
+    { key: 'pitch', label: 'Hole spacing (drawn)', type: 'number', unit: 'mm', min: 1, max: 30, step: 0.5 }, { key: 'holes', label: 'Show holes', type: 'bool' }, { key: 'color', label: 'Colour', type: 'color' }],
+  resizable: true,
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  draw(p, S) {
+    let s = `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" rx="1" fill="${p.color}" stroke="${U.darken(p.color, 0.3)}" stroke-width="${n(S.lw)}"/>`;
+    if (p.holes) {
+      const hole = U.darken(p.color, 0.35), r = Math.max(0.15, p.pitch * 0.11);
+      let d = '';
+      for (let x = -p.w / 2 + p.pitch / 2; x < p.w / 2; x += p.pitch) for (let y = -p.h / 2 + p.pitch / 2; y < p.h / 2; y += p.pitch) d += `M ${n(x + r)} ${n(y)} A ${n(r)} ${n(r)} 0 1 0 ${n(x - r)} ${n(y)} A ${n(r)} ${n(r)} 0 1 0 ${n(x + r)} ${n(y)} Z `;
+      s += `<path d="${d}" fill="${hole}"/>`;
+    }
+    return s;
+  },
+});
+lib.register({
+  type: 'rail', name: 'Optical rail with carriers', abbr: '', category: OM, under: true, autoLabel: false,
+  keywords: 'optical rail dovetail carrier bench slide ruler',
+  defaults: { L: 60, W: 4, carriers: 3, ticks: true },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 10, max: 400, step: 1 }, { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 1, max: 20, step: 0.5 },
+    { key: 'carriers', label: 'Carriers', type: 'number', min: 0, max: 12, step: 1 }, { key: 'ticks', label: 'Ruler marks', type: 'bool' }],
+  bbox: p => [-p.L / 2, -p.W / 2 - 1, p.L / 2, p.W / 2 + 1],
+  draw(p, S) {
+    let s = H.rect(S, -p.L / 2, -p.W / 2, p.L, p.W, S.shaded ? 'url(#rbx-metal)' : '#eceff2', 'rx="0.4"');
+    if (p.ticks) for (let x = -p.L / 2 + 2; x < p.L / 2 - 1; x += 2) s += H.line(S, x, p.W / 2 - (Math.round((x + p.L / 2) / 2) % 5 === 0 ? 1.4 : 0.8), x, p.W / 2, '', 0.35);
+    const N = Math.round(p.carriers);
+    for (let i = 0; i < N; i++) { const x = -p.L / 2 + p.L * (i + 0.5) / N; s += H.rect(S, x - 2, -p.W / 2 - 1, 4, p.W + 2, S.fill('anod'), 'rx="0.4"'); }
+    return s;
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.W / 2, p.W / 2], z: [0, 1.4], mat: 'metal' }],
+  noPost: true,
+});
+lib.register({
+  type: 'posstage', name: 'Rotation stage', abbr: '', category: OM, under: true, autoLabel: false,
+  keywords: 'rotation stage goniometer xyz stage tilt platform kinematic platform micrometer positioner manual motorised',
+  defaults: { kind: 'rotation', s: 14, angle: 0 },
+  params: [{ key: 'kind', label: 'Type', type: 'select', options: [['rotation', 'Rotation stage'], ['xyz', 'XYZ stage (three micrometers)'], ['tilt', 'Tilt platform (three screws)']] },
+    { key: 'angle', label: 'Dial angle', type: 'number', unit: '°', min: -360, max: 360, step: 1, animatable: true, show: p => p.kind === 'rotation' },
+    { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 5, max: 80, step: 0.5 }],
+  variants: [{ name: 'XYZ stage', props: { kind: 'xyz' } }, { name: 'Tilt platform', props: { kind: 'tilt' } }],
+  bbox: p => [-p.s / 2 - 3, -p.s / 2 - 3, p.s / 2 + 3, p.s / 2 + 3],
+  draw(p, S) {
+    const h = p.s / 2, metal = S.shaded ? 'url(#rbx-metal)' : '#eceff2';
+    let s = '';
+    const micro = (x, y, ang) => `<g transform="translate(${n(x)} ${n(y)}) rotate(${ang})">${H.rect(S, 0, -0.8, 2.6, 1.6, S.fill('metal'))}${H.rect(S, 2.6, -1.1, 1.2, 2.2, S.fill('anod'))}</g>`;
+    if (p.kind === 'rotation') {
+      s += `<circle cx="0" cy="0" r="${n(h)}" fill="${metal}" ${H.stroke(S)}/><circle cx="0" cy="0" r="${n(h * 0.72)}" fill="${S.shaded ? '#3a4049' : '#ffffff'}" ${H.stroke(S, 0.7)}/>`;
+      for (let a = 0; a < 360; a += 10) { const t = U.rad(a + p.angle), l = a % 30 === 0 ? 1.2 : 0.6; s += H.line(S, Math.cos(t) * h, Math.sin(t) * h, Math.cos(t) * (h - l), Math.sin(t) * (h - l), '', 0.4); }
+      s += micro(h - 0.4, h * 0.45, 30);
+    } else {
+      s += H.rect(S, -h, -h, p.s, p.s, metal, 'rx="0.6"') + H.rect(S, -h * 0.75, -h * 0.75, p.s * 0.75, p.s * 0.75, S.shaded ? '#3a4049' : '#ffffff', 'rx="0.4"');
+      if (p.kind === 'xyz') s += micro(h, -h * 0.3, 0) + micro(-h * 0.3, h, 90) + micro(-h, -h * 0.5, 180);
+      else [[-0.55, -0.55], [0.55, -0.55], [0, 0.6]].forEach(([a, b]) => { s += knob(S, a * h, b * h, h * 0.13); });
+    }
+    return s;
+  },
+  optics: () => [],
+  solid: (p, bh) => [{ kind: 'box', x: [-p.s / 2, p.s / 2], y: [-p.s / 2, p.s / 2], z: [0, 2], mat: 'metal' }],
+  noPost: true,
+});
+
+/* ================= Prisms ================= */
+const PRISMS = {
+  rightangle: s => [[-s / 2, s / 2], [s / 2, s / 2], [-s / 2, -s / 2]],
+  dove: s => [[-s, s * 0.25], [s, s * 0.25], [s * 0.5, -s * 0.25], [-s * 0.5, -s * 0.25]],
+  wedge: s => [[-s * 0.14, -s / 2], [s * 0.14, -s / 2], [s * 0.05, s / 2], [-s * 0.14, s / 2]],
+  axicon: s => [[-s * 0.35, -s / 2], [0, -s / 2], [s * 0.35, 0], [0, s / 2], [-s * 0.35, s / 2]],
+};
+lib.register({
+  type: 'rprism', name: 'Right-angle prism', abbr: 'PR', category: 'Filters & dispersion',
+  keywords: 'right angle prism reflecting total internal reflection dove image rotation wedge axicon bessel',
+  defaults: { kind: 'rightangle', s: 8, mat: 'N-BK7', n: 1.5 },
+  params: [{ key: 'kind', label: 'Shape', type: 'select', options: [['rightangle', 'Right-angle (90° turn by TIR)'], ['dove', 'Dove (image rotation)'], ['wedge', 'Wedge (beam steering)'], ['axicon', 'Axicon (Bessel beam)']] },
+    { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 }, lib.P.material(), { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.mat === 'custom' }],
+  variants: [{ name: 'Dove prism', props: { kind: 'dove', s: 7 } }, { name: 'Wedge prism', props: { kind: 'wedge', s: 9 } }, { name: 'Axicon', props: { kind: 'axicon', s: 8 } }],
+  labelPos: [0, 7.5],
+  bbox(p) { const g = PRISMS[p.kind](p.s); return [Math.min(...g.map(q => q[0])), Math.min(...g.map(q => q[1])), Math.max(...g.map(q => q[0])), Math.max(...g.map(q => q[1]))]; },
+  draw(p, S) {
+    const g = PRISMS[p.kind](p.s);
+    let s = `<path d="M ${g.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}/>`;
+    if (S.shaded) s += `<path d="M ${n(g[0][0] + 0.6)} ${n(g[0][1] + (g[0][1] < 0 ? 0.8 : -0.8))} L ${n((g[0][0] + g[1][0]) / 2)} ${n((g[0][1] + g[1][1]) / 2 + (g[0][1] < 0 ? 0.8 : -0.8))}" stroke="#fff" stroke-opacity="0.7" stroke-width="${n(S.lw * 1.4)}" stroke-linecap="round"/>`;
+    return s;
+  },
+  optics: p => [{ poly: PRISMS[p.kind](p.s), mat: p.mat, n: p.n }],
+  solid: (p, bh) => [{ kind: 'poly', pts: PRISMS[p.kind](p.s), z: [bh - p.s * 0.4, bh + p.s * 0.4], mat: 'glass' }],
+});
+
+/* ================= Diffuser ================= */
+lib.register({
+  type: 'diffuser', name: 'Diffuser (ground glass)', abbr: 'D', category: 'Filters & dispersion',
+  keywords: 'diffuser ground glass opal holographic engineered scatter homogenise speckle',
+  defaults: { d: 8, t: 1, spread: 10 },
+  params: [lib.P.diameter(), lib.P.thick(1), { key: 'spread', label: 'Spread (full angle)', type: 'number', unit: '°', min: 0.5, max: 80, step: 0.5 }],
+  snap: 'perp', mount: true, labelPos: [0, 7],
+  bbox: p => [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
+  draw(p, S) {
+    let s = H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, S.shaded ? '#e9eef3' : '#f6f8fa');
+    let d = '';
+    for (let i = 0; i < Math.round(p.d * 3); i++) { const y = -p.d / 2 + (i + 0.5) * p.d / Math.round(p.d * 3), x = -p.t / 2 + ((i * 37) % 10) / 10 * p.t; d += `M ${n(x)} ${n(y)} h 0.05 `; }
+    return s + `<path d="${d}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.9)}" stroke-linecap="round"/>`;
+  },
+  // the transmitted beam opens up: a diverging lens whose cone matches the spread for a 1 mm beam
+  optics: (p, obj, doc) => [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: -((doc && doc.style.scale) || 10) * 0.5 / Math.tan(U.rad(p.spread / 2)) }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.t / 2, p.t / 2], r: [p.d / 2, p.d / 2], mat: { color: '#eef2f6', alpha: 0.8 } }],
+});
+
+/* ================= Imaging ================= */
+lib.register({
+  type: 'filtercube', name: 'Fluorescence filter cube', abbr: 'FC', category: IM,
+  keywords: 'fluorescence filter cube excitation emission dichroic epi microscope gfp dapi',
+  defaults: { s: 9, exc: 488, excW: 20, edge: 505, em: 525, emW: 40 },
+  params: [{ key: 'exc', label: 'Excitation filter centre', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1 }, { key: 'excW', label: 'Excitation bandwidth', type: 'number', unit: 'nm', min: 1, max: 300, step: 1 },
+    { key: 'edge', label: 'Dichroic edge (reflects shorter)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1 },
+    { key: 'em', label: 'Emission filter centre', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1 }, { key: 'emW', label: 'Emission bandwidth', type: 'number', unit: 'nm', min: 1, max: 300, step: 1 },
+    { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 4, max: 40, step: 0.5 }],
+  hint: 'Excitation enters from the left and is reflected up (towards the objective); fluorescence coming back down passes the dichroic and the emission filter at the bottom.',
+  snap: 'cube', mount: true, labelPos: [0, 8],
+  bbox: p => [-p.s / 2 - 0.6, -p.s / 2, p.s / 2, p.s / 2 + 0.6],
+  draw(p, S) {
+    const h = p.s / 2;
+    let s = H.rect(S, -h, -h, p.s, p.s, S.fill('anod'), 'rx="0.6"') + H.rect(S, -h + 0.9, -h + 0.9, p.s - 1.8, p.s - 1.8, S.shaded ? '#22262d' : '#ffffff');
+    s += H.rect(S, -h - 0.6, -h * 0.6, 0.9, h * 1.2, U.wavelengthColor(p.exc));
+    s += H.rect(S, -h * 0.6, h - 0.3, h * 1.2, 0.9, U.wavelengthColor(p.em));
+    s += H.line(S, -h + 1, h - 1, h - 1, -h + 1, '', 1.4, U.wavelengthColor(p.edge - 30));
+    return s;
+  },
+  optics: p => {
+    const h = p.s / 2, k = h - 1;
+    return [
+      { kind: 'filter', a: [-h - 0.2, -h * 0.6], b: [-h - 0.2, h * 0.6], mode: 'bandpass', center: p.exc, width: p.excW, T: 0.95 },
+      { kind: 'dichroic', a: [-k, k], b: [k, -k], edge: p.edge, mode: 'longpass' },
+      { kind: 'filter', a: [-h * 0.6, h + 0.2], b: [h * 0.6, h + 0.2], mode: 'bandpass', center: p.em, width: p.emW, T: 0.95 },
+    ];
+  },
+  solid: (p, bh) => [anodBox(-p.s / 2, p.s / 2, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
+});
+lib.register({
+  type: 'eyepiece', name: 'Eyepiece', abbr: 'EP', category: IM,
+  keywords: 'eyepiece ocular microscope telescope viewing',
+  defaults: { L: 10, D: 6, f: 25, mag: '10×' },
+  params: [{ key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: 1, max: 500, step: 1 }, { key: 'mag', label: 'Engraving', type: 'text' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
+  snap: 'perp', mount: true, labelPos: [0, 7],
+  bbox: p => [-p.L / 2, -p.D / 2 - 1, p.L / 2, p.D / 2 + 1],
+  draw(p, S) {
+    const L = p.L, R = p.D / 2;
+    let s = H.rect(S, -L / 2, -R, L * 0.7, p.D, S.fill('dark'), 'rx="0.4"') + H.rect(S, L * 0.2, -R - 1, L * 0.3, p.D + 2, S.fill('dark'), 'rx="0.6"');
+    s += `<path d="${H.lensPath('biconvex', R * 0.8, 1)}" transform="translate(${n(L * 0.42)} 0)" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+    return s + (p.mag ? label(S, -L * 0.15, 0, p.mag, Math.min(R * 0.8, S.fs * 0.8)) : '');
+  },
+  optics: p => [{ kind: 'lens', a: [0, -p.D / 2 * 0.8], b: [0, p.D / 2 * 0.8], f: p.f }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2, p.L * 0.2], r: [p.D / 2, p.D / 2], mat: 'dark' }, { kind: 'cyl', x: [p.L * 0.2, p.L / 2], r: [p.D / 2 + 1, p.D / 2 + 1], mat: 'dark' }],
+});
+lib.register({
+  type: 'cameralens', name: 'Camera lens', abbr: 'CL', category: IM,
+  keywords: 'camera lens objective imaging lens c-mount machine vision zoom telecentric',
+  defaults: { L: 9, D: 7, f: 50, text: 'f = 50 mm' },
+  params: [{ key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: 1, max: 2000, step: 1 }, { key: 'text', label: 'Engraving', type: 'text' },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 }],
+  variants: [{ name: 'Telecentric lens', props: { L: 16, D: 8, f: 100, text: 'telecentric' }, keywords: 'telecentric metrology' }],
+  snap: 'perp', mount: true, labelPos: [0, 7.5],
+  bbox: p => [-p.L / 2, -p.D / 2, p.L / 2, p.D / 2],
+  draw(p, S) {
+    const L = p.L, R = p.D / 2;
+    let s = H.rect(S, -L / 2, -R, L, p.D, S.fill('dark'), 'rx="0.6"');
+    for (const x of [-L * 0.2, L * 0.15]) for (let k = 0; k < 5; k++) s += H.line(S, x + k * 0.35, -R, x + k * 0.35, R, '', 0.35, S.shaded ? '#59616c' : S.ink);
+    s += `<path d="M ${n(-L / 2)} ${n(-R * 0.7)} Q ${n(-L / 2 - 0.8)} 0 ${n(-L / 2)} ${n(R * 0.7)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+    return s + (p.text ? `<text x="${n(L * 0.32)}" y="0" font-family="${U.esc(S.font)}" font-size="${n(Math.min(R * 0.55, S.fs * 0.6))}" fill="${S.shaded ? '#e8ecf2' : S.ink}" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 ${n(L * 0.32)} 0)">${RNBX.text.markup(p.text)}</text>` : '');
+  },
+  optics: p => [{ kind: 'lens', a: [0, -p.D / 2 * 0.8], b: [0, p.D / 2 * 0.8], f: p.f }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.L / 2, p.L / 2], r: [p.D / 2, p.D / 2], mat: 'dark' }],
+});
+lib.register({
+  type: 'intsphere', name: 'Integrating sphere', abbr: 'IS', category: 'Detectors',
+  keywords: 'integrating sphere total reflectance transmittance diffuse uniform illumination power',
+  defaults: { r: 6, ports: 2 },
+  params: [{ key: 'r', label: 'Radius', type: 'number', unit: 'mm', min: 2, max: 40, step: 0.5 }, { key: 'ports', label: 'Extra ports', type: 'number', min: 0, max: 3, step: 1 }],
+  snap: 'perp', labelPos: [0, 9],
+  bbox: p => [-0.8, -p.r - 1, 2 * p.r + 1.4, p.r + 1],
+  draw(p, S, obj) {
+    const r = p.r, id = 'rbx-is-' + (obj ? obj.id : 'x');
+    let s = `<defs><radialGradient id="${id}" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="${S.shaded ? '#9aa3ad' : '#e6e9ed'}"/></radialGradient></defs>`;
+    s += `<circle cx="${n(r + 0.6)}" cy="0" r="${n(r)}" fill="url(#${id})" ${H.stroke(S)}/>`;
+    s += H.rect(S, -0.6, -1, 1.6, 2, S.fill('metal'));                       // entrance port
+    const ang = [-60, 60, 180].slice(0, p.ports);
+    ang.forEach(a => { const t = U.rad(a), x = r + 0.6 + Math.cos(t) * r, y = Math.sin(t) * r; s += `<g transform="translate(${n(x)} ${n(y)}) rotate(${a})">${H.rect(S, -0.2, -0.9, 1.4, 1.8, S.fill('metal'))}</g>`; });
+    return s;
+  },
+  optics: () => [{ kind: 'absorb', a: [0, -1], b: [0, 1] }],
+  // a sphere built from cone slices along the axis
+  solid: (p) => { const N = 10, out = []; for (let i = 0; i < N; i++) { const a = Math.PI * i / N, b = Math.PI * (i + 1) / N; out.push({ kind: 'cyl', x: [0.6 + p.r * (1 - Math.cos(a)), 0.6 + p.r * (1 - Math.cos(b))], r: [Math.max(0.05, p.r * Math.sin(a)), Math.max(0.05, p.r * Math.sin(b))], mat: 'body' }); } return out; },
+});
+
+/* ================= more types of existing parts (variants) ================= */
+const addVariants = (type, list) => { const d = lib.get(type); if (d) d.variants = (d.variants || []).concat(list); };
+addVariants('laser', [
+  { name: 'Tunable laser', props: { lambda: 1550, text: 'tunable', L: 18, H: 7 }, keywords: 'tunable laser external cavity telecom swept' },
+  { name: 'Fibre laser', props: { lambda: 1064, text: 'fibre', L: 16, H: 5 }, keywords: 'fiber fibre laser ytterbium erbium' },
+  { name: 'Ti:sapphire laser', props: { lambda: 800, pulsed: true, text: 'Ti:Sa', L: 24, H: 8 }, keywords: 'ti sapphire titanium femtosecond oscillator' },
+  { name: 'Quantum cascade laser (mid-IR)', props: { lambda: 4500, text: 'QCL', L: 12, H: 6 }, keywords: 'qcl quantum cascade mid infrared' },
+  { name: 'Laser diode module', props: { lambda: 405, L: 7, H: 4, power: 50 }, keywords: 'laser diode module pointer violet blue' },
+]);
+addVariants('lamp', [
+  { name: 'Xenon arc lamp', props: { lmin: 380, lmax: 750, count: 9, L: 14, H: 10 }, keywords: 'xenon arc lamp solar simulator' },
+  { name: 'Halogen lamp', props: { lmin: 450, lmax: 900, count: 9, L: 12, H: 8 }, keywords: 'halogen tungsten lamp fibre illuminator' },
+]);
+addVariants('led', [{ name: 'Collimated LED (mounted)', props: {}, category: IM, keywords: 'mounted collimated led illumination microscope' }]);
+addVariants('mirror', [
+  { name: 'D-shaped pick-off mirror', props: { d: 5, t: 1 }, keywords: 'd shaped pickoff pick-off mirror' },
+  { name: 'Broadband dielectric mirror', props: { coating: 'silver' }, keywords: 'dielectric broadband laser line mirror' },
+]);
+addVariants('bsplate', [
+  { name: 'Pellicle beam splitter', props: { t: 0.15, R: 0.08 }, keywords: 'pellicle membrane ghost free splitter' },
+  { name: 'Wedged sampler (pick-off)', props: { t: 1.4, R: 0.04 }, keywords: 'beam sampler pickoff wedge' },
+]);
+addVariants('dichroic', [
+  { name: 'Hot mirror', props: { mode: 'shortpass', edge: 720 }, keywords: 'hot mirror reflects infrared' },
+  { name: 'Cold mirror', props: { mode: 'longpass', edge: 700 }, keywords: 'cold mirror reflects visible' },
+]);
+addVariants('pd', [{ name: 'Quadrant photodiode', props: { sensor: 'quad' }, keywords: 'quadrant position sensing detector qpd psd alignment' }, { name: 'Balanced photodetector', props: { s: 5.5, sensor: 'balanced' }, keywords: 'balanced detector differential' }]);
+addVariants('camera', [{ name: 'Wavefront sensor', props: { L: 9, H: 9, front: 'lenslet' }, keywords: 'shack hartmann wavefront sensor lenslet' }, { name: 'Scientific camera', props: { L: 12, H: 10 }, category: IM, keywords: 'scmos emccd scientific camera imaging' }]);
+addVariants('instrument', [
+  { name: 'Lock-in amplifier', props: { text: 'Lock-in', icon: 'meter', w: 18, h: 9 }, keywords: 'lock in amplifier demodulator' },
+  { name: 'Laser diode driver', props: { text: 'LD driver', icon: 'meter', w: 16, h: 8 }, keywords: 'laser diode driver current controller' },
+  { name: 'Temperature controller', props: { text: 'TEC', icon: 'meter', w: 14, h: 8 }, keywords: 'temperature controller tec peltier' },
+  { name: 'Photodiode amplifier', props: { text: 'TIA', w: 12, h: 7 }, keywords: 'transimpedance amplifier photodiode amplifier' },
+  { name: 'Motion controller', props: { text: 'Motion ctrl', icon: 'meter', w: 16, h: 8 }, keywords: 'motion controller stepper piezo driver' },
+  { name: 'Power supply', props: { text: 'PSU', icon: 'meter', w: 14, h: 8 }, keywords: 'power supply dc' },
+  { name: 'Data acquisition (DAQ)', props: { text: 'DAQ', w: 14, h: 8 }, keywords: 'daq data acquisition adc' },
+]);
+['hwp', 'qwp', 'polarizer'].forEach(t => { const d = lib.get(t); if (d) addVariants(t, [{ name: d.name.replace(/ \(.*\)$/, '') + ' in rotation mount', props: { mounted: true }, category: OM, keywords: 'rotation mount graduated ' + (d.keywords || '') }]); });
+})();

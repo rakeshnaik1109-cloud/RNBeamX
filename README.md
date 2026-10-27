@@ -67,6 +67,7 @@ The tracer is a real 2D optical model, not just a line router:
 - **Building blocks for device sketches**: substrate and film slabs, grating ridges, conformal coatings, nano-object arrays (disks, pillars, cones, spheres, core–shell, rods) and 2D-material sheets that stack onto each other and can be calculated as a stack.
 - **Shapes**: a 3D shape (box, cylinders, tube, cone, pyramid, sphere, hemisphere, wedge), atoms and bonds, and a free polygon / path, to draw instruments, stages or molecules in your own style.
 - **Device sketches**: multilayer / grating stacks with a layer key, angle markers and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
+- **Optomechanics and imaging parts**: kinematic, gimbal and flip mirror mounts, galvo mirrors, lens tubes (with a working beam expander), cage cubes and plates, shutters, breadboards, rails and stages, right-angle / Dove / wedge prisms and axicons, diffusers, a fluorescence filter cube, eyepieces, camera lenses and an integrating sphere, plus more lasers, lenses, detectors and lab electronics. Generic drawings in the app's own style, and each traces like the optic it holds.
 - **One-click reset** (↺ next to undo) that is itself undoable.
 - **Groups and your own library**: group parts (Ctrl+G), save them to My components and share them as component files.
 - **Rigorous grating calculation (RCWA)** for gratings built from blocks, with every diffraction order, running in the background.
@@ -106,7 +107,7 @@ index.html              application shell
 css/                    style.css (tokens, controls) · layout.css (panels, canvas)
 js/core/                utils (vectors, colour, complex) · state (document, events, undo)
 js/engine/              optics (Jones, Sellmeier, filters) · tracer (beam tracing)
-js/components/          library (registry, drawing kit) · sources · optics · detectors · vertical · photonics · plot · annotations
+js/components/          library (registry, drawing kit) · sources · optics · detectors · vertical · photonics · optomechanics · plot · annotations
 js/render/              text markup · defs (gradients) · beams · renderer (2D/SVG) · renderer3d · labels (auto placement)
 js/anim/                animation (keyframes, easing, playback)
 js/io/                  project (save/open/autosave) · export (SVG/PDF/PNG/TIFF/video) · templates · styles

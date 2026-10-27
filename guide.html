@@ -67,7 +67,7 @@ footer .bar { padding: 20px 16px; }
   <div class="bar">
     <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
     <nav>
-      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
+      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#blocks">Building blocks</a><a href="#illustration">Illustration parts</a><a href="#optomech">Optomechanics</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
       <a href="#data">Panels &amp; data</a><a href="#layout">Groups &amp; layout</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
     </nav>
   </div>
@@ -140,6 +140,18 @@ footer .bar { padding: 20px 16px; }
     </table>
     </div>
     <div class="tip">Text everywhere accepts markup: <code>θ_i</code>, <code>θ_{obs}</code>, <code>TiO_2</code>, <code>x^{2+}</code>, <code>\lambda</code>, <code>*italic*</code>, <code>**bold**</code>.</div>
+  </section>
+
+  <section id="optomech">
+    <h2>Optomechanics and imaging parts</h2>
+    <p class="lead">Mounts, tubes, cages, stages and imaging optics, drawn generically in the app's own style. They are real optics in the beam, not just pictures.</p>
+    <img class="shot" src="assets/guide/optomech.png" alt="Mirror mounts, galvo, shutter, rotation-mounted wave plate, lens tube, cage parts, prisms, filter cube, camera lens, eyepiece, doublet, diffuser, integrating sphere, stages, wavefront sensor, quadrant photodiode, rail and breadboard">
+    <div class="grid" style="margin-top:16px">
+      <div class="card"><h3>Mounts that steer</h3><p>A kinematic mount's <i>Fine tilt</i> steers the beam by twice the angle; a galvo's <i>scan angle</i> can be keyframed; a flip mount flipped out lets the beam through.</p></div>
+      <div class="card"><h3>Lens tubes and cages</h3><p>A lens tube holds a lens, a filter or a beam expander (the beam leaves <i>mag</i>× wider, collimated). Cage cubes take a splitter, PBS, mirror or dichroic.</p></div>
+      <div class="card"><h3>Epi-fluorescence</h3><p>The filter cube sends excitation up to the objective and passes only the emission band down to the camera, so a microscope sketch traces correctly.</p></div>
+      <div class="card"><h3>Prisms and the rest</h3><p>Right-angle prisms turn the beam by total internal reflection; Dove, wedge and axicon shapes refract. Shutters block when closed; breadboards, rails and stages sit under the optics.</p></div>
+    </div>
   </section>
 
   <section id="response">

@@ -165,23 +165,39 @@ lib.register({
   defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6 },
   params: [P.diameter(),
     { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale' },
-    { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave']] },
+    { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave'], ['doublet', 'Achromatic doublet'], ['cylindrical', 'Cylindrical (plano-convex)'], ['ball', 'Ball lens']] },
     { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1 }],
   variants: [
     { name: 'Plano-convex lens', props: { shape: 'planoconvex' } },
     { name: 'Concave (diverging) lens', props: { shape: 'biconcave', f: -100 }, keywords: 'negative diverging' },
+    { name: 'Achromatic doublet', props: { shape: 'doublet', t: 2.4 }, keywords: 'achromat doublet cemented colour corrected' },
+    { name: 'Cylindrical lens', props: { shape: 'cylindrical', t: 1.8 }, keywords: 'cylindrical lens line focus anamorphic' },
+    { name: 'Ball lens', props: { shape: 'ball', d: 4, f: 5 }, keywords: 'ball lens sphere fibre coupling' },
+    { name: 'Aspheric lens', props: { shape: 'planoconvex', t: 2.4, f: 20 }, keywords: 'asphere aspheric collimating short focal length' },
+    { name: 'Tube lens', props: { shape: 'doublet', d: 10, t: 2.6, f: 200 }, category: 'Imaging', keywords: 'tube lens microscope infinity corrected imaging' },
+    { name: 'Condenser lens', props: { shape: 'planoconvex', d: 12, t: 3, f: 30 }, category: 'Imaging', keywords: 'condenser illumination kohler' },
+    { name: 'Scan lens', props: { shape: 'doublet', d: 10, t: 3, f: 50 }, category: 'Imaging', keywords: 'scan lens telecentric laser scanning f-theta' },
   ],
   snap: 'perp', mount: true, labelPos: [0, 7],
   init(obj) { obj.label.text = obj.label.text; },
-  bbox: p => [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2],
+  bbox: p => p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2],
   draw(p, S) {
-    const r = p.d / 2;
-    let s = `<path d="${H.lensPath(p.shape, r, p.t)}" fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}/>`;
+    const r = p.d / 2, glass = `fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}`;
+    if (p.shape === 'ball') return `<circle cx="0" cy="0" r="${n(r)}" ${glass}/>` + (S.shaded ? `<circle cx="${n(-r * 0.35)}" cy="${n(-r * 0.35)}" r="${n(r * 0.22)}" fill="#ffffff" opacity="0.7"/>` : '');
+    if (p.shape === 'doublet') {
+      // crown biconvex element cemented to a flint meniscus (darker)
+      const h = p.t / 2, e = Math.max(0.12, p.t * 0.08), xm = h * 0.15;
+      let s = `<path d="M ${n(-h + e)} ${n(-r)} L ${n(xm)} ${n(-r)} Q ${n(xm - h * 0.9)} 0 ${n(xm)} ${n(r)} L ${n(-h + e)} ${n(r)} Q ${n(-h - h * 0.95)} 0 ${n(-h + e)} ${n(-r)} Z" ${glass}/>`;
+      s += `<path d="M ${n(xm)} ${n(-r)} L ${n(h)} ${n(-r)} Q ${n(h + h * 0.25)} 0 ${n(h)} ${n(r)} L ${n(xm)} ${n(r)} Q ${n(xm - h * 0.9)} 0 ${n(xm)} ${n(-r)} Z" fill="${S.shaded ? '#9fc2dd' : '#cfe0ee'}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S)}/>`;
+      return s;
+    }
+    let s = `<path d="${H.lensPath(p.shape === 'cylindrical' ? 'planoconvex' : p.shape, r, p.t)}" ${glass}/>`;
+    if (p.shape === 'cylindrical') for (let y = -r * 0.7; y <= r * 0.71; y += r * 0.35) s += H.line(S, -p.t / 2 + 0.25, y, p.t * 0.15, y, 'stroke-dasharray="0.4 0.35"', 0.5);
     if (S.shaded) s += `<path d="M ${n(-p.t * 0.12)} ${n(-r * 0.7)} Q ${n(p.t * 0.25)} ${n(-r * 0.2)} ${n(-p.t * 0.05)} ${n(r * 0.35)}" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="${n(S.lw * 1.4)}" stroke-linecap="round"/>`;
     return s;
   },
   optics: p => [{ kind: 'lens', a: [0, -p.d / 2], b: [0, p.d / 2], f: /concave/.test(p.shape) ? -Math.abs(p.f) : p.f }],
-  solid: (p, bh) => [{ kind: 'cyl', x: [-p.t / 2, p.t / 2], r: [p.d / 2, p.d / 2], mat: 'glass', lens: p.shape }, { kind: 'cyl', x: [-p.t / 2 - 0.35, -p.t / 2], r: [p.d / 2 + 0.7, p.d / 2 + 0.7], mat: 'anod', ring: true }],
+  solid: (p, bh) => [{ kind: 'cyl', x: [-p.t / 2, p.t / 2], r: [p.d / 2, p.d / 2], mat: 'glass', lens: ['ball', 'doublet', 'cylindrical'].includes(p.shape) ? 'biconvex' : p.shape }, { kind: 'cyl', x: [-p.t / 2 - 0.35, -p.t / 2], r: [p.d / 2 + 0.7, p.d / 2 + 0.7], mat: 'anod', ring: true }],
 });
 
 lib.register({
@@ -220,12 +236,20 @@ lib.register({
 /* ================= Polarisation ================= */
 const plate = (type, name, abbr, fillName, kind, defaults, params, extra = {}) => lib.register(Object.assign({
   type, name, abbr, category: 'Polarisation',
-  defaults: Object.assign({ d: 8, t: 0.9 }, defaults),
-  params: [P.diameter(), P.thick(0.9)].concat(params),
+  defaults: Object.assign({ d: 8, t: 0.9, mounted: false }, defaults),
+  params: [P.diameter(), P.thick(0.9)].concat(params, [{ key: 'mounted', label: 'In a rotation mount (graduated ring)', type: 'bool' }]),
   snap: 'perp', mount: true, labelPos: [0, 7],
-  bbox: p => [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
+  bbox: p => p.mounted ? [-p.t / 2 - 1.2, -p.d / 2 - 1.6, p.t / 2 + 1.2, p.d / 2 + 1.6] : [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
   draw(p, S) {
-    let s = H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, S.fill(fillName));
+    let s = '';
+    if (p.mounted) {
+      // side view of a rotation mount: a knurled ring around the optic with an index mark
+      const W = p.t + 2.4, Hh = p.d + 3.2;
+      s += H.rect(S, -W / 2, -Hh / 2, W, Hh, S.fill('anod'), 'rx="0.5"');
+      for (let y = -Hh / 2 + 0.6; y < Hh / 2 - 0.4; y += 0.55) s += H.line(S, -W / 2, y, -W / 2 + 0.45, y, '', 0.45, S.shaded ? '#9aa3ad' : S.ink);
+      s += H.line(S, W / 2 - 0.2, -Hh / 2 + 0.6, W / 2 - 0.2, -Hh / 2 + 1.6, '', 1, '#e8b33c');
+    }
+    s += H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, S.fill(fillName));
     s += H.sheen(S, -p.t / 2, -p.d / 2, p.t, p.d * 0.4);
     if (kind === 'polarizer') for (let y = -p.d / 2 + 0.9; y < p.d / 2 - 0.3; y += 0.9) s += H.line(S, -p.t / 2, y, p.t / 2, y, '', 0.5);
     return s;

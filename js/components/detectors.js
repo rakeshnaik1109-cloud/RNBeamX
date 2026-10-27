@@ -39,8 +39,9 @@ const det = (type, name, abbr, cfg) => lib.register(Object.assign({
 
 det('pd', 'Photodiode', 'PD', {
   keywords: 'photodiode detector apd spad balanced',
-  defaults: { s: 4.6 },
-  params: [{ key: 's', label: 'Size', type: 'number', unit: 'mm', min: 1.5, max: 30, step: 0.1 }],
+  defaults: { s: 4.6, sensor: 'single' },
+  params: [{ key: 's', label: 'Size', type: 'number', unit: 'mm', min: 1.5, max: 30, step: 0.1 },
+    { key: 'sensor', label: 'Sensor', type: 'select', options: [['single', 'Single element'], ['quad', 'Quadrant (four cells)'], ['balanced', 'Balanced (two inputs)']] }],
   variants: [{ name: 'Avalanche photodiode / SPAD', abbr: 'SPAD', props: { s: 4 }, keywords: 'apd spad single photon avalanche' }],
   bbox: p => [-p.s / 2, -p.s / 2, p.s / 2, p.s / 2],
   draw(p, S) {
@@ -48,6 +49,8 @@ det('pd', 'Photodiode', 'PD', {
     let s = `<path d="M ${n(-h)} ${n(-h)} L ${n(0)} ${n(-h)} A ${n(h)} ${n(h)} 0 0 1 ${n(0)} ${n(h)} L ${n(-h)} ${n(h)} Z" fill="${S.fill('black')}" ${H.stroke(S)}/>`;
     s += H.sheen(S, -h, -h, h * 1.6, h * 0.8);
     s += `<rect x="${n(-h - 0.05)}" y="${n(-h * 0.55)}" width="${n(0.45)}" height="${n(h * 1.1)}" fill="${S.shaded ? 'url(#rbx-sensor)' : '#6d7b8f'}" stroke="none"/>`;
+    if (p.sensor === 'quad') s += H.line(S, -h - 0.05, 0, -h + 0.4, 0, '', 0.6, '#ffffff');
+    if (p.sensor === 'balanced') s += `<rect x="${n(-h * 0.55)}" y="${n(-h - 0.05)}" width="${n(h * 0.7)}" height="${n(0.45)}" fill="${S.shaded ? 'url(#rbx-sensor)' : '#6d7b8f'}" stroke="none"/>`;
     return s;
   },
   optics: p => H.boxAbsorb(-p.s / 2, -p.s / 2, p.s / 2, p.s / 2),
@@ -57,8 +60,9 @@ det('pd', 'Photodiode', 'PD', {
 
 det('camera', 'Camera (CCD / CMOS)', 'CAM', {
   keywords: 'camera ccd cmos emccd scmos imaging sensor',
-  defaults: { L: 10, H: 8 },
-  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  defaults: { L: 10, H: 8, front: 'plain' },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 },
+    { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']] }],
   labelPos: [0, 7.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
   draw(p, S) {
@@ -66,6 +70,7 @@ det('camera', 'Camera (CCD / CMOS)', 'CAM', {
     let s = H.rect(S, -L / 2 + nose, -h / 2, L - nose, h, S.fill('dark'), 'rx="0.7"');
     s += H.sheen(S, -L / 2 + nose, -h / 2, L - nose, h * 0.45, 0.7);
     s += H.rect(S, -L / 2, -h * 0.3, nose, h * 0.6, S.fill('black'));
+    if (p.front === 'lenslet') { const r = h * 0.6 / 10; let d = ''; for (let k = 0; k < 5; k++) { const y = -h * 0.3 + (2 * k + 1) * r; d += `M ${n(-L / 2)} ${n(y - r)} A ${n(r)} ${n(r)} 0 0 0 ${n(-L / 2)} ${n(y + r)} `; } s += `<path d="${d}" fill="${S.fill('glass')}" ${H.stroke(S, 0.5)}/>`; }
     for (let i = 1; i <= 3; i++) s += H.line(S, L / 2 - i * 1, -h / 2 + 0.8, L / 2 - i * 1, h / 2 - 0.8, '', 0.6, S.shaded ? '#7a828e' : '#ffffff');
     return s;
   },
