@@ -252,11 +252,35 @@ Ins.focusDetector = obj => {
   RNBX.toast(`${lib.get(c.o.type).name} moved to the ${f.real ? 'paraxial ' : ''}focus. Ctrl+Z to undo.`);
 };
 
+/* best focus: each ray arriving at the detector is a line; its lateral offset
+   is linear in the shift t along the detector normal, so the RMS spot is a
+   quadratic in t with a closed-form minimum. */
+Ins.bestFocus = obj => {
+  const tr = RNBX.trace(S.doc), nrm = U.dirToWorld(obj, [1, 0]), side = U.dirToWorld(obj, [0, 1]);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const segs = tr.segments.filter(sg => sg.ray && !sg.ghost && sg.kind === 'beam' && sg.end === 'hit' && tr.hits[obj.id] && Math.abs(dot([sg.b[0] - obj.x, sg.b[1] - obj.y], nrm)) < 0.6 && Math.abs(dot([sg.b[0] - obj.x, sg.b[1] - obj.y], side)) < 40);
+  const lines = segs.map(sg => { const d = U.v.norm(U.v.sub(sg.b, sg.a)), dn = dot(d, nrm); if (Math.abs(dn) < 1e-6) return null; const y0 = dot([sg.b[0] - obj.x, sg.b[1] - obj.y], side), x0 = dot([sg.b[0] - obj.x, sg.b[1] - obj.y], nrm); return { y0: y0 - x0 * dot(d, side) / dn, k: dot(d, side) / dn }; }).filter(Boolean);
+  if (lines.length < 3) { RNBX.toast('Not enough rays reach this detector.'); return; }
+  // y_i(t) = y0_i + k_i t ; minimise Σ (y_i − mean)²
+  const N = lines.length, my = lines.reduce((a, l) => a + l.y0, 0) / N, mk = lines.reduce((a, l) => a + l.k, 0) / N;
+  const skk = lines.reduce((a, l) => a + (l.k - mk) ** 2, 0), sky = lines.reduce((a, l) => a + (l.k - mk) * (l.y0 - my), 0);
+  if (skk < 1e-12) { RNBX.toast('The rays are parallel here: there is no focus.'); return; }
+  const t = -sky / skk, rms = Math.sqrt(lines.reduce((a, l) => a + (l.y0 + l.k * t - my - mk * t) ** 2, 0) / N), sc = S.doc.style.scale || 10;
+  RNBX.history.checkpoint();
+  obj.x = U.round(obj.x + nrm[0] * t, 4); obj.y = U.round(obj.y + nrm[1] * t, 4);
+  RNBX.anim.touch([obj.id]); RNBX.changed();
+  RNBX.toast(`Moved ${U.fmt(t, 3)} mm to the best focus: RMS spot ${rms * sc >= 1 ? U.fmt(rms * sc, 3) + ' mm' : U.fmt(rms * sc * 1000, 3) + ' µm'}. Ctrl+Z to undo.`);
+  return { t, rms };
+};
+
 Ins.raySpotCsv = obj => {
   const h = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
   if (!h || !h.rays) return;
   const sc = S.doc.style.scale || 10, name = (obj.label && obj.label.text) || lib.get(obj.type).name;
   const rows = ['# RNBeamX ray spot: ' + name.replace(/\n/g, ' '), '# position across the detector (its own y axis), from its centre', 'ray,wavelength_nm,position_mm,position_drawn_mm'];
+  const rms = a => { const m = a.reduce((x, r) => x + r.y, 0) / a.length; return Math.sqrt(a.reduce((x, r) => x + (r.y - m) * (r.y - m), 0) / a.length); };
+  [...new Set(h.rays.map(r => r.lambda))].sort((a, b) => b - a).forEach(l => rows.splice(2, 0, `# RMS spot at ${U.round(l, 3)} nm: ${U.round(rms(h.rays.filter(r => r.lambda === l)) * sc, 6)} mm`));
+  rows.splice(2, 0, `# RMS spot, all rays: ${U.round(rms(h.rays) * sc, 6)} mm`);
   h.rays.forEach((r, i) => rows.push([i + 1, U.round(r.lambda, 3), U.round(r.y * sc, 6), U.round(r.y, 6)].join(',')));
   U.download(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(name) + '_ray_spot.csv');
   U.track('ray-spot-csv');
@@ -400,7 +424,9 @@ function objectPanel(obj) {
   if (ro) { body.push(ro); syncs.push(() => { const n = readout(obj); if (n) ro.innerHTML = n.innerHTML; }); }
   // ray bundles: download where every ray lands on this detector
   { const h0 = RNBX.canvas.trace && RNBX.canvas.trace.hits[obj.id];
-    if (h0 && h0.rays && h0.rays.length) body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Ray spot CSV', title: 'Where each ray lands across this detector, per wavelength', onclick: () => Ins.raySpotCsv(obj) }))); }
+    if (h0 && h0.rays && h0.rays.length) body.push(el('div', { class: 'row', style: { marginBottom: '10px', gap: '6px', flexWrap: 'wrap' } },
+      el('button', { class: 'btn small', type: 'button', text: 'Ray spot CSV', title: 'Where each ray lands across this detector, per wavelength', onclick: () => Ins.raySpotCsv(obj) }),
+      h0.rays.length > 2 ? el('button', { class: 'btn small', type: 'button', text: 'Move to best focus', title: 'Moves this detector along the rays to where the RMS spot is smallest', onclick: () => Ins.bestFocus(obj) }) : null)); }
   if (obj.type === 'raysource') {
     // one-click colour sets and the ray width (a figure-wide setting) next to them
     const preset = (label, props) => el('button', { class: 'btn small', type: 'button', text: label, onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, props); RNBX.anim.touch([obj.id]); RNBX.changed(); setTimeout(Ins.build, 0); } });

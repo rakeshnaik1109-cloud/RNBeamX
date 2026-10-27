@@ -102,6 +102,10 @@ For imaging figures, light can be drawn as individual rays instead of one beam:
   **RGB** (450, 520, 638 nm), **Single colour** and **Black (print)**.
 - **Ray spot CSV** (on a detector hit by rays) downloads where each ray lands:
   ray number, wavelength, and position across the detector in physical and drawn mm.
+  The file starts with the RMS spot per wavelength and for all rays.
+- **Move to best focus** (same place) slides the detector along its axis to where
+  the RMS ray spot is smallest (the circle of least confusion for an aberrated
+  lens), and reports that spot size.
 
 ### Active, nonlinear and fibre parts
 

@@ -109,9 +109,24 @@ module.exports = async ({ base, getBrowser, H }) => {
     const s2 = RNBX.state.doc.objects.find(o => o.id === src.id);
     return { lines: text ? text.trim().split('\n') : [], rgb, black: [s2.props.colors, s2.props.color], width: !!document.querySelector('#inspector input[type=range]') };
   });
-  H.check('Ray spot CSV: one row per ray with wavelength and position', csv.lines.length === 27 + 3 && /^ray,wavelength_nm,position_mm/.test(csv.lines[2]) && csv.lines[3].split(',').length === 4, csv.lines.slice(2, 4));
+  H.check('Ray spot CSV: one row per ray with wavelength and position', csv.lines.length === 27 + 3 + 4 && /^# RMS spot, all rays/.test(csv.lines[2]) && /^ray,wavelength_nm,position_mm/.test(csv.lines[6]) && csv.lines[7].split(',').length === 4, csv.lines.slice(2, 8));
   H.check('ray presets: RGB gives 450, 520 and 638 nm rays', csv.rgb.join() === '450,520,638', csv.rgb);
   H.check('ray presets: black for print, with the ray width beside them', csv.black[0] === 'single' && csv.black[1] === '#1d1f23' && csv.width, csv.black);
+  // best focus: for a perfect (ideal) lens the RMS spot goes to zero at the focal plane
+  const bf = await page.evaluate(async () => {
+    const d = RNBX.newDocument(), mk = (type, x, y, props) => Object.assign(RNBX.createObject(type, x, y), { props: Object.assign(RNBX.createObject(type, 0, 0).props, props || {}) });
+    d.objects = [mk('raysource', 20, 50, { mode: 'parallel', h: 6, rays: 9 }), mk('lens', 40, 50, { f: 200, d: 10 }), mk('screen', 63, 50, { d: 12 })];
+    RNBX.setDocument(d); await new Promise(r => setTimeout(r, 200));
+    const scr = RNBX.state.doc.objects.find(o => o.type === 'screen'), a = RNBX.inspector.bestFocus(scr);
+    const real = RNBX.newDocument(); real.objects = [mk('raysource', 20, 50, { mode: 'parallel', h: 10, rays: 11 }), mk('lens', 40, 50, { f: 250, d: 12, model: 'real' }), mk('screen', 70, 50, { d: 12 })];
+    RNBX.setDocument(real); await new Promise(r => setTimeout(r, 200));
+    const s2 = RNBX.state.doc.objects.find(o => o.type === 'screen'), b = RNBX.inspector.bestFocus(s2);
+    const t = RNBX.trace(RNBX.state.doc), ys = t.hits[s2.id].rays.map(q => q.y), m = ys.reduce((x, y) => x + y, 0) / ys.length;
+    return { ideal: [scr.x, a.rms], real: [s2.x, b.rms, Math.sqrt(ys.reduce((x, y) => x + (y - m) ** 2, 0) / ys.length)] };
+  });
+  H.near('best focus: ideal lens screen lands on the focal plane', bf.ideal[0], 60, 1e-3);
+  H.check('best focus: ideal lens spot shrinks to zero', bf.ideal[1] < 1e-6, bf.ideal[1]);
+  H.check('best focus: real singlet lands between marginal and paraxial focus, with the traced RMS', bf.real[0] > 63.5 && bf.real[0] < 65.3 && Math.abs(bf.real[1] - bf.real[2]) < 1e-6, bf.real);
   // template picker: grouped, and the search filters it
   const pick = await page.evaluate(async () => {
     RNBX.dialogs.templates();
