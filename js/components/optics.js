@@ -332,7 +332,9 @@ lib.register({
 
 lib.register({
   type: 'prism', name: 'Dispersive prism', abbr: 'PR', category: 'Filters & dispersion', keywords: 'prism dispersive equilateral refraction',
-  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#c4c9d1', chipColor2: '#e9eef2' },
+  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#c4c9d1', chipColor2: '#e9eef2',
+    metal: 'Ag', metalNm: 50, adhesion: 'none', adhesionNm: 2, layer2: 'SiO2', layer2Nm: 10, layer2N: 1.45, analyte: 'H2O', analyteN: 1.333,
+    calc: { scan: 'angle', amin: 40, amax: 80, lambda: 633, lmin: 450, lmax: 900, angle: 55, pol: 'p', show: 'R', points: 401, unit: 'nm' } },
   params: [{ key: 's', label: 'Side length', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 },
     { key: 'apex', label: 'Apex angle', type: 'number', unit: '°', min: 10, max: 120, step: 1 },
     P.material(), { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.mat === 'custom' },
@@ -340,6 +342,26 @@ lib.register({
     { key: 'chip', label: 'Sensor chip on the base (Kretschmann)', type: 'bool' },
     { key: 'chipT', label: 'Chip thickness (drawn)', type: 'number', unit: 'mm', min: 0.2, max: 10, step: 0.1, show: p => p.chip },
     { key: 'chipColor', label: 'Metal film', type: 'color', show: p => p.chip }, { key: 'chipColor2', label: 'Sensing layer', type: 'color', allowEmpty: true, show: p => p.chip }],
+  calcParams: [
+    { key: 'metal', label: 'Metal film', type: 'select', options: [['Ag', 'Silver (Ag)'], ['Au', 'Gold (Au)'], ['Al', 'Aluminium (Al)'], ['Cu', 'Copper (Cu)']] },
+    { key: 'metalNm', label: 'Metal thickness', type: 'number', unit: 'nm', min: 1, max: 300, step: 1, animatable: true },
+    { key: 'adhesion', label: 'Adhesion layer', type: 'select', options: [['none', 'None'], ['Cr', 'Chromium (Cr)'], ['Ti', 'Titanium (Ti)']] },
+    { key: 'adhesionNm', label: 'Adhesion thickness', type: 'number', unit: 'nm', min: 0.1, max: 20, step: 0.1, show: p => p.adhesion !== 'none' },
+    { key: 'layer2', label: 'Sensing layer on the metal', type: 'select', options: () => [['none', 'None']].concat(RNBX.thinfilm.options()) },
+    { key: 'layer2Nm', label: 'Sensing layer thickness', type: 'number', unit: 'nm', min: 0, max: 2000, step: 1, animatable: true, show: p => p.layer2 !== 'none' },
+    { key: 'layer2N', label: 'Sensing layer index', type: 'number', min: 1, max: 4, step: 0.001, show: p => p.layer2 === 'custom' },
+    { key: 'analyte', label: 'Analyte', type: 'select', options: () => RNBX.thinfilm.options() },
+    { key: 'analyteN', label: 'Analyte refractive index', type: 'number', min: 1, max: 2, step: 0.0005, animatable: true, show: p => p.analyte === 'custom', hint: 'keyframe it to animate a binding event' },
+  ],
+  calcShow: p => p.chip,
+  /* glass / [adhesion] / metal / [sensing layer] / analyte, light from the glass */
+  stack: p => ({
+    inc: p.mat === 'custom' ? { mat: 'custom', n: p.n, k: 0 } : { mat: 'glass:' + p.mat },
+    layers: [p.adhesion !== 'none' ? { m: { mat: p.adhesion }, d: +p.adhesionNm } : null, { m: { mat: p.metal }, d: +p.metalNm },
+      p.layer2 !== 'none' ? { m: { mat: p.layer2, n: p.layer2N, k: 0 }, d: +p.layer2Nm } : null].filter(Boolean),
+    sub: { mat: p.analyte, n: p.analyteN, k: 0 },
+  }),
+  calcNote: () => 'Angle of incidence inside the prism, at its base. Use p-polarisation for the plasmon dip.',
   variants: [{ name: 'SPR prism (Kretschmann)', abbr: 'SPR', keywords: 'spr surface plasmon resonance kretschmann sensor chip coupling prism attenuated total reflection atr', props: { s: 14, apex: 90, inverted: true, chip: true } }],
   labelPos: [0, 8],
   geom(p) {
@@ -364,7 +386,8 @@ lib.register({
     }
     return s;
   },
-  optics: p => [{ poly: lib.get('prism').geom(p), mat: p.mat, n: p.n }],
+  // with a chip, the base (edge 1) reflects with the thin-film amplitudes rp, rs
+  optics: p => [{ poly: lib.get('prism').geom(p), mat: p.mat, n: p.n, film: p.chip ? { edge: 1, stack: lib.get('prism').stack(p) } : null }],
   solid: (p, bh) => [{ kind: 'poly', pts: lib.get('prism').geom(p), z: [bh - p.s * 0.45, bh + p.s * 0.45], mat: 'glass' }],
 });
 

@@ -67,7 +67,7 @@ footer .bar { padding: 20px 16px; }
   <div class="bar">
     <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
     <nav>
-      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#illustration">Illustration parts</a><a href="#styles">Styles</a>
+      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#illustration">Illustration parts</a><a href="#response">Calculated spectra</a><a href="#styles">Styles</a>
       <a href="#data">Panels &amp; data</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
     </nav>
   </div>
@@ -117,7 +117,7 @@ footer .bar { padding: 20px 16px; }
       <figure><img src="assets/guide/tpl-absorber.png" alt="Metasurface absorber device sketch"><figcaption><b>Multilayer / grating stack.</b> Edit layers bottom → top (colour, name, thickness, tag) and choose flat, sinusoidal, trapezoid or square gratings. Λ and a dimensions and the M₁ / I / M₂ layer key are built in. Template: <i>Device sketch · metasurface absorber</i>.</figcaption></figure>
       <figure><img src="assets/guide/tpl-ftir.png" alt="FTIR beam path with ribbon beams"><figcaption><b>Ribbon beams and modules.</b> Set <i>Beams ▸ Drawing</i> to <i>Wide translucent ribbon</i> for instrument sketches. The <i>Optical module</i> box (e.g. a Michelson interferometer) passes the beam through. Cylindrical and large parabolic mirrors are under Mirrors. Template: <i>FTIR beam path</i>.</figcaption></figure>
       <figure><img src="assets/guide/tpl-thermal.png" alt="Thermal emission measurement"><figcaption><b>Lab equipment and angle fans.</b> Hot plate with a temperature display, lab jack or tilt stage, IR camera, laptop, pipette, flow cell and light bulb. The <i>Angle fan</i> draws 0–70° observation arrows with a θ<sub>obs</sub> arc. Template: <i>Thermal emission setup</i>.</figcaption></figure>
-      <figure><img src="assets/guide/tpl-spr.png" alt="SPR sensor with Kretschmann prism"><figcaption><b>SPR prism (Kretschmann).</b> An inverted prism with a metal film and a sensing layer on its base. The beam is traced through it with total internal reflection. Add a flow cell with inlet and outlet. Template: <i>SPR sensor</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-spr.png" alt="SPR sensor with Kretschmann prism"><figcaption><b>SPR prism (Kretschmann).</b> An inverted prism with a metal film and a sensing layer on its base. The reflectance at the chip is calculated, so the SPR dip appears in the beam and in panel e. Add a flow cell with inlet and outlet. Template: <i>SPR sensor</i>.</figcaption></figure>
     </div>
     <div class="table-wrap" style="margin-top:18px">
     <table>
@@ -130,6 +130,19 @@ footer .bar { padding: 20px 16px; }
     </table>
     </div>
     <div class="tip">Text everywhere accepts markup: <code>θ_i</code>, <code>θ_{obs}</code>, <code>TiO_2</code>, <code>x^{2+}</code>, <code>\lambda</code>, <code>*italic*</code>, <code>**bold**</code>.</div>
+  </section>
+
+  <section id="response">
+    <h2>Calculated spectra: the sketch and its physics</h2>
+    <p class="lead">Layer stacks and the SPR prism calculate their reflectance, transmittance and absorptance from measured optical constants. A linked data panel redraws the moment you change a layer.</p>
+    <img class="shot" src="assets/guide/response.png" alt="Layer editor with materials and thicknesses, and the linked R, T, A panel">
+    <div class="grid" style="margin-top:16px">
+      <div class="card"><h3>1 · Materials and thicknesses</h3><p>Each layer's second line sets its material (Ag, Au, Al, TiO₂, SiO₂, Si, water, PDMS, glasses… or your own n, k) and its real thickness in nm. The drawn thickness only changes the picture.</p></div>
+      <div class="card"><h3>2 · What to calculate</h3><p>Under <i>Optical response</i>: against wavelength or angle, p, s or unpolarised light, and the curves (R, T, A). The readout gives the dip or peak position and width.</p></div>
+      <div class="card"><h3>3 · Linked panel</h3><p><i>Add data panel</i> places a plot that follows the stack. Keyframe the analyte index or a thickness to animate a binding event. <i>Unlink</i> freezes the curves; <i>CSV</i> exports them.</p></div>
+      <div class="card"><h3>SPR in the beam path</h3><p>With a chip on the prism, the traced beam is reflected with the calculated amplitudes, so the spectrometer readout shows the same dip. See the <i>SPR sensor</i> template (panel e).</p></div>
+    </div>
+    <div class="tip"><b>Scope.</b> The transfer-matrix method is exact for flat films: Kretschmann SPR, Fabry–Pérot and MIM stacks, AR coatings, Bragg mirrors. Grating and metasurface resonances need RCWA or FDTD; import those spectra as data. Optical constants come from the refractiveindex.info database (public domain). <i>Sources</i> lists the references to cite.</div>
   </section>
 
   <section id="styles">

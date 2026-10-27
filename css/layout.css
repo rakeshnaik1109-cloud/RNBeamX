@@ -61,6 +61,7 @@ a.icon-btn { text-decoration: none; }
 .insp-title small { color: var(--muted); }
 .readout { font: 12px var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; margin-bottom: 10px; color: var(--muted); }
 .readout b { color: var(--text); }
+.layer-card { border: 1px solid var(--line); border-radius: 7px; padding: 5px; margin-bottom: 5px; background: var(--panel-2); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line-2); font-size: 11.5px; background: var(--panel); cursor: pointer; }
 .chip:hover { border-color: var(--accent); }

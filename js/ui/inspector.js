@@ -31,7 +31,7 @@ function control(param, get, set, ctx = {}) {
     case 'select': {
       const opts = typeof param.options === 'function' ? param.options() : param.options;
       input = el('select', { id, onchange: () => { const o = opts.find(x => String(x[0]) === input.value); set(param.key, o ? o[0] : input.value, true); } },
-        opts.map(o => el('option', { value: o[0], text: o[1] })));
+        opts.map(o => el('option', { value: o[0], text: o[1], disabled: !!o[2] })));
       sync = () => { input.value = String(val()); };
       break;
     }
@@ -73,6 +73,19 @@ function control(param, get, set, ctx = {}) {
       const o = ctx.obj;
       wrap.append(lab);
       if (!o) return wrap;
+      if (o.props.link) {
+        const src = RNBX.getObj(o.props.link);
+        wrap.append(el('div', { class: 'readout', text: src ? `Calculated live from “${src.kindName || lib.get(src.type).name}”. Change its layers or settings and this panel follows.` : 'The linked stack was deleted.' }),
+          el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
+            src ? el('button', { class: 'btn small', type: 'button', text: 'Select the stack', onclick: () => RNBX.select([src.id]) }) : null,
+            el('button', { class: 'btn small', type: 'button', text: 'Unlink (keep these curves)', onclick: () => {
+              const res = src && RNBX.plotData.calcResult(src);
+              RNBX.history.checkpoint();
+              if (res) { o.props.series = RNBX.plotData.calcSeries(res).map(q => Object.assign({}, q, { x: q.x.slice(), y: q.y.slice() })); o.props.xlabel = res.xlabel; o.props.ylabel = RNBX.plotData.calcYLabel(res); }
+              o.props.link = ''; RNBX.changed(); Ins.build();
+            } })));
+        return wrap;
+      }
       const set = d => { RNBX.history.checkpoint(); RNBX.plotData.apply(o, d); RNBX.changed(); Ins.build(); };
       const fail = e => RNBX.toast(e.message || String(e), 'error');
       const row = el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
@@ -103,6 +116,7 @@ function control(param, get, set, ctx = {}) {
       const L = o.props.layers = o.props.layers || [];
       const edit = (fn, key) => { RNBX.history.checkpoint(key); fn(); RNBX.changed(); };
       const rebuild = fn => { RNBX.history.checkpoint(); fn(); RNBX.changed(); Ins.build(); };
+      const TF = RNBX.thinfilm, matOpts = TF ? TF.options() : [];
       L.slice().reverse().forEach((ly, ri) => {
         const i = L.length - 1 - ri;
         const c = el('input', { type: 'color', value: (ly.color || '#888888').slice(0, 7), oninput: () => edit(() => { ly.color = c.value; }, 'lc' + o.id + i) });
@@ -111,11 +125,27 @@ function control(param, get, set, ctx = {}) {
         const tg = el('input', { type: 'text', value: ly.tag || '', title: 'Tag in the layer key, e.g. M₁', placeholder: 'tag', oninput: () => edit(() => { ly.tag = tg.value; }, 'lg' + o.id + i) });
         const up = D.iconBtn('up', 'Move up', () => { if (i < L.length - 1) rebuild(() => L.splice(i + 1, 0, L.splice(i, 1)[0])); });
         const rm = D.iconBtn('trash', 'Remove layer', () => { if (L.length > 1) rebuild(() => L.splice(i, 1)); });
-        wrap.append(el('div', { class: 'color-row', style: { gridTemplateColumns: '30px 1fr 52px 40px auto auto', marginBottom: '4px' } }, c, nm, th, tg, up, rm));
+        const card = el('div', { class: 'layer-card' }, el('div', { class: 'color-row', style: { gridTemplateColumns: '26px minmax(70px, 1fr) 44px 34px auto auto' } }, c, nm, th, tg, up, rm));
+        if (TF) {
+          // second line: what the layer is made of, for the thin-film calculation
+          const cur = ly.mat || lib.guessMat(ly.name);
+          const ms = el('select', { title: 'Material (measured n, k)', onchange: () => rebuild(() => { ly.mat = ms.value; }) }, matOpts.map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] })));
+          ms.value = cur;
+          const substrate = i === 0 && o.props.bottomMode !== 'film';
+          const dn = el('input', { type: 'number', value: substrate ? '' : (ly.nm || 0), min: 0, step: 1, disabled: substrate, placeholder: substrate ? 'substrate' : '', title: substrate ? 'Bottom layer: thick substrate' : 'Real thickness (nm)', oninput: () => { const v = parseFloat(dn.value); if (isFinite(v) && v >= 0) edit(() => { ly.nm = v; }, 'lnm' + o.id + i); } });
+          const row2 = el('div', { class: 'color-row', style: { gridTemplateColumns: '1fr 70px 22px', marginTop: '3px' } }, ms, dn, el('span', { class: 'hint', text: 'nm', style: { margin: 0 } }));
+          card.append(row2);
+          if (cur === 'custom') {
+            const ni = el('input', { type: 'number', value: ly.n == null ? 1.5 : ly.n, step: 0.001, title: 'n', oninput: () => { const v = parseFloat(ni.value); if (isFinite(v)) edit(() => { ly.n = v; }, 'lnn' + o.id + i); } });
+            const ki = el('input', { type: 'number', value: ly.k || 0, step: 0.001, min: 0, title: 'k', oninput: () => { const v = parseFloat(ki.value); if (isFinite(v)) edit(() => { ly.k = Math.max(0, v); }, 'lnk' + o.id + i); } });
+            card.append(el('div', { class: 'color-row', style: { gridTemplateColumns: '18px 1fr 18px 1fr', marginTop: '3px' } }, el('span', { text: 'n' }), ni, el('span', { text: 'k' }), ki));
+          }
+        }
+        wrap.append(card);
       });
       wrap.append(el('div', { class: 'row', style: { marginTop: '4px' } },
-        el('button', { class: 'btn small', type: 'button', text: '+ Layer on top', onclick: () => rebuild(() => L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '' })) })));
-      wrap.append(el('div', { class: 'hint', text: 'Top of the list = top of the stack. Thickness is the drawn size in mm; write the real value in the name or tag.' }));
+        el('button', { class: 'btn small', type: 'button', text: '+ Layer on top', onclick: () => rebuild(() => L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '', mat: 'SiO2', nm: 100 })) })));
+      wrap.append(el('div', { class: 'hint', text: 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
       return wrap;
     }
     case 'image': {
@@ -227,6 +257,53 @@ function readout(obj) {
   return null;
 }
 
+/* ---------- optical response (thin-film calculation) ---------- */
+function responseSection(obj, def, set) {
+  const TF = RNBX.thinfilm, p = obj.props;
+  p.calc = Object.assign({}, TF.DEFAULT_CALC, p.calc || {});
+  const c = p.calc;
+  const cset = (key, v, rebuild) => { RNBX.history.checkpoint('calc:' + obj.id + key); obj.props.calc = Object.assign({}, obj.props.calc, { [key]: v }); RNBX.changed(); if (rebuild) setTimeout(Ins.build, 0); };
+  const cget = k => obj.props.calc[k];
+  const kids = [];
+  (def.calcParams || []).filter(q => !q.show || q.show(p)).forEach(q => kids.push(control(q, k => obj.props[k], (k, v, rb) => set(k, v, rb || q.type === 'select'), { obj })));
+  kids.push(control({ key: 'scan', label: 'Calculate against', type: 'select', options: [['wl', 'Wavelength'], ['angle', 'Angle of incidence']] }, cget, (k, v) => cset(k, v, true)));
+  if (c.scan === 'wl') {
+    kids.push(el('div', { class: 'grid2' },
+      control({ key: 'lmin', label: 'From', type: 'number', unit: 'nm', min: 190, max: 30000, step: 10 }, cget, cset),
+      control({ key: 'lmax', label: 'To', type: 'number', unit: 'nm', min: 200, max: 30000, step: 10 }, cget, cset)));
+    kids.push(el('div', { class: 'grid2' },
+      control({ key: 'angle', label: 'Angle of incidence', type: 'number', unit: '°', min: 0, max: 89.9, step: 0.5, animatable: true }, cget, cset),
+      control({ key: 'unit', label: 'Axis unit', type: 'select', options: [['nm', 'nm'], ['um', 'µm']] }, cget, cset)));
+  } else {
+    kids.push(el('div', { class: 'grid2' },
+      control({ key: 'amin', label: 'From', type: 'number', unit: '°', min: 0, max: 89.9, step: 0.5 }, cget, cset),
+      control({ key: 'amax', label: 'To', type: 'number', unit: '°', min: 0.1, max: 89.99, step: 0.5 }, cget, cset)));
+    kids.push(control({ key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 190, max: 30000, step: 1 }, cget, cset));
+  }
+  kids.push(el('div', { class: 'grid2' },
+    control({ key: 'pol', label: 'Polarisation', type: 'select', options: [['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']] }, cget, cset),
+    control({ key: 'show', label: 'Curves', type: 'select', options: [['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['RTA', 'R, T, A']] }, cget, cset)));
+  // live readout: dip / peak, warnings, data sources
+  const out = el('div', { class: 'readout' });
+  const update = () => {
+    let res;
+    try { res = TF.cached(def.stack(obj.props), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
+    const lines = TF.summary(res);
+    const note = def.calcNote ? def.calcNote(obj.props) : '';
+    out.innerHTML = (lines.length ? lines.map(U.esc).join('<br>') : 'No dip or peak inside this range.') +
+      (res.warn.length ? `<br><span style="color:var(--warn,#b26a00)">Outside the measured data range: ${U.esc(res.warn.join(', '))}. End values are used.</span>` : '') +
+      (note ? `<br><span class="hint" style="margin:0">${U.esc(note)}</span>` : '');
+  };
+  update(); syncs.push(update);
+  kids.push(out);
+  const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id);
+  kids.push(el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
+    el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Go to its panel' : 'Add data panel', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
+    el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Download the curves as CSV', onclick: () => RNBX.plotData.downloadCsv(obj) }),
+    el('button', { class: 'btn small ghost', type: 'button', text: 'Sources', title: 'Where the n, k data come from', onclick: () => RNBX.plotData.sourcesDialog(obj) })));
+  return sec('Optical response (thin-film calculation)', ...kids);
+}
+
 /* ---------- object inspector ---------- */
 function objectPanel(obj) {
   const def = lib.get(obj.type);
@@ -243,6 +320,7 @@ function objectPanel(obj) {
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
   params.forEach(p => body.push(control(p, k => obj.props[k], set, { obj })));
   if (body.length) root.push(sec(def.connection ? 'Connection' : 'Parameters', ...body));
+  if (def.stack && RNBX.thinfilm && (!def.calcShow || def.calcShow(obj.props))) root.push(responseSection(obj, def, set));
 
   if (obj.label) {
     const lset = fieldSetter([obj], 'label');

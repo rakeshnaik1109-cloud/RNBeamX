@@ -70,7 +70,7 @@ function buildScene(doc) {
               let n = V.perp(t);
               const mid = V.mul(V.add(a, b), 0.5);
               if (V.dot(n, V.sub(mid, [cx, cy])) < 0) n = V.mul(n, -1);   // outward
-              surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz });
+              surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz, film: s.film && s.film.edge === i ? s.film.stack : null });
             }
           } else {
             const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
@@ -275,6 +275,17 @@ RNBX.trace = function trace(doc) {
         const n1 = entering ? 1 : n, n2 = entering ? n : 1;
         const td = O.refract(d, facing, n1 / n2);
         const qn = qa ? { q: { re: qa.re * n2 / n1, im: qa.im * n2 / n1 } } : {};
+        if (s.film && RNBX.thinfilm) {
+          // coated face (SPR chip): light from inside reflects with the film's rp, rs; from outside it is blocked
+          if (entering) { record(s.obj, rayAt); break; }
+          const th = U.deg(Math.acos(Math.min(1, Math.abs(V.dot(d, s.n))))), TF = RNBX.thinfilm;
+          const sP = TF.solve(s.film, ray.lambda, th, 'p'), sS = TF.solve(s.film, ray.lambda, th, 's');
+          let E = null, P;
+          if (ray.E) { E = [C.mul(ray.E[0], { re: sP.r[0], im: sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; P = O.powerJ(E); }
+          else P = ray.P * (sP.R + sS.R) / 2;
+          if (P > ray.P0 * 1e-6) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside, P, E })));
+          break;
+        }
         if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside }))); break; }
         let tPatch = {};
         if (ghosts) {

@@ -64,6 +64,39 @@ DataIO.apply = (obj, d) => {
   if (d.xreverse != null) obj.props.xreverse = d.xreverse;
 };
 
+/* ---------- panels calculated live from a layer stack or SPR prism ---------- */
+const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'] };
+DataIO.calcResult = (src, doc) => {
+  const def = src && lib.get(src.type);
+  if (!def || !def.stack || !RNBX.thinfilm) return null;
+  return RNBX.thinfilm.cached(def.stack(src.props), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
+};
+DataIO.calcSeries = res => res.calc.show.split('').filter(q => CALC_STYLE[q]).map(q => ({ name: CALC_STYLE[q][0], x: res.x, y: res.series[q], color: CALC_STYLE[q][1], dash: 'solid' }));
+DataIO.calcYLabel = res => { const q = res.calc.show.split('').filter(v => CALC_STYLE[v]); return q.length === 1 ? CALC_STYLE[q[0]][0] : q.join(', '); };
+DataIO.addCalcPanel = src => {
+  const res = DataIO.calcResult(src);
+  if (!res) return;
+  const plot = RNBX.arrange.addDataPanel();
+  Object.assign(plot.props, { link: src.id, linkAuto: true, series: [], legend: true, legendPos: res.calc.scan === 'angle' ? 'bl' : 'tr', yNumbers: true });
+  RNBX.changed(); RNBX.inspector.build();
+  RNBX.toast('Data panel linked: it follows every change to the stack');
+  return plot;
+};
+DataIO.downloadCsv = src => {
+  const res = DataIO.calcResult(src);
+  if (!res) return;
+  const q = ['R', 'T', 'A'], head = [res.xlabel].concat(q.map(k => CALC_STYLE[k][0] + ' (' + res.calc.pol + ')'));
+  const rows = res.x.map((x, i) => [x].concat(q.map(k => res.series[k][i].toPrecision(6))).join(','));
+  U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(src.kindName || lib.get(src.type).name) + '_response.csv');
+};
+DataIO.sourcesDialog = src => {
+  const def = lib.get(src.type), st = def.stack(src.props), TF = RNBX.thinfilm, D = RNBX.dom, el = D.el;
+  const mats = [...new Set([st.inc, st.sub].concat(st.layers.map(l => l.m)).map(m => m.mat))].filter(m => m && m !== 'air' && m !== 'custom');
+  D.modal({ title: 'Optical constants used', sub: 'Measured n, k from the refractiveindex.info database (public domain)',
+    body: [el('ul', { class: 'check-list' }, mats.map(m => el('li', {}, el('i', { class: 'ok', text: 'n,k' }), el('span', {}, el('b', { text: TF.name(m) + '. ' }), TF.ref(m))))),
+      el('div', { class: 'note', html: 'Cite the original measurement in your paper, and the database: M. N. Polyanskiy, <i>Sci. Data</i> <b>11</b>, 94 (2024). The calculation is the transfer-matrix method for flat, isotropic films (exact for planar stacks).' })] });
+};
+
 /* ---------- axes ---------- */
 const niceStep = (span, target) => {
   const raw = span / Math.max(1, target), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
@@ -93,10 +126,12 @@ lib.register({
   defaults: {
     w: 70, h: 46, series: [], xlabel: 'Raman shift (cm^{−1})', ylabel: 'Intensity (a.u.)', xmin: '', xmax: '', ymin: '', ymax: '',
     xreverse: false, yNumbers: true, legend: true, legendPos: 'tr', frame: 'box', fontSize: 7, lineWidth: 0.8, offset: 0, ticksIn: true,
+    link: '', linkAuto: true,
   },
   params: [
     { key: 'series', label: 'Data', type: 'series' },
-    { key: 'xlabel', label: 'x-axis title', type: 'text' }, { key: 'ylabel', label: 'y-axis title', type: 'text' },
+    { key: 'linkAuto', label: 'Axis titles from the calculation', type: 'bool', show: p => !!p.link },
+    { key: 'xlabel', label: 'x-axis title', type: 'text', show: p => !p.link || !p.linkAuto }, { key: 'ylabel', label: 'y-axis title', type: 'text', show: p => !p.link || !p.linkAuto },
     { key: 'xmin', label: 'x min', type: 'text', placeholder: 'auto' }, { key: 'xmax', label: 'x max', type: 'text', placeholder: 'auto' },
     { key: 'ymin', label: 'y min', type: 'text', placeholder: 'auto' }, { key: 'ymax', label: 'y max', type: 'text', placeholder: 'auto' },
     { key: 'offset', label: 'Stack offset (fraction of range)', type: 'range', min: 0, max: 1.5, step: 0.01, hint: 'spreads spectra vertically' },
@@ -113,7 +148,13 @@ lib.register({
   bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
   draw(p, S) {
     const fs = U.pt2mm(p.fontSize), lw = U.pt2mm(p.lineWidth), ink = RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : '#111111', axw = U.pt2mm(0.6);
-    const series = (p.series || []).filter(s => s.x && s.x.length);
+    let series = (p.series || []).filter(s => s.x && s.x.length), lost = false;
+    if (p.link) {
+      // live: recomputed from the linked stack on every change and animation frame
+      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src) : null;
+      if (res) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
+      else { series = []; lost = true; }
+    }
     let xs = [], ys = [];
     const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
     const off = series.length ? p.offset * Math.max(...series.map(range)) : 0;
@@ -158,7 +199,7 @@ lib.register({
         s += `<line x1="${n(lx)}" y1="${n(yy)}" x2="${n(lx + fl * 1.8)}" y2="${n(yy)}" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw * 1.4)}"/><text x="${n(lx + fl * 2.3)}" y="${n(yy + fl * 0.35)}" font-size="${n(fl)}">${U.esc(sr.name)}</text>`;
       });
     }
-    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">Import data in the inspector</text>`;
+    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">${lost ? 'The linked stack was deleted' : 'Import data in the inspector'}</text>`;
     return s + '</g>';
   },
 });

@@ -21,7 +21,14 @@ const EASE = {
 };
 A.EASINGS = [['inout', 'Ease in-out'], ['linear', 'Linear'], ['in', 'Ease in'], ['out', 'Ease out']];
 
-const lerpVal = (a, b, u) => (typeof a === 'number' && typeof b === 'number') ? a + (b - a) * u : (u < 1 ? a : b);
+/* numbers blend; nested settings (e.g. a stack's layers or its calculation
+   angle) blend field by field when both keys have the same shape */
+const lerpVal = (a, b, u) => {
+  if (typeof a === 'number' && typeof b === 'number') return a + (b - a) * u;
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a !== b) return a.map((v, i) => lerpVal(v, b[i], u));
+  if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && a !== b) { const o = {}; Object.keys(a).forEach(k => { o[k] = k in b ? lerpVal(a[k], b[k], u) : a[k]; }); return o; }
+  return u < 1 ? a : b;
+};
 /* shortest-way interpolation for angles */
 const lerpAngle = (a, b, u) => a + (b - a) * u;
 

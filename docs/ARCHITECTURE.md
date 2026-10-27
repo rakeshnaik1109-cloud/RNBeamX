@@ -17,8 +17,8 @@ state (document) ──► tracer ──► renderer (2D) / renderer3d ──►
 | Layer | Files | Responsibility |
 |---|---|---|
 | core | `utils.js`, `state.js` | Vectors, colour, complex numbers; document model, events, selection, undo/redo, page presets |
-| engine | `optics.js`, `tracer.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power |
-| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
+| engine | `optics.js`, `tracer.js`, `nkdata.js`, `thinfilm.js` | Jones calculus, Sellmeier dispersion, filter models; ray tracing into beam segments plus detector power; measured n, k tables and the transfer-matrix solver for planar films |
+| components | `library.js` + catalogue files (`sources`, `optics`, `detectors`, `vertical`, `photonics`, `plot`, `illustration`, `annotations`) | The registry and drawing kit; each component declares params, drawing, optical surfaces, sources and 3D parts |
 | render | `text.js`, `defs.js`, `beams.js`, `renderer.js`, `renderer3d.js`, `labels.js` | Text markup, gradients, beam drawing, 2D figure assembly, orthographic 3D with painter's sorting, automatic label placement |
 | anim | `animation.js` | Keyframes, easing, camera track, playback, auto-key |
 | io | `project.js`, `export.js`, `templates.js`, `styles.js` | Files, autosave, clipboard; exporters; built-in setups; style presets and house styles |
@@ -57,6 +57,26 @@ objects whose `axis` is `up` / `down` (their first optical surface is reused,
 placed at its true height along the object's axis). In Gaussian mode each ray
 also carries the complex q parameter; every ray carries its optical path length
 and extra phase, and detectors sum fields coherently per source and wavelength.
+
+## Thin-film calculations
+
+A component can declare a planar stack for the solver in `engine/thinfilm.js`:
+
+```js
+stack: p => ({ inc: { mat: 'glass:SF11' }, layers: [{ m: { mat: 'Au' }, d: 50 }], sub: { mat: 'H2O' } }),
+calcParams: [ /* extra inspector fields shown under "Optical response" */ ],
+calcNote: p => '…',          // caveat shown under the result
+```
+
+Materials are ids from `nkdata.js` (`'Ag'`, `'TiO2'`, `'H2O'`…), `'glass:<Sellmeier name>'`,
+`'air'`, or `{ mat: 'custom', n, k }`; thicknesses are in nm. The inspector adds the
+"Optical response" section, a data panel with `props.link = <stack id>` redraws
+from `RNBX.thinfilm.cached(stack, calc)` on every change and animation frame, and
+a polygon optic whose surface carries `film: { edge, stack }` reflects rays with
+the complex rp, rs of that stack (the SPR prism base). `TF.solve` uses
+e^(−iωt), N = n + ik, tilted admittances and per-layer scaling, so thick metal
+layers cannot overflow. To refresh `nkdata.js`, re-run the extraction against the
+refractiveindex.info database (CC0) with the dataset list in its header.
 
 ## Conventions
 

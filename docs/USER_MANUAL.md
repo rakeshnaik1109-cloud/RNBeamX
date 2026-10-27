@@ -137,6 +137,45 @@ Optical parts for these figures:
 Templates in this style: *Device sketch · metasurface absorber*, *FTIR beam
 path (ribbon beams)*, *Thermal emission setup*, *SPR sensor (Kretschmann prism)*.
 
+## 5b3. Optical response: calculated spectra
+
+The **multilayer stack** and the **SPR prism** (with *Sensor chip on the base*)
+calculate how much light the films reflect (R), transmit (T) and absorb (A).
+Select one and open **Optical response (thin-film calculation)** in the inspector.
+
+1. Give every layer its material and real thickness. In the stack's layer editor
+   the second line of each layer is the material (measured n, k) and the thickness
+   in nm; the drawn thickness on the first line only changes the picture. The
+   bottom layer is the thick substrate unless you choose *Thin film, air below*.
+   For the SPR prism choose the metal film and thickness, an optional Cr or Ti
+   adhesion layer, a sensing layer and the analyte.
+2. Choose what to calculate: against **wavelength** (at a fixed angle) or against
+   **angle of incidence** (at a fixed wavelength), the polarisation (p, s or
+   unpolarised) and the curves (R, T, A).
+3. The readout gives the reflectance minimum (an SPR dip, with its FWHM) and the
+   absorptance maximum.
+4. **Add data panel** places a plot that is linked to the stack: change a layer,
+   the analyte or the angle, and the curve follows at once. Numeric settings such
+   as the metal thickness, the analyte index or the angle can be keyframed, so a
+   binding event can be animated. **Unlink** in the panel keeps the current curves
+   as ordinary data. **CSV** downloads R, T and A; **Sources** lists the measured
+   data used, with references to cite.
+
+In an SPR setup the traced beam is also reflected at the chip with the calculated
+amplitudes, so detector readouts show the dip per wavelength. The *SPR sensor*
+template calculates R(λ) at the angle at which its beam actually meets the chip.
+
+**What it is and is not.** The calculation is the transfer-matrix method for flat,
+isotropic layers: exact for planar stacks, Kretschmann SPR, Fabry–Pérot and
+metal–insulator–metal films, antireflection coatings and Bragg mirrors. It does not
+include the lateral structure of gratings or metasurfaces (choose *Flat* to see
+what the stack alone does): their resonances need RCWA or FDTD, whose spectra you
+can import as data. Materials (n, k from the refractiveindex.info database, public
+domain): Ag, Au, Al, Cu, Cr, Ti, Ni, Pt, W, SiO₂, TiO₂, Al₂O₃, HfO₂, MgF₂, Si₃N₄,
+ZnO, ZnS, CaF₂, Si, Ge, water, ethanol, methanol, acetone, PDMS, PMMA, the optical
+glasses, and custom n, k. Ag and Au also come as UV–mid-IR datasets (to 25 µm).
+Outside a dataset's range the end value is used and the readout warns you.
+
 ## 5c. Your own components and styles
 
 - **Custom component** (*Samples & mechanics*): choose an SVG (kept as vector)

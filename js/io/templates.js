@@ -9,7 +9,7 @@
 ═══════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
-const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib;
+const RNBX = window.RNBX, U = RNBX.util, V0 = U.v, lib = RNBX.lib;
 const T = RNBX.templates = { list: [] };
 
 const ang = (din, dout) => U.round(U.v.angle([din[0] - dout[0], din[1] - dout[1]]), 3);
@@ -314,11 +314,11 @@ T.list.push({
 T.list.push({
   id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with sensor chip and flow cell, fibre to spectrometer',
   build() {
-    const d = base('nature-2', 160, 92, 'SPR sensor setup', { polarization: true });
-    const a = -35, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];
+    const d = base('nature-2', 160, 150, 'SPR sensor setup', { polarization: true });
+    const a = -32, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];   // meets the chip near 52°: dip inside the lamp band
     const at = (p0, t) => [U.round(p0[0] + dir[0] * t, 2), U.round(p0[1] + dir[1] * t, 2)];
     const p0 = [16, 76];
-    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 610, lmax: 690 }, 'THL', [0, 8]);
+    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 560, lmax: 900, count: 15 }, 'THL', [0, 8]);
     const l1 = mk('lens', ...at(p0, 14), a, { f: 400 }, 'Fibre lens', [-3, 8]);
     const ap = mk('iris', ...at(p0, 26), a, { r: 1 }, 'Aperture', [-3, 8]);
     const pol = mk('polarizer', ...at(p0, 38), a, { angle: 0 }, 'Polariser', [-3, 8]);
@@ -337,7 +337,16 @@ T.list.push({
     const fib = link('fiber', fc1, fc2, { bend: 0.4 });
     const usb = link('wire', spec, pc, { route: 'straight' });
     const pa = mk('panel', 4, 7, 0, { text: 'd' });
-    d.objects.push(obj, fc1, fc2, spec, pc, fib, usb, pa);
+    // spectral SPR, as with a halogen lamp and spectrometer: calculate R(λ) at the
+    // angle the traced beam actually meets the chip, and show it as panel e
+    const tr2 = RNBX.trace(d), baseY = prism.y - prism.props.s * Math.cos(U.rad(prism.props.apex / 2)) / 3;
+    const hitBase = tr2.segments.find(sg => !sg.ghost && Math.abs(sg.b[1] - baseY) < 0.05);
+    const th = hitBase ? U.round(U.deg(Math.acos(Math.abs(hitBase.b[1] - hitBase.a[1]) / V0.dist(hitBase.a, hitBase.b))), 2) : 50;
+    prism.props.calc = { scan: 'wl', lmin: 500, lmax: 1000, angle: th, pol: 'p', show: 'R', points: 401, unit: 'nm', amin: 40, amax: 80, lambda: 633 };
+    const plot = mk('plot', 80, 123, 0, { w: 110, h: 46, link: prism.id, linkAuto: true, legend: false });
+    const pe = mk('panel', 25, 97, 0, { text: 'e' });
+    const note = mk('text', 82, 97.5, 0, { text: `p-polarised, θ = ${U.fmt(th, 1)}° at the chip (calculated)`, size: 6, color: '#555b66', anchor: 'middle' });
+    d.objects.push(obj, fc1, fc2, spec, pc, fib, usb, pa, plot, pe, note);
     RNBX.labels.arrange2D(d);
     return d;
   },

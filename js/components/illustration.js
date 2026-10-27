@@ -47,16 +47,41 @@ const obliqueParams = [
 ];
 
 /* ================= Multilayer / grating stack ================= */
+/* mat / nm: material and real thickness for the thin-film calculation
+   (t is only the drawn thickness) */
 const LAYER_PRESETS = {
-  absorber: [{ name: 'PDMS', color: '#2f7d3f', t: 7, tag: '' }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₁' }, { name: 'TiO₂', color: '#9c1d1d', t: 1.1, tag: 'I' }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₂' }],
-  sio2: [{ name: 'PDMS', color: '#1f2f7a', t: 6, tag: '' }, { name: 'Ag', color: '#c4c9d1', t: 1.2, tag: '' }, { name: 'SiO₂', color: '#d8cf27', t: 1.5, tag: '' }],
-  spr: [{ name: 'SF11 glass', color: '#8fb7d6', t: 5, tag: '' }, { name: 'Ag', color: '#c4c9d1', t: 0.8, tag: '' }, { name: 'Silica matrix', color: '#e9eef2', t: 1.4, tag: '' }],
+  absorber: [{ name: 'PDMS', color: '#2f7d3f', t: 7, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₁', mat: 'Ag', nm: 100 }, { name: 'TiO₂', color: '#9c1d1d', t: 1.1, tag: 'I', mat: 'TiO2', nm: 80 }, { name: 'Silver', color: '#c4c9d1', t: 1.1, tag: 'M₂', mat: 'Ag', nm: 15 }],
+  sio2: [{ name: 'PDMS', color: '#1f2f7a', t: 6, tag: '', mat: 'PDMS', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 1.2, tag: '', mat: 'Ag', nm: 100 }, { name: 'SiO₂', color: '#d8cf27', t: 1.5, tag: '', mat: 'SiO2', nm: 200 }],
+  spr: [{ name: 'SF11 glass', color: '#8fb7d6', t: 5, tag: '', mat: 'glass:SF11', nm: 0 }, { name: 'Ag', color: '#c4c9d1', t: 0.8, tag: '', mat: 'Ag', nm: 50 }, { name: 'Silica matrix', color: '#e9eef2', t: 1.4, tag: '', mat: 'SiO2', nm: 10 }],
+};
+/* guess a material from a layer name (old projects, new layers) */
+lib.guessMat = name => {
+  const s = String(name || '').toLowerCase().replace(/[₀-₉]/g, d => '0123456789'['₀₁₂₃₄₅₆₇₈₉'.indexOf(d)]);
+  const table = [[/silver|^ag\b/, 'Ag'], [/gold|^au\b/, 'Au'], [/alumin(i)?um|^al\b/, 'Al'], [/copper|^cu\b/, 'Cu'], [/chrom|^cr\b/, 'Cr'], [/titanium$|^ti\b/, 'Ti'], [/platin|^pt\b/, 'Pt'], [/nickel|^ni\b/, 'Ni'], [/tungsten|^w\b/, 'W'],
+    [/tio2|titania/, 'TiO2'], [/sio2|silica|quartz/, 'SiO2'], [/al2o3|alumina|sapphire/, 'Al2O3'], [/hfo2/, 'HfO2'], [/mgf2/, 'MgF2'], [/si3n4|nitride/, 'Si3N4'], [/zno/, 'ZnO'], [/zns/, 'ZnS'], [/caf2/, 'CaF2'],
+    [/silicon|^si\b/, 'Si'], [/germanium|^ge\b/, 'Ge'], [/pdms/, 'PDMS'], [/pmma/, 'PMMA'], [/water|h2o/, 'H2O'], [/ethanol/, 'EtOH'], [/methanol/, 'MeOH'], [/acetone/, 'Acetone'],
+    [/sf11/, 'glass:SF11'], [/bk7|glass/, 'glass:N-BK7'], [/air|vacuum/, 'air']];
+  const hit = table.find(t => t[0].test(s));
+  return hit ? hit[1] : 'custom';
+};
+/* the planar stack seen by the thin-film solver */
+const layerStack = p => {
+  const L = (p.layers || []).map(l => ({ m: { mat: l.mat || lib.guessMat(l.name), n: l.n, k: l.k }, d: +l.nm || 0 }));
+  if (!L.length) return null;
+  const amb = { mat: p.ambient || 'air', n: p.ambientN, k: 0 };
+  const semi = p.bottomMode !== 'film';
+  const bottom = semi ? L[0].m : { mat: 'air' };
+  const films = semi ? L.slice(1) : L;
+  return p.side === 'bottom'
+    ? { inc: bottom, layers: films, sub: amb }
+    : { inc: amb, layers: films.slice().reverse(), sub: bottom };
 };
 lib.register({
   type: 'layers', name: 'Multilayer / grating stack', category: CAT_S, annotation: true, autoLabel: false, abbr: '',
   keywords: 'multilayer stack thin film metasurface grating corrugated substrate device cross section mim absorber layers pdms silver tio2',
   defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'trapezoid', period: 9, duty: 0.32, amp: 1.6, layers: LAYER_PRESETS.absorber, labels: 'front', legend: true,
-    showPeriod: true, periodLabel: 'Λ = 1450 nm', dutyLabel: 'a = 450 nm', edge: true, sheen: true },
+    showPeriod: true, periodLabel: 'Λ = 1450 nm', dutyLabel: 'a = 450 nm', edge: true, sheen: true,
+    ambient: 'air', ambientN: 1.33, side: 'top', bottomMode: 'semi', calc: { scan: 'wl', lmin: 400, lmax: 1500, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } },
   params: [
     { key: 'layers', label: 'Layers (bottom → top)', type: 'layers' },
     { key: 'profile', label: 'Surface profile', type: 'select', options: [['flat', 'Flat'], ['sine', 'Sinusoidal grating'], ['trapezoid', 'Trapezoid grating'], ['square', 'Square grating']] },
@@ -71,6 +96,15 @@ lib.register({
     { key: 'W', label: 'Width', type: 'number', unit: 'mm', min: 5, max: 300, step: 0.5 }, { key: 'D', label: 'Depth', type: 'number', unit: 'mm', min: 1, max: 200, step: 0.5 },
     ...obliqueParams, { key: 'sheen', label: 'Metallic sheen', type: 'bool' },
   ],
+  /* thin-film calculation (inspector section "Optical response") */
+  calcParams: [
+    { key: 'ambient', label: 'Medium above the stack', type: 'select', options: () => RNBX.thinfilm.options() },
+    { key: 'ambientN', label: 'Its refractive index', type: 'number', min: 1, max: 4, step: 0.001, animatable: true, show: p => p.ambient === 'custom' },
+    { key: 'side', label: 'Light arrives from', type: 'select', options: [['top', 'Above (through the top layer)'], ['bottom', 'Below (through the substrate)']] },
+    { key: 'bottomMode', label: 'Bottom layer', type: 'select', options: [['semi', 'Thick substrate (semi-infinite)'], ['film', 'Thin film, air below']] },
+  ],
+  stack: layerStack,
+  calcNote: p => p.profile !== 'flat' ? 'The grating profile is not part of this calculation: it treats the layers as flat films. Grating and gap-plasmon resonances need RCWA or FDTD; import such spectra as data.' : '',
   variants: [
     { name: 'SiO₂ / Ag / PDMS grating', props: { layers: LAYER_PRESETS.sio2, profile: 'sine', period: 10, amp: 2.2, legend: false, showPeriod: false } },
     { name: 'Sensor chip (thin film)', props: { layers: LAYER_PRESETS.spr, profile: 'flat', W: 34, D: 20, legend: false } },

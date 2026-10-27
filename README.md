@@ -66,6 +66,7 @@ The tracer is a real 2D optical model, not just a line router:
 - **Touch and tablets**: pinch-zoom, two-finger pan, long-press menus and a touch toolbar.
 - **Device sketches and lab illustration**: multilayer / grating stacks with a layer key, ball-and-stick molecules, hydrogen bonds, hot plate, lab jack, IR camera, laptop, pipette, flow cell, angle fans and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
 - **One-click reset** (↺ next to undo) that is itself undoable.
+- **Calculated spectra**: layer stacks and the SPR prism compute reflectance, transmittance and absorptance against wavelength or angle (transfer-matrix method, measured n, k for metals, oxides, semiconductors, liquids and polymers), shown in a data panel that updates live, and the traced beam carries the SPR dip.
 
 ## Getting started
 
