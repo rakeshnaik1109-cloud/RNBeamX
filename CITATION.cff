@@ -12,7 +12,11 @@ authors:
     affiliation: "Department of Physics and Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
 version: "1.2"
 date-released: "2026-10-27"
+doi: "10.5281/zenodo.23697703"
 identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23697703"
+    description: "Zenodo archive of RNBeamX v1.2"
   - type: url
     value: "https://github.com/rakeshnaik1109-cloud/RNBeamX/releases/tag/v1.2"
     description: "GitHub release v1.2"

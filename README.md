@@ -8,10 +8,14 @@ diffract and disperse, and they update live as you move or rotate anything.
 There is nothing to install, no account, and your designs never leave your
 computer.
 
-**Version 1.2** · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23697703.svg)](https://doi.org/10.5281/zenodo.23697703)
+
+**Version 1.2** · **DOI:** [10.5281/zenodo.23697703](https://doi.org/10.5281/zenodo.23697703) · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
 <sup>1</sup>Centre for Photonics and Quantum Communication Technology, IIT Roorkee ·
 <sup>2</sup>Department of Physics, IIT Roorkee
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.
+
+**How to cite:** Naik, R., & Srivastava, S. K. (2026). *RNBeamX (Optical Setup Designer)* (Version 1.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703 — BibTeX in [Citing RNBeamX](#citing-rnbeamx).
 
 ---
 
@@ -134,6 +138,30 @@ recorded is an anonymous visit count, plus which features were used (for example
 [GoatCounter](https://www.goatcounter.com): no cookies, no personal data, and
 nothing about your figures or files. Opened from a local file (the offline
 single-file build), RNBeamX is not counted.
+
+## Citing RNBeamX
+
+If RNBeamX contributes to published work (a figure, a graphical abstract or a
+calculated spectrum), please cite it. A [`CITATION.cff`](CITATION.cff) file is
+included, so GitHub shows a "Cite this repository" box with ready-made BibTeX
+and APA entries.
+
+> Naik, R., & Srivastava, S. K. (2026). *RNBeamX (Optical Setup Designer)*
+> (Version 1.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703
+
+```bibtex
+@software{naik_rnbeamx_2026,
+  author    = {Naik, Rakesh and Srivastava, Sachin Kumar},
+  title     = {{RNBeamX (Optical Setup Designer)}},
+  version   = {1.2},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23697703},
+  url       = {https://doi.org/10.5281/zenodo.23697703}
+}
+```
+
+---
 
 ## Licence
 
