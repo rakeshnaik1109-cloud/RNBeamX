@@ -78,7 +78,7 @@ RNBX.defaultStyle = () => ({
 RNBX.defaultView3d = () => ({
   yaw: -28, pitch: 34, zoom: 1, panX: 0, panY: 0,
   beamHeight: 6, table: true, holes: true, posts: true,
-  tableColor: '#2c3036', shadow: true,
+  tableColor: '#2c3036', tableFinish: 'black', shadow: true,
 });
 
 RNBX.newDocument = (presetId = 'nature-2') => {
@@ -102,6 +102,7 @@ RNBX.normalizeDocument = doc => {
   doc.page = Object.assign({}, fresh.page, doc.page);
   doc.style = Object.assign({}, fresh.style, doc.style);
   doc.view3d = Object.assign({}, fresh.view3d, doc.view3d);
+  if (doc.view3d.tableFinish == null || (doc.view3d.tableFinish === 'black' && doc.view3d.tableColor !== fresh.view3d.tableColor)) doc.view3d.tableFinish = doc.view3d.tableColor === fresh.view3d.tableColor ? 'black' : 'custom';
   doc.animation = Object.assign({}, fresh.animation, doc.animation);
   doc.animation.tracks = doc.animation.tracks || {};
   doc.animation.camera = doc.animation.camera || [];

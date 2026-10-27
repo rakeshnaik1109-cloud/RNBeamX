@@ -344,7 +344,7 @@ T.list.push({
   build() {
     const d = base('ga-els', 112.4, 44.96, 'Frequency doubling graphical abstract', { mode: '3d', beamGlow: true, fontSizePt: 6, polarization: false });
     d.page.background = 'dark';
-    Object.assign(d.view3d, { yaw: -24, pitch: 30, zoom: 1.12, panY: 2.5, beamHeight: 5, tableColor: '#232733' });
+    Object.assign(d.view3d, { yaw: -24, pitch: 30, zoom: 1.12, panY: 2.5, beamHeight: 5, tableColor: '#232733', tableFinish: 'custom' });
     const laser = mk('laser', 14, 26, 0, { lambda: 1064, pulsed: false, L: 16, H: 6, text: '' }, 'Nd:YAG 1064 nm', [0, 7]);
     const l1 = mk('lens', 36, 26, 0, { f: 150 }, 'L1', [0, 7]);
     const nc = mk('crystal', 51, 26, 0, { eff: 0.5, L: 4.5, H: 4.5 }, 'BBO', [0, 7]);

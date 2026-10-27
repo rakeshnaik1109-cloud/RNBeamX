@@ -52,6 +52,19 @@ module.exports = async ({ base, getBrowser, H }) => {
     await page.waitForTimeout(250);
     await H.shot(page, 'optomech-' + mode, '#stage');
   }
+  // 3D table top: picking a finish in the inspector sets the colour and texture
+  const tbl = await page.evaluate(async () => {
+    RNBX.select([]); RNBX.inspector.build();
+    const sel = [...document.querySelectorAll('#inspector select')].find(e => [...e.options].some(o => o.value === 'steel'));
+    if (!sel) return null;
+    sel.value = 'steel'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200));
+    const v = RNBX.state.doc.view3d, svg = document.querySelector('#stage').innerHTML;
+    const out = [v.tableFinish, v.tableColor, svg.includes('stroke-opacity="0.22"')];
+    sel.value = 'black'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return out;
+  });
+  H.check('3D table top: choosing brushed steel recolours the table and adds the brushed texture', tbl && tbl[0] === 'steel' && tbl[1] === '#b4b9bf' && tbl[2], tbl);
   H.check('no errors', page.errors.length === 0, page.errors.join(' | '));
   await page.context().close();
 };

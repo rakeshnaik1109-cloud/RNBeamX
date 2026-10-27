@@ -95,6 +95,10 @@ have their own positions, so tidying the 3D view never disturbs the 2D layout. L
 - **3D**: the same layout on an optical table. Set orbit, tilt, zoom, beam height,
   table, holes, posts and shadows under *3D camera & table*, or use the sliders
   on the canvas. Labels can be dragged in 3D without disturbing the 2D layout.
+  **Table top** picks the table finish: matte black, brushed stainless steel,
+  aluminium breadboard, grey, anodised blue, white (for light slides) or a wood
+  bench (no holes). *Table colour* tints it to any colour; brushed finishes keep
+  their texture when tinted.
 
 Beams can be drawn at true width (with foci and divergence) or as uniform lines,
 with optional glow, direction arrows, power fading, polarisation marks and a

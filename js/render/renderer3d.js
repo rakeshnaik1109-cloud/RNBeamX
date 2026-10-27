@@ -183,6 +183,16 @@ function shadeColor(face, cam) {
 }
 
 /* ---------- scene ---------- */
+/* table-top finishes: the colour is stored in view3d.tableColor, the finish adds texture */
+R3.TABLE_FINISHES = {
+  black: { name: 'Matte black', color: '#2c3036' },
+  steel: { name: 'Brushed stainless steel', color: '#b4b9bf', brushed: true, sheen: 0.32 },
+  alu: { name: 'Aluminium breadboard', color: '#cfd3d8', brushed: true, sheen: 0.28 },
+  grey: { name: 'Grey', color: '#80868e', sheen: 0.14 },
+  blue: { name: 'Anodised blue', color: '#2f4d73', sheen: 0.16 },
+  white: { name: 'White (light slides)', color: '#eceef1', sheen: 0.2 },
+  wood: { name: 'Wood bench (no holes)', color: '#a9825a', sheen: 0.12, holes: false },
+};
 R3.scene = (doc, trace, S, opt = {}) => {
   const cam = R3.camera(doc);
   const v3 = doc.view3d, W = doc.page.width, H = doc.page.height, bh = v3.beamHeight || 6, k = cam.k;
@@ -203,6 +213,16 @@ R3.scene = (doc, trace, S, opt = {}) => {
     }
     table += sides.join('');
     table += `<path d="M ${top.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${tc}"/>`;
+    const fin = R3.TABLE_FINISHES[v3.tableFinish] || {};
+    if (fin.brushed) {
+      // brushed metal: faint streaks along the long side of the table
+      let lt = '', dk = '';
+      for (let y = 0.4, i = 0; y < H; y += 0.55, i++) {
+        const a = cam.p(0, y, 0), b = cam.p(W, y, 0), seg = `M ${n(a[0])} ${n(a[1])} L ${n(b[0])} ${n(b[1])} `;
+        if ((i * 7) % 3 === 0) dk += seg; else if ((i * 5) % 4 === 1) lt += seg;
+      }
+      table += `<path d="${lt}" stroke="#ffffff" stroke-opacity="0.22" stroke-width="${n(Math.max(0.05, 0.12 * k))}" fill="none"/><path d="${dk}" stroke="#000000" stroke-opacity="0.07" stroke-width="${n(Math.max(0.05, 0.12 * k))}" fill="none"/>`;
+    }
     if (v3.holes !== false) {
       const pitch = 5, rx = Math.max(0.08, 0.3 * k), ry = rx * Math.sin(cam.th);
       let d = '';
@@ -213,7 +233,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
       table += `<path d="${d}" fill="${U.darken(tc, 0.45)}" fill-opacity="0.9"/>`;
     }
     // a soft sheen across the table top
-    table += `<defs><linearGradient id="rbx-tablesheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/><stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs><path d="M ${top.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="url(#rbx-tablesheen)"/>`;
+    table += `<defs><linearGradient id="rbx-tablesheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="${fin.sheen || 0.10}"/><stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs><path d="M ${top.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="url(#rbx-tablesheen)"/>`;
   }
 
   const items = [];

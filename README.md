@@ -27,7 +27,7 @@ computed and editable.
 |---|---|
 | Clean line-art schematics (Optics Express, Opt. Lett., APL style) | **Schematic** style: flat fills, true line weights in pt |
 | Polished figures (Nature Photonics, Light: Sci. Appl. style) | **Shaded** style: metal, glass and anodised gradients |
-| Eye-catching 3D figures and graphical abstracts | **3D** style: optical table, posts, shadows, glowing beams, any camera angle |
+| Eye-catching 3D figures and graphical abstracts | **3D** style: optical table (black, brushed steel, aluminium, white, wood… or any colour), posts, shadows, glowing beams, any camera angle |
 | Animation for talks and social media | Keyframes on any property, light flow, pulses, camera orbits, MP4 / WebM export |
 | Files journals accept | SVG and PDF (vector, editable text), TIFF and PNG with DPI written in, JPEG |
 

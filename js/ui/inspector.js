@@ -526,7 +526,11 @@ function docPanel() {
       el('div', { class: 'grid2' },
         control({ key: 'posts', label: 'Posts & bases', type: 'bool' }, k => v3[k], vset),
         control({ key: 'shadow', label: 'Shadows', type: 'bool' }, k => v3[k], vset)),
-      control({ key: 'tableColor', label: 'Table colour', type: 'color' }, k => v3[k], vset)));
+      el('div', { class: 'grid2' },
+        control({ key: 'tableFinish', label: 'Table top', type: 'select', options: Object.entries(RNBX.render3d.TABLE_FINISHES).map(([id, f]) => [id, f.name]).concat([['custom', 'Custom colour']]) }, k => v3[k] || 'custom',
+          (k, v) => { const f = RNBX.render3d.TABLE_FINISHES[v]; RNBX.history.checkpoint('v3finish'); v3.tableFinish = v; if (f) { v3.tableColor = f.color; v3.holes = f.holes !== false; } RNBX.changed(); setTimeout(Ins.build, 0); }),
+        control({ key: 'tableColor', label: 'Table colour', type: 'color' }, k => v3[k],
+          (k, v) => { const f = RNBX.render3d.TABLE_FINISHES[v3.tableFinish]; RNBX.history.checkpoint('v3tableColor'); v3.tableColor = v; if (!f || f.color.toLowerCase() !== String(v).toLowerCase()) { if (!(f && f.brushed)) v3.tableFinish = 'custom'; } RNBX.changed(); }))));
   }
   root.push(sec('Publishing tools', el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '12px' } },
     el('button', { class: 'btn small', type: 'button', text: 'Caption helper', onclick: () => RNBX.dialogs.caption() }),
