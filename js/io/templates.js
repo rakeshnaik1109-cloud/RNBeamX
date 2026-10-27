@@ -264,7 +264,7 @@ T.list.push({
   build() {
     const d = base('nature-2', 150, 76, 'Coated grating stack', { polarization: false });
     const sub = mk('nslab', 58, 60, 0, { W: 56, D: 28, t: 6, color: '#d9ead3', name: 'Polymer', mat: 'PDMS', label: true });
-    const grat = mk('nridges', 0, 0, 0, { profile: 'square', period: 8, duty: 0.5, amp: 2.4, color: '#d9ead3', name: 'Grating', on: sub.id });
+    const grat = mk('nridges', 0, 0, 0, { profile: 'square', period: 8, duty: 0.5, amp: 2.4, color: '#d9ead3', name: 'Grating', mat: 'PDMS', periodNm: 800, heightNm: 100, on: sub.id });
     const m1 = mk('ncoat', 0, 0, 0, { t: 0.8, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 100, on: grat.id });
     const di = mk('ncoat', 0, 0, 0, { t: 0.9, color: '#e8a13a', name: 'Dielectric', mat: 'Al2O3', nm: 50, sheen: false, on: m1.id });
     const m2 = mk('ncoat', 0, 0, 0, { t: 0.6, color: '#b3bac4', name: 'Metal', mat: 'Ag', nm: 20, on: di.id });

@@ -269,6 +269,31 @@ function responseSection(obj, def, set) {
       control({ key: 'amax', label: 'To', type: 'number', unit: '°', min: 0.1, max: 89.99, step: 0.5 }, cget, cset)));
     kids.push(control({ key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 190, max: 30000, step: 1 }, cget, cset));
   }
+  const geo = def.grating ? def.grating(obj.props, obj, S.doc) : null;
+  if (geo) {
+    kids.push(control({ key: 'method', label: 'Method', type: 'select', options: [['auto', 'Grating (RCWA), rigorous'], ['tmm', 'Flat films only (fast)']] }, k => cget(k) === 'tmm' ? 'tmm' : 'auto', (k, v) => cset(k, v, true)));
+    if (c.method !== 'tmm') kids.push(el('div', { class: 'grid2' },
+      control({ key: 'orders', label: 'Diffraction orders ±', type: 'number', min: 1, max: 60, step: 1, hint: 'more = slower, more exact' }, k => cget(k) || 20, cset),
+      control({ key: 'slices', label: 'Profile slices', type: 'number', min: 4, max: 60, step: 1, hint: 'for curved profiles' }, k => cget(k) || 16, cset)),
+      control({ key: 'rpoints', label: 'Points in the curve', type: 'number', min: 11, max: 1001, step: 10 }, k => cget(k) || 101, cset),
+      el('div', { class: 'hint', text: `One period: ${U.fmt(geo.period, 0)} nm, ${geo.slices.length} slice${geo.slices.length > 1 ? 's' : ''}, ${2 * geo.orders + 1} orders. Runs in the background.` }),
+      el('button', { class: 'btn small', type: 'button', text: 'Check convergence', title: 'Recalculate a few points with 1.5× the orders and compare', onclick: ev => {
+        const btn = ev.currentTarget, RC = RNBX.rcwa, cc = Object.assign({}, TF.DEFAULT_CALC, obj.props.calc);
+        btn.disabled = true; btn.textContent = 'Checking…';
+        setTimeout(() => {
+          const wl = cc.scan === 'wl', lo = wl ? +cc.lmin : +cc.amin, hi = wl ? +cc.lmax : +cc.amax, pts = [0.2, 0.5, 0.8].map(f => lo + (hi - lo) * f);
+          const g1 = def.grating(obj.props, obj, S.doc), g2 = Object.assign({}, g1, { orders: Math.min(60, Math.round(g1.orders * 1.5)) });
+          let worst = 0;
+          pts.forEach(v => {
+            const lam = wl ? v : +cc.lambda, th = wl ? +cc.angle || 0 : Math.min(89.9, v), pol = cc.pol === 'avg' ? 'p' : cc.pol;
+            const a = RC.solve(RC.problemAt(g1, lam), lam, th, pol), b = RC.solve(RC.problemAt(g2, lam), lam, th, pol);
+            worst = Math.max(worst, Math.abs(a.R - b.R), Math.abs(a.T - b.T));
+          });
+          btn.disabled = false; btn.textContent = 'Check convergence';
+          RNBX.toast(worst < 0.01 ? `Converged: ±${g1.orders} and ±${g2.orders} orders agree within ${U.fmt(worst * 100, 2)} %` : `Not converged yet: results change by up to ${U.fmt(worst * 100, 1)} % with ±${g2.orders} orders. Increase the orders (metal gaps and thin metal walls need many).`, worst < 0.01 ? '' : 'error');
+        }, 30);
+      } }));
+  }
   kids.push(el('div', { class: 'grid2' },
     control({ key: 'pol', label: 'Polarisation', type: 'select', options: [['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']] }, cget, cset),
     control({ key: 'show', label: 'Curves', type: 'select', options: [['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['RTA', 'R, T, A']] }, cget, cset)));
@@ -276,8 +301,11 @@ function responseSection(obj, def, set) {
   const out = el('div', { class: 'readout' });
   const update = () => {
     let res;
-    try { res = TF.cached(def.stack(obj.props, obj, S.doc), obj.props.calc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
+    try { res = RNBX.plotData.calcResult(obj, S.doc); } catch (e) { out.textContent = 'Calculation failed: ' + e.message; return; }
+    if (!res) return;
+    if (res.pending && !res.x) { out.textContent = `Calculating the grating (RCWA)… ${Math.round((res.progress || 0) * 100)} %`; return; }
     const lines = TF.summary(res);
+    if (res.method === 'rcwa') lines.unshift(res.pending ? `RCWA: updating… ${Math.round((res.progress || 0) * 100)} %` : 'Rigorous grating calculation (RCWA)');
     const note = def.calcNote ? def.calcNote(obj.props, obj) : '';
     out.innerHTML = (lines.length ? lines.map(U.esc).join('<br>') : 'No dip or peak inside this range.') +
       (res.warn.length ? `<br><span style="color:var(--warn,#b26a00)">Outside the measured data range: ${U.esc(res.warn.join(', '))}. End values are used.</span>` : '') +

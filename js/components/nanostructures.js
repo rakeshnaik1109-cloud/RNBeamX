@@ -48,10 +48,10 @@ const profileFn = pr => {
       case 'sawtooth': return A * u;
       default: {
         // ridges centred in each period; trapezoids get sloped walls
-        const ramp = pr.kind === 'trapezoid' ? Math.min(0.18, (1 - a) / 2) : 0.012;
+        const ramp = pr.kind === 'trapezoid' ? Math.min(0.18, (1 - a) / 2) : pr.sharp ? 0 : 0.012;
         const dist = Math.abs(u - 0.5), half = a / 2;
         if (dist <= half - ramp / 2) return A;
-        if (dist >= half + ramp / 2) return 0;
+        if (dist >= half + ramp / 2 || ramp === 0) return 0;
         return A * (half + ramp / 2 - dist) / ramp;
       }
     }
@@ -61,6 +61,12 @@ const surfFn = s => {
   const f = profileFn(s && s.prof), z = s ? +s.z || 0 : 0, g = s ? +s.grow || 0 : 0;
   if (!(g > 0)) return x => z + f(x);
   if (!s.prof || !(s.prof.amp > 0)) return () => z + g;
+  if (s.prof.sharp && s.prof.kind === 'square') {
+    // growth by a square (for the grating calculation): walls stay vertical,
+    // tops flat, so every interface is horizontal or vertical (exact slices)
+    const K = 48;
+    return x => { let m = -Infinity; for (let i = -K; i <= K; i++) { const v = f(x + g * i / K); if (v > m) m = v; } return z + m + g; };
+  }
   // Minkowski growth by a disc of radius g: max over |u| ≤ g of f(x + u) + √(g² − u²)
   const K = 24;
   return x => { let m = -Infinity; for (let i = -K; i <= K; i++) { const u = g * i / K, v = f(x + u) + Math.sqrt(Math.max(0, g * g - u * u)); if (v > m) m = v; } return z + m; };
@@ -151,11 +157,76 @@ const chainNote = (p, obj) => {
   const skipped = chain.filter(o => !['nslab', 'ncoat'].includes(o.type));
   const corrugated = chain.some(o => o.type === 'ncoat' && o.props.base && o.props.base.prof);
   const out = ['Stack: ' + chain.map(o => (o.props.name || lib.get(o.type).name) + (o === chain[0] ? ' (substrate)' : o.props.nm ? ` ${o.props.nm} nm` : '')).join(' → ') + '.'];
-  if (skipped.length) out.push('Not included (laterally structured): ' + skipped.map(o => o.props.name || lib.get(o.type).name).join(', ') + '. Their resonances need RCWA or FDTD.');
+  const rc = chain.filter(o => o.type === 'nridges').length === 1 && !chain.some(o => o.type === 'narray' || o.type === 'nsheet');
+  if (rc && (p.calc || {}).method !== 'tmm') out.push('Grating calculated rigorously (RCWA) over one period, with the real period, height and thicknesses.');
+  else if (skipped.length) out.push('Not included (laterally structured): ' + skipped.map(o => o.props.name || lib.get(o.type).name).join(', ') + '.' + (rc ? ' Choose Method ▸ Grating (RCWA) to include the grating.' : ' Nano-object arrays and sheets need FDTD.'));
   else if (corrugated) out.push('Coatings on a grating are calculated as flat films.');
   return out.join(' ');
 };
+/* ---------- the grating problem (RCWA) from a chain of blocks ----------
+   One period of the stack in real units (nm): ridges give the period and
+   profile, coatings grow conformally by their real thickness, slabs are
+   flat. The structure is cut into horizontal slices of piecewise-constant
+   material; identical neighbouring slices are merged, so lamellar
+   gratings are exact. Returns null when the chain has no ridges or
+   contains parts RCWA cannot describe (nano-object arrays, sheets). */
+const chainGrating = (p, obj, doc) => {
+  const chain = obj ? lib.stackChain(obj, doc) : [];
+  const ridges = chain.filter(o => o.type === 'nridges');
+  if (ridges.length !== 1 || chain[0].type !== 'nslab' || chain.some(o => o.type === 'narray' || o.type === 'nsheet')) return null;
+  const rp = ridges[0].props, period = Math.max(10, +rp.periodNm || 500);
+  const calc = Object.assign({}, p.calc || {});
+  const mats = [{ mat: p.ambient || 'air', n: p.ambientN, k: 0 }, { mat: chain[0].props.mat, n: chain[0].props.n, k: chain[0].props.k }];
+  const regions = [];
+  let base = FLAT;
+  chain.slice(1).forEach(o => {
+    const q = o.props, mi = mats.push({ mat: q.mat, n: q.n, k: q.k }) - 1;
+    let top;
+    if (o.type === 'nridges') top = { z: surfMax(base) + (+q.residNm || 0), prof: { kind: q.profile, period, duty: q.duty, amp: Math.max(0, +q.heightNm || 0), sharp: true } };
+    else if (o.type === 'ncoat') top = { z: +base.z || 0, prof: base.prof, grow: (+base.grow || 0) + (+q.nm || 0) };
+    else top = { z: surfMax(base) + (+q.nm || 0), prof: null };
+    const smin = sf => sf.prof ? (+sf.z || 0) + (+sf.grow || 0) : surfMax(sf);
+    regions.push({ lo: surfFn(base), hi: surfFn(top), lmin: smin(base), lmax: surfMax(base), hmin: smin(top), hmax: surfMax(top), m: mi, loFlat: !base.prof, hiFlat: !top.prof });
+    base = top;
+  });
+  const Z = surfMax(base);
+  if (!(Z > 0)) return null;
+  // horizontal cuts: every flat level, plus fine slices where profiles vary
+  const K = 1024, xs = []; for (let i = 0; i < K; i++) xs.push((i + 0.5) / K * period);
+  const varying = regions.flatMap(r => [r.loFlat ? null : [r.lmin, r.lmax], r.hiFlat ? null : [r.hmin, r.hmax]]).filter(Boolean);
+  const totalVar = varying.reduce((a, v) => a + (v[1] - v[0]), 0);
+  const h = Math.max(0.5, totalVar / U.clamp(+calc.slices || 16, 4, 60));
+  const cuts = new Set([0, Z]);
+  regions.forEach(r => [r.lmin, r.lmax, r.hmin, r.hmax].forEach(v => cuts.add(U.round(v, 6))));
+  const levels = [...cuts].filter(v => v >= 0 && v <= Z).sort((a, b) => a - b);
+  const slices = [];
+  for (let i = levels.length - 2; i >= 0; i--) {
+    const z0 = levels[i], z1 = levels[i + 1];
+    if (z1 - z0 < 1e-6) continue;
+    const vary = varying.some(v => v[1] > z0 + 1e-9 && v[0] < z1 - 1e-9);
+    const k = vary ? Math.max(1, Math.ceil((z1 - z0) / h)) : 1;
+    for (let j = k - 1; j >= 0; j--) {
+      const za = z0 + (z1 - z0) * j / k, zb = z0 + (z1 - z0) * (j + 1) / k, zm = (za + zb) / 2;
+      const runs = [];
+      xs.forEach((x, ix) => {
+        let m = 0;
+        for (const r of regions) if (zm >= r.lo(x) && zm < r.hi(x)) m = r.m;
+        const last = runs[runs.length - 1];
+        if (last && last.m === m) last.b = (ix + 1) / K; else runs.push({ a: ix / K, b: (ix + 1) / K, m });
+      });
+      if (runs.length > 1 && runs[0].m === runs[runs.length - 1].m) { const lst = runs.pop(); runs[0].a = lst.a - 1; }
+      const prev = slices[slices.length - 1];
+      if (prev && JSON.stringify(prev.runs) === JSON.stringify(runs)) prev.d += zb - za;
+      else slices.push({ d: zb - za, runs });
+    }
+  }
+  const orders = U.clamp(Math.round(+calc.orders || 20), 1, 60);
+  if (p.side === 'bottom') return { period, orders, mats: [mats[1], mats[0]].concat(mats.slice(2)), slices: slices.slice().reverse().map(sl => ({ d: sl.d, runs: sl.runs.map(r => ({ a: r.a, b: r.b, m: r.m === 0 ? 1 : r.m === 1 ? 0 : r.m })) })) };
+  return { period, orders, mats, slices };
+};
+
 const CALC = {
+  grating: chainGrating,
   calcParams: [
     { key: 'ambient', label: 'Medium above the stack', type: 'select', options: () => RNBX.thinfilm.options() },
     { key: 'ambientN', label: 'Its refractive index', type: 'number', min: 1, max: 4, step: 0.001, animatable: true, show: p => p.ambient === 'custom' },
@@ -164,7 +235,7 @@ const CALC = {
   stack: chainStack,
   calcNote: chainNote,
 };
-const CALC_DEF = { ambient: 'air', ambientN: 1.333, side: 'top', calc: { scan: 'wl', lmin: 400, lmax: 1200, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } };
+const CALC_DEF = { ambient: 'air', ambientN: 1.333, side: 'top', calc: { scan: 'wl', lmin: 400, lmax: 1200, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633, method: 'auto', orders: 20, slices: 16, rpoints: 101 } };
 
 const block = cfg => lib.register(Object.assign({ category: CAT, annotation: true, autoLabel: false, abbr: '', stackable: true, resizable: false }, CALC, cfg,
   { defaults: Object.assign({}, VIEW_DEF, CALC_DEF, cfg.defaults) }));
@@ -204,14 +275,18 @@ block({
 block({
   type: 'nridges', name: 'Grating ridges',
   keywords: 'grating ridges lines periodic corrugation 1d metasurface lamellar trapezoid sinusoidal blazed sawtooth nanoimprint building block',
-  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS' },
+  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS', n: 1.5, k: 0, periodNm: 500, heightNm: 100, residNm: 0 },
   params: [
     { key: 'profile', label: 'Profile', type: 'select', options: [['square', 'Rectangular'], ['trapezoid', 'Trapezoid'], ['sine', 'Sinusoidal'], ['triangle', 'Triangular'], ['sawtooth', 'Blazed (sawtooth)']] },
     { key: 'period', label: 'Period (drawn)', type: 'number', unit: 'mm', min: 0.3, max: 100, step: 0.1 },
     { key: 'duty', label: 'Ridge fraction', type: 'range', min: 0.05, max: 0.95, step: 0.01, show: p => p.profile === 'square' || p.profile === 'trapezoid' },
     { key: 'amp', label: 'Ridge height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.1, animatable: true },
     { key: 'resid', label: 'Residual layer under the ridges', type: 'number', unit: 'mm', min: 0, max: 60, step: 0.1 },
-    { key: 'name', label: 'Name', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' }, ...VIEW],
+    { key: 'name', label: 'Name', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
+    MAT('Ridge material (for Optical response)'), ...NK,
+    { key: 'periodNm', label: 'Real period', type: 'number', unit: 'nm', min: 10, max: 1e5, step: 1, animatable: true },
+    { key: 'heightNm', label: 'Real ridge height', type: 'number', unit: 'nm', min: 0, max: 1e5, step: 1, animatable: true },
+    { key: 'residNm', label: 'Real residual layer', type: 'number', unit: 'nm', min: 0, max: 1e5, step: 1 }, ...VIEW],
   variants: [
     { name: 'Sinusoidal grating', props: { profile: 'sine', period: 7, amp: 2 } },
     { name: 'Blazed grating', props: { profile: 'sawtooth', period: 6, amp: 2.2 } },

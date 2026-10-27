@@ -66,10 +66,26 @@ DataIO.apply = (obj, d) => {
 
 /* ---------- panels calculated live from a layer stack or SPR prism ---------- */
 const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'] };
+/* one entry point for every calculation: flat films (transfer matrix,
+   instant) or a grating (RCWA, in the background: returns the last
+   result with pending: true, or { pending, progress }, until done) */
+const lastRcwa = new Map();
+const notify = () => RNBX.changed();
 DataIO.calcResult = (src, doc) => {
   const def = src && lib.get(src.type);
   if (!def || !def.stack || !RNBX.thinfilm) return null;
-  return RNBX.thinfilm.cached(def.stack(src.props, src, doc), Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}));
+  const calc = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {});
+  if (def.grating && RNBX.rcwa && calc.method !== 'tmm') {
+    const geo = def.grating(src.props, src, doc);
+    if (geo) {
+      const c2 = Object.assign({}, calc, { points: calc.rpoints || 101 });
+      const r = RNBX.rcwa.cached(geo, c2, notify);
+      if (r.pending) { const last = lastRcwa.get(src.id); return last ? Object.assign({}, last, { pending: true, progress: r.progress }) : r; }
+      lastRcwa.set(src.id, r);
+      return r;
+    }
+  }
+  return RNBX.thinfilm.cached(def.stack(src.props, src, doc), calc);
 };
 DataIO.calcSeries = res => res.calc.show.split('').filter(q => CALC_STYLE[q]).map(q => ({ name: CALC_STYLE[q][0], x: res.x, y: res.series[q], color: CALC_STYLE[q][1], dash: 'solid' }));
 DataIO.calcYLabel = res => { const q = res.calc.show.split('').filter(v => CALC_STYLE[v]); return q.length === 1 ? CALC_STYLE[q[0]][0] : q.join(', '); };
@@ -150,12 +166,14 @@ lib.register({
   bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
   draw(p, S) {
     const fs = U.pt2mm(p.fontSize), lw = U.pt2mm(p.lineWidth), ink = RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : '#111111', axw = U.pt2mm(0.6);
-    let series = (p.series || []).filter(s => s.x && s.x.length), lost = false;
+    let series = (p.series || []).filter(s => s.x && s.x.length), lost = false, busy = null;
     if (p.link) {
       // live: recomputed from the linked stack on every change and animation frame
       const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src, S.doc) : null;
-      if (res) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
+      if (res && res.x) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
+      else if (res && res.pending) { series = []; busy = res.progress || 0; }
       else { series = []; lost = true; }
+      if (res && res.pending && res.x) busy = res.progress || 0;
     }
     let xs = [], ys = [];
     const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
@@ -201,7 +219,8 @@ lib.register({
         s += `<line x1="${n(lx)}" y1="${n(yy)}" x2="${n(lx + fl * 1.8)}" y2="${n(yy)}" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw * 1.4)}"/><text x="${n(lx + fl * 2.3)}" y="${n(yy + fl * 0.35)}" font-size="${n(fl)}">${U.esc(sr.name)}</text>`;
       });
     }
-    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">${lost ? 'The linked stack was deleted' : 'Import data in the inspector'}</text>`;
+    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">${busy != null ? `Calculating (RCWA)… ${Math.round(busy * 100)} %` : lost ? 'The linked stack was deleted' : 'Import data in the inspector'}</text>`;
+    else if (busy != null && S.interactive !== false) s += `<text x="${n(R - 1)}" y="${n(T + fs * 0.9)}" text-anchor="end" fill="#8a919c" font-size="${n(fs * 0.8)}">updating ${Math.round(busy * 100)} %</text>`;
     return s + '</g>';
   },
 });
