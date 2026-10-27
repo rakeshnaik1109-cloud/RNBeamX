@@ -63,7 +63,6 @@ M.items = {
     { label: 'Caption helper', action: () => RNBX.dialogs.caption() },
     '-',
     { label: 'Guide ↗ (illustrated)', icon: 'book', action: () => window.open(RNBX.links.guide, '_blank', 'noopener') },
-    { label: 'User manual ↗', action: () => window.open(RNBX.links.manual, '_blank', 'noopener') },
     { label: 'Open RNSpectraX ↗ (spectra)', action: () => window.open(RNBX.links.spectrax, '_blank', 'noopener') },
     { label: 'Rakesh Naik — website ↗', action: () => window.open(RNBX.links.home, '_blank', 'noopener') },
   ],
@@ -166,7 +165,6 @@ M.init = () => {
   D.$('#lnkSpectrax').href = RNBX.links.spectrax;
   D.$('#lnkHome').href = RNBX.links.home;
   D.$('#lnkGuide').href = RNBX.links.guide;
-  D.$('#lnkManual').href = RNBX.links.manual;
   D.$('#btnTemplates').onclick = () => RNBX.dialogs.templates();
   D.$('#btnHelp').innerHTML = D.icon('help');
   D.$('#btnHelp').onclick = () => RNBX.dialogs.help();

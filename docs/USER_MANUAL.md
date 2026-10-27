@@ -7,7 +7,7 @@
 
 | Area | What it does |
 |---|---|
-| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), undo · redo · **↺ reset**, view toggles, Guide, Manual, Templates (grouped by topic, searchable; Enter opens the first match), Export |
+| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), undo · redo · **↺ reset**, view toggles, Guide, Templates (grouped by topic, searchable; Enter opens the first match), Export |
 | **Library** (left) | Every component, grouped and searchable. Drag a tile onto the page, or click it |
 | **Canvas** (centre) | The page at its true printed size, in millimetres |
 | **Properties** (right) | With nothing selected: page, journal preset, style, beams, 3D camera. With a selection: that object |

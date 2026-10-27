@@ -7,5 +7,4 @@ window.RNBX_LINKS = {
   spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/',  // companion: spectral analysis
   code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX',
   guide: 'guide.html',                                              // illustrated guide (this site)
-  manual: 'https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/docs/USER_MANUAL.md',
 };

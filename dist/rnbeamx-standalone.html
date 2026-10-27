@@ -383,7 +383,6 @@ a.icon-btn { text-decoration: none; }
     <div class="top-right">
       <a class="btn ghost family-link" id="lnkSpectrax" href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer" title="RNSpectraX: process and plot the spectra for this setup (companion app)">RNSpectraX ↗</a>
       <a class="btn ghost family-link" id="lnkGuide" href="https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html" target="_blank" rel="noopener" title="Illustrated guide: quick start, components, physics, export">Guide</a>
-      <a class="btn ghost family-link" id="lnkManual" href="https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/docs/USER_MANUAL.md" target="_blank" rel="noopener noreferrer" title="Full user manual (every control explained)">Manual</a>
       <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
       <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
       <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
@@ -470,7 +469,6 @@ window.RNBX_LINKS = {
   spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/',  // companion: spectral analysis
   code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX',
   guide: 'https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html',                                              // illustrated guide (this site)
-  manual: 'https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/docs/USER_MANUAL.md',
 };
 
 </script>
@@ -678,7 +676,7 @@ const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
 RNBX.VERSION = '1.1.0';
-RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX', guide: 'https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html', manual: 'https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/docs/USER_MANUAL.md' }, window.RNBX_LINKS || {});
+RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX', guide: 'https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html'}, window.RNBX_LINKS || {});
 
 /* ---------- event bus ---------- */
 const listeners = {};
@@ -11103,7 +11101,7 @@ Dl.help = () => {
     title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.', wide: true,
     body: [
       el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Fold mirrors and periscopes take beams off the table; Gaussian beams, Fresnel ghosts, cavities, ring resonators and interference (with piezo-driven fringes) are modelled too. Click any detector to see the power, phase and beam size that reach it.' }),
-      el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.guide}" target="_blank" rel="noopener">Illustrated guide</a> · <a href="${RNBX.links.manual}" target="_blank" rel="noopener noreferrer">User manual</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source</a>` }),
+      el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.guide}" target="_blank" rel="noopener">Illustrated guide</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source</a>` }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),
       grid,
     ],
@@ -11179,7 +11177,6 @@ M.items = {
     { label: 'Caption helper', action: () => RNBX.dialogs.caption() },
     '-',
     { label: 'Guide ↗ (illustrated)', icon: 'book', action: () => window.open(RNBX.links.guide, '_blank', 'noopener') },
-    { label: 'User manual ↗', action: () => window.open(RNBX.links.manual, '_blank', 'noopener') },
     { label: 'Open RNSpectraX ↗ (spectra)', action: () => window.open(RNBX.links.spectrax, '_blank', 'noopener') },
     { label: 'Rakesh Naik — website ↗', action: () => window.open(RNBX.links.home, '_blank', 'noopener') },
   ],
@@ -11282,7 +11279,6 @@ M.init = () => {
   D.$('#lnkSpectrax').href = RNBX.links.spectrax;
   D.$('#lnkHome').href = RNBX.links.home;
   D.$('#lnkGuide').href = RNBX.links.guide;
-  D.$('#lnkManual').href = RNBX.links.manual;
   D.$('#btnTemplates').onclick = () => RNBX.dialogs.templates();
   D.$('#btnHelp').innerHTML = D.icon('help');
   D.$('#btnHelp').onclick = () => RNBX.dialogs.help();
