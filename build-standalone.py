@@ -38,6 +38,10 @@ fav = open('assets/favicon.svg', encoding='utf-8').read()
 import base64
 src = src.replace('href="assets/favicon.svg"', 'href="data:image/svg+xml;base64,%s"' % base64.b64encode(fav.encode()).decode())
 
+# the standalone file lives anywhere, so the guide link points to the live site
+live = 'https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html'
+src = src.replace("guide: 'guide.html'", "guide: '%s'" % live).replace('href="guide.html"', 'href="%s"' % live)
+
 os.makedirs('dist', exist_ok=True)
 open('dist/rnbeamx-standalone.html', 'w', encoding='utf-8').write(src)
 print('dist/rnbeamx-standalone.html  %.0f kB  (build %s)' % (len(src.encode()) / 1024, build_id))

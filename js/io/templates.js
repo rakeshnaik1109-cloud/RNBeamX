@@ -258,6 +258,91 @@ T.list.push({
   },
 });
 
+/* ---------- Device sketch: metasurface absorber ---------- */
+T.list.push({
+  id: 'absorber', name: 'Device sketch · metasurface absorber', desc: 'MIM grating stack with Λ and a, layer key, incident light, detector',
+  build() {
+    const d = base('nature-2', 150, 72, 'Metasurface absorber', { polarization: false });
+    const stack = mk('layers', 62, 52, 0, { W: 52, D: 26, period: 10, amp: 1.6, duty: 0.32 });
+    const bulb = mk('bulb', 16, 18, 0, { r: 5 });
+    const inc = mk('arrow', 24, 22, 0, { dx: 22, dy: 16, width: 1.4, headSize: 2.4, color: '#c0392b', label: 'Incident light', labelSize: 6.5 });
+    const th = mk('angle', 47, 39, 0, { r: 7, a1: -90, a2: -144, label: 'θ_i', refLen: 16 });
+    const cyl = mk('cylinder3d', 128, 22, 0, { L: 22, r: 8, text: 'Detector' });
+    const out = mk('arrow', 96, 26, 0, { dx: 18, dy: -4, width: 1, headSize: 2, color: '#555b66', dash: true, label: 'Reflected', labelSize: 6 });
+    const pa = mk('panel', 4, 7, 0, { text: 'a' });
+    d.objects.push(stack, bulb, inc, th, cyl, out, pa);
+    return d;
+  },
+});
+
+/* ---------- Instrument sketch: FTIR beam path (ribbon beams) ---------- */
+T.list.push({
+  id: 'ftir', name: 'FTIR beam path (ribbon beams)', desc: 'Source → Michelson box → flat, cylindrical and parabolic mirrors → detector',
+  build() {
+    const d = base('nature-2', 150, 80, 'FTIR beam path', { beamStyle: 'ribbon', ribbonWidth: 3.6, beamArrows: true, polarization: false });
+    const src = mk('lamp', 14, 18, 0, { lmin: 640, lmax: 700 }, 'IR source', [0, 7]);
+    const mod = mk('module', 46, 18, 0, { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' });
+    const m1 = mk('mirror', 82, 18, ang(R, DN), { d: 10 }, 'Flat mirror', [9, -4]);
+    const cm = mk('cmirror', 82, 52, ang(DN, R), { d: 12, t: 1.8, f: 2000 }, 'Cylindrical mirror', [-12, 6]);
+    const pm = mk('oap', 122, 52, ang(R, UP), { d: 16, f: 4000 }, 'Parabolic mirror', [4, 13]);
+    const det = mk('pd', 122, 20, -90, {}, 'Detector (MCT)', [10, -2]);
+    const pa = mk('panel', 4, 7, 0, { text: 'b' });
+    d.objects.push(src, mod, m1, cm, pm, det, pa);
+    RNBX.labels.arrange2D(d);
+    return d;
+  },
+});
+
+/* ---------- Thermal emission measurement ---------- */
+T.list.push({
+  id: 'thermal', name: 'Thermal emission setup (illustration)', desc: 'Hot plate, sample on a tilt stage, IR camera and 0–70° observation fan',
+  build() {
+    const d = base('nature-2', 150, 88, 'Thermal emission setup', { polarization: false });
+    const jack = mk('labjack', 44, 78, 0, { W: 34, Hh: 22, tilt: 0, tiltTop: false });
+    const hp = mk('hotplate', 44, 52, 0, { W: 30, Hh: 8, D: 20, temp: '100 °C' });
+    const smp = mk('block3d', 47, 41.5, 0, { W: 12, Hh: 1.6, D: 9, color: '#9c1d1d', text: '' });
+    const lab1 = mk('text', 40, 33, 0, { text: 'MSA', size: 7, bold: true, anchor: 'middle' });
+    const fan = mk('fan', 50, 40, 0, { r: 30, zero: 0, sense: 'cw', angles: '0,10,20,30,40,50,60,70' });
+    const cam = mk('ircam', 128, 26, 0, { W: 16, Hh: 9, D: 12 });
+    const pa = mk('panel', 4, 7, 0, { text: 'c' });
+    d.objects.push(jack, hp, smp, lab1, fan, cam, pa);
+    return d;
+  },
+});
+
+/* ---------- SPR sensor (Kretschmann) ---------- */
+T.list.push({
+  id: 'spr', name: 'SPR sensor (Kretschmann prism)', desc: 'Halogen lamp, polariser, inverted prism with sensor chip and flow cell, fibre to spectrometer',
+  build() {
+    const d = base('nature-2', 160, 92, 'SPR sensor setup', { polarization: true });
+    const a = -35, dir = [Math.cos(U.rad(a)), Math.sin(U.rad(a))];
+    const at = (p0, t) => [U.round(p0[0] + dir[0] * t, 2), U.round(p0[1] + dir[1] * t, 2)];
+    const p0 = [16, 76];
+    const lamp = mk('lamp', p0[0], p0[1], a, { lmin: 610, lmax: 690 }, 'THL', [0, 8]);
+    const l1 = mk('lens', ...at(p0, 14), a, { f: 400 }, 'Fibre lens', [-3, 8]);
+    const ap = mk('iris', ...at(p0, 26), a, { r: 1 }, 'Aperture', [-3, 8]);
+    const pol = mk('polarizer', ...at(p0, 38), a, { angle: 0 }, 'Polariser', [-3, 8]);
+    const prism = mk('prism', 74, 40, 0, { s: 20, apex: 90, inverted: true, chip: true, mat: 'SF11' }, 'Prism', [0, 13]);
+    const fc = mk('flowcell', 74, 28.6, 0, { W: 26, Hh: 4, D: 12, title: '' });
+    d.objects.push(lamp, l1, ap, pol, prism, fc);
+    // the exit beam leaves the prism heading down-right: place the collection optics on it
+    const tr = RNBX.trace(d), last = tr.segments.filter(s => !s.ghost && s.b[0] > 82).sort((x, y) => y.len - x.len)[0];
+    const e = last ? last.a : [90, 45], ed = last ? U.v.norm(U.v.sub(last.b, last.a)) : [0.8, 0.6], er = U.round(U.deg(Math.atan2(ed[1], ed[0])), 2);
+    const q = t => [U.round(e[0] + ed[0] * t, 2), U.round(e[1] + ed[1] * t, 2)];
+    const obj = mk('objective', ...q(10), er, {}, 'Objective', [9, -5]);
+    const fc1 = mk('coupler', ...q(22), er + 180, {}, 'Fibre', [9, -4]);
+    const fc2 = mk('coupler', 112, 84, 0, {}, '', null);
+    const spec = mk('spectrometer', 132, 84, 0, { L: 18, H: 9 }, 'Spectrometer', [0, -7.5]);
+    const pc = mk('laptop', 138, 58, 0, { W: 22 });
+    const fib = link('fiber', fc1, fc2, { bend: 0.4 });
+    const usb = link('wire', spec, pc, { route: 'straight' });
+    const pa = mk('panel', 4, 7, 0, { text: 'd' });
+    d.objects.push(obj, fc1, fc2, spec, pc, fib, usb, pa);
+    RNBX.labels.arrange2D(d);
+    return d;
+  },
+});
+
 /* ---------- Graphical abstract: SHG in 3D ---------- */
 T.list.push({
   id: 'ga-shg', name: 'Graphical abstract · SHG in 3D', desc: 'Dark 3D table, glowing beams, orbiting camera animation',

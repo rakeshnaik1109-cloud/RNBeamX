@@ -112,6 +112,7 @@ B.draw2D = (trace, doc, opt = {}) => {
   const groups = B.groups(segs);
   let halo = '', core = '', deco = '';
   const lineW = Math.max(0.2, st.beamWidth * 0.5);
+  if (st.beamStyle === 'ribbon') return B.ribbon2D(trace, doc, opt);
   for (const seg of segs) {
     if (seg.len < 1e-4 || seg.vertical) continue;
     if (seg.ghost) {
@@ -157,6 +158,37 @@ B.draw2D = (trace, doc, opt = {}) => {
   let flow = '';
   if (opt.time != null && B.hasMotion(doc, segs, opt.motion)) flow = B.flow2D(trace, doc, opt.time, lineMode ? lineW : null, opt.motion);
   return `<g class="rbx-beams" pointer-events="none">${halo}${core}${flow}${deco}</g>`;
+};
+
+/* Ribbon style: wide translucent bands of constant width, as in
+   instrument beam-path sketches (FTIR, telescopes). All segments of
+   one colour form a single path inside an opacity group, so a band
+   never darkens where its own pieces meet at a mirror, and the
+   darker edge stays crisp. Different beams that cross do overlap. */
+B.ribbon2D = (trace, doc, opt = {}) => {
+  const st = doc.style, W = st.ribbonWidth || 3, byCol = new Map();
+  let ghosts = '', deco = '';
+  for (const seg of trace.segments) {
+    if (seg.len < 1e-4 || seg.vertical) continue;
+    const col = B.color(doc, seg);
+    if (seg.ghost) { ghosts += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${col}" stroke-opacity="0.45" stroke-width="${n(Math.max(0.15, W * 0.12))}" stroke-dasharray="${n(W * 0.4)} ${n(W * 0.3)}"/>`; continue; }
+    const k = (seg.emitted ? B.signalScale : 1);
+    const key = col + '|' + k;
+    if (!byCol.has(key)) byCol.set(key, { col, k, d: '', op: 0 });
+    const e = byCol.get(key);
+    e.d += `M ${n(seg.a[0])} ${n(seg.a[1])} L ${n(seg.b[0])} ${n(seg.b[1])} `;
+    e.op = Math.max(e.op, B.opacity(doc, seg));
+    if (st.beamArrows && seg.kind === 'beam' && seg.len > 12) deco += B.arrow(seg, U.darken(col, 0.25), 0.9, W * 0.28);
+  }
+  let core = '';
+  byCol.forEach(e => {
+    const w = W * e.k, edge = Math.max(0.12, w * 0.07);
+    core += `<g opacity="${n(Math.min(0.75, e.op * 0.6))}"><path d="${e.d}" fill="none" stroke="${U.darken(e.col, 0.25)}" stroke-width="${n(w)}" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="${e.d}" fill="none" stroke="${U.lighten(e.col, 0.2)}" stroke-width="${n(w - 2 * edge)}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  });
+  let flow = '';
+  if (opt.time != null && B.hasMotion(doc, trace.segments, opt.motion)) flow = B.flow2D(trace, doc, opt.time, null, opt.motion);
+  return `<g class="rbx-beams" pointer-events="none">${core}${ghosts}${flow}${deco}</g>`;
 };
 
 /* light moves when flow/pulses are switched on, and pulsed lasers

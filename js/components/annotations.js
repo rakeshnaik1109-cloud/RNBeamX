@@ -188,17 +188,22 @@ ann({
 
 ann({
   type: 'arrow', name: 'Arrow / line', keywords: 'arrow line pointer callout curve',
-  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false },
+  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false, label: '', labelSize: 7, labelSide: 1 },
   params: [{ key: 'dx', label: 'Length x', type: 'number', unit: 'mm', step: 0.5 }, { key: 'dy', label: 'Length y', type: 'number', unit: 'mm', step: 0.5 },
     { key: 'bend', label: 'Curvature', type: 'number', unit: 'mm', min: -100, max: 100, step: 0.5 },
     { key: 'head', label: 'Arrowheads', type: 'select', options: [['end', 'End'], ['start', 'Start'], ['both', 'Both'], ['none', 'None (line)']] },
     { key: 'headSize', label: 'Head size', type: 'number', unit: 'mm', min: 0.3, max: 10, step: 0.1 },
     { key: 'width', label: 'Line weight', type: 'number', unit: 'pt', min: 0.1, max: 12, step: 0.05 },
-    { key: 'color', label: 'Colour', type: 'color' }, { key: 'dash', label: 'Dashed', type: 'bool' }],
-  variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' }],
-  bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; return [Math.min(0, p.dx, c[0]) - 0.8, Math.min(0, p.dy, c[1]) - 0.8, Math.max(0, p.dx, c[0]) + 0.8, Math.max(0, p.dy, c[1]) + 0.8]; },
+    { key: 'color', label: 'Colour', type: 'color' }, { key: 'dash', label: 'Dashed', type: 'bool' },
+    { key: 'label', label: 'Text along the arrow', type: 'text', placeholder: 'e.g. Incident light, Annealing 300 °C' },
+    { key: 'labelSize', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5, show: p => !!p.label },
+    { key: 'labelSide', label: 'Text side', type: 'select', options: [[1, 'Above / left'], [-1, 'Below / right']], show: p => !!p.label }],
+  variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' },
+    { name: 'Hydrogen bond (dashed)', category: 'Structures & molecules', keywords: 'hydrogen bond dashed interaction h-bond van der waals', props: { head: 'none', dash: true, color: '#e0302f', width: 0.9, dx: 6, dy: 0 } },
+    { name: 'Process arrow with text', category: 'Graphical abstract', keywords: 'process step fabrication flow arrow text', props: { label: 'Step', width: 1.2, headSize: 2.2 } }],
+  bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; const m = 0.8 + (p.label ? U.pt2mm(p.labelSize || 7) * 1.5 : 0); return [Math.min(0, p.dx, c[0]) - m, Math.min(0, p.dy, c[1]) - m, Math.max(0, p.dx, c[0]) + m, Math.max(0, p.dy, c[1]) + m]; },
   handles: p => [{ key: 'end', x: p.dx, y: p.dy }],
-  draw(p) {
+  draw(p, S) {
     const L = Math.hypot(p.dx, p.dy) || 1, w = U.pt2mm(p.width);
     const c = [p.dx / 2 - p.dy / L * p.bend, p.dy / 2 + p.dx / L * p.bend];
     const hs = p.headSize;
@@ -209,6 +214,14 @@ ann({
     let s = `<path d="M ${n(st[0])} ${n(st[1])} Q ${n(c[0])} ${n(c[1])} ${n(e[0])} ${n(e[1])}" fill="none" stroke="${p.color}" stroke-width="${n(w)}" stroke-linecap="round" ${p.dash ? `stroke-dasharray="${n(w * 4)} ${n(w * 3)}"` : ''}/>`;
     if (p.head === 'end' || p.head === 'both') s += H.arrowHead(p.dx, p.dy, aEnd, hs, p.color);
     if (p.head === 'start' || p.head === 'both') s += H.arrowHead(0, 0, aStart, hs, p.color);
+    if (p.label) {
+      // text at the curve's midpoint, offset to one side and kept upright
+      const m = [0.25 * 0 + 0.5 * c[0] + 0.25 * p.dx, 0.25 * 0 + 0.5 * c[1] + 0.25 * p.dy], fs = U.pt2mm(p.labelSize || 7);
+      let ang = U.deg(Math.atan2(p.dy, p.dx)); const flip = ang > 90 || ang < -90; if (flip) ang -= 180 * Math.sign(ang);
+      const nx = p.dy / L, ny = -p.dx / L, sg = (+p.labelSide || 1) * (flip ? -1 : 1), off = w / 2 + fs * 0.75;
+      const x = m[0] + nx * off * sg, y = m[1] + ny * off * sg;
+      s += `<text x="${n(x)}" y="${n(y)}" font-family="${font(S)}" font-size="${n(fs)}" fill="${p.color}" text-anchor="middle" dominant-baseline="central" transform="rotate(${n(ang)} ${n(x)} ${n(y)})">${RNBX.text.markup(p.label, fs)}</text>`;
+    }
     return s;
   },
 });

@@ -95,6 +95,29 @@ function control(param, get, set, ctx = {}) {
       if ((o.props.series || []).length) wrap.append(el('div', { class: 'hint', text: o.props.series.map(q => `${q.name}: ${q.x.length} points`).join(' · ') }));
       return wrap;
     }
+    case 'layers': {
+      // layer stack editor (bottom → top): colour, name, thickness, tag
+      const o = ctx.obj;
+      wrap.append(lab);
+      if (!o) return wrap;
+      const L = o.props.layers = o.props.layers || [];
+      const edit = (fn, key) => { RNBX.history.checkpoint(key); fn(); RNBX.changed(); };
+      const rebuild = fn => { RNBX.history.checkpoint(); fn(); RNBX.changed(); Ins.build(); };
+      L.slice().reverse().forEach((ly, ri) => {
+        const i = L.length - 1 - ri;
+        const c = el('input', { type: 'color', value: (ly.color || '#888888').slice(0, 7), oninput: () => edit(() => { ly.color = c.value; }, 'lc' + o.id + i) });
+        const nm = el('input', { type: 'text', value: ly.name || '', title: 'Layer name', oninput: () => edit(() => { ly.name = nm.value; }, 'ln' + o.id + i) });
+        const th = el('input', { type: 'number', value: ly.t, min: 0.05, step: 0.1, title: 'Drawn thickness (mm)', oninput: () => { const v = parseFloat(th.value); if (isFinite(v) && v > 0) edit(() => { ly.t = v; }, 'lt' + o.id + i); } });
+        const tg = el('input', { type: 'text', value: ly.tag || '', title: 'Tag in the layer key, e.g. M₁', placeholder: 'tag', oninput: () => edit(() => { ly.tag = tg.value; }, 'lg' + o.id + i) });
+        const up = D.iconBtn('up', 'Move up', () => { if (i < L.length - 1) rebuild(() => L.splice(i + 1, 0, L.splice(i, 1)[0])); });
+        const rm = D.iconBtn('trash', 'Remove layer', () => { if (L.length > 1) rebuild(() => L.splice(i, 1)); });
+        wrap.append(el('div', { class: 'color-row', style: { gridTemplateColumns: '30px 1fr 52px 40px auto auto', marginBottom: '4px' } }, c, nm, th, tg, up, rm));
+      });
+      wrap.append(el('div', { class: 'row', style: { marginTop: '4px' } },
+        el('button', { class: 'btn small', type: 'button', text: '+ Layer on top', onclick: () => rebuild(() => L.push({ name: 'New layer', color: '#d9b84a', t: 1, tag: '' })) })));
+      wrap.append(el('div', { class: 'hint', text: 'Top of the list = top of the stack. Thickness is the drawn size in mm; write the real value in the name or tag.' }));
+      return wrap;
+    }
     case 'image': {
       const btn = el('button', { class: 'btn small', type: 'button', text: 'Choose image…' });
       btn.onclick = () => RNBX.project.pickFile('image/*,.svg', f => {
@@ -355,7 +378,8 @@ function docPanel() {
     el('button', { class: 'btn small', type: 'button', style: { marginBottom: '12px' }, html: D.icon('label', 14) + ' Auto-arrange labels', title: 'Shift+L', onclick: () => RNBX.labels.arrange() })));
 
   root.push(sec('Beams',
-    control({ key: 'beamStyle', label: 'Drawing', type: 'select', options: [['envelope', 'True width (focus, divergence)'], ['line', 'Uniform line (classic)']] }, k => st[k], dset('style')),
+    control({ key: 'beamStyle', label: 'Drawing', type: 'select', options: [['envelope', 'True width (focus, divergence)'], ['line', 'Uniform line (classic)'], ['ribbon', 'Wide translucent ribbon (instrument sketch)']] }, k => st[k], dset('style', true)),
+    ...(st.beamStyle === 'ribbon' ? [control({ key: 'ribbonWidth', label: 'Ribbon width', type: 'number', unit: 'mm', min: 0.3, max: 30, step: 0.1 }, k => st[k] || 3, dset('style'))] : []),
     control({ key: 'beamModel', label: 'Beam model', type: 'select', options: [['geometric', 'Geometric cone'], ['gaussian', 'Gaussian beam (waist, Rayleigh range, M²)']] }, k => st[k] || 'geometric', dset('style', true)),
     ...(st.beamModel === 'gaussian' ? [el('div', { class: 'grid2' },
       control({ key: 'gaussMag', label: 'Width exaggeration', type: 'number', unit: '×', min: 0.1, max: 1000, step: 1, hint: 'drawn ÷ physical, after scale' }, k => st[k] || 10, dset('style')),

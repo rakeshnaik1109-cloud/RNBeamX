@@ -64,6 +64,8 @@ The tracer is a real 2D optical model, not just a line router:
 - **Custom components**: import your own SVG drawing (stays vector) or photo, give it an optical behaviour, and keep it in *My components*.
 - **Style presets and house styles**: one-click journal looks, plus your group's own style saved and shared as a file.
 - **Touch and tablets**: pinch-zoom, two-finger pan, long-press menus and a touch toolbar.
+- **Device sketches and lab illustration**: multilayer / grating stacks with a layer key, ball-and-stick molecules, hydrogen bonds, hot plate, lab jack, IR camera, laptop, pipette, flow cell, angle fans and dimension lines; an SPR (Kretschmann) prism, a pass-through instrument box (e.g. an FTIR Michelson), and wide translucent ribbon beams.
+- **One-click reset** (↺ next to undo) that is itself undoable.
 
 ## Getting started
 
@@ -72,12 +74,14 @@ the single-file build `dist/rnbeamx-standalone.html`, which also works offline.
 
 1. **Templates** → pick a setup (Michelson, Mach–Zehnder, confocal Raman/SERS,
    pump–probe, polarisation, spectrometer, spatial filter, upright microscope,
-   live fringes, Gaussian telescope, microring, 3D graphical abstract), or
+   live fringes, Gaussian telescope, microring, metasurface absorber, FTIR beam
+   path, thermal emission, SPR sensor, 3D graphical abstract), or
 2. add a **laser**, then click or drag optics from the library. Optics snap onto the beam and turn
    to the right angle. Press **F** to flip the turn direction, **R** to rotate.
 3. Switch style with **1 / 2 / 3**, and use **Export** for the file you need.
 
-See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) for the full guide,
+See the illustrated [Guide](https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html) (`guide.html`),
+[docs/USER_MANUAL.md](docs/USER_MANUAL.md) for the full manual,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is organised, and
 [docs/USABILITY_TEST.md](docs/USABILITY_TEST.md) for a ready-made user test with lab members.
 

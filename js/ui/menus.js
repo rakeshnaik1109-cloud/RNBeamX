@@ -26,11 +26,26 @@ M.newDoc = () => {
   const d = RNBX.newDocument(S.doc.page.preset !== 'custom' ? S.doc.page.preset : 'nature-2');
   RNBX.setDocument(d, true);
 };
+/* One-click reset: empty default figure, default view and tools.
+   It is a single undo step, so nothing is ever lost. */
+M.resetAll = () => {
+  if (RNBX.anim && S.playing) RNBX.anim.stop();
+  RNBX.history.checkpoint();
+  RNBX.setDocument(RNBX.newDocument('nature-2'), true);
+  Object.assign(S.ui, { grid: true, snap: true, gridSize: 2.5, tool: 'select', connectFrom: null });
+  const tl = D.$('#timeline'); if (tl && !tl.hidden) RNBX.timeline.toggle();
+  D.$('#app').classList.remove('lib-hidden', 'drawer-open');
+  RNBX.emit('tool', 'select');
+  M.syncTools(); RNBX.inspector.build();
+  setTimeout(() => RNBX.canvas.fit(), 30);
+  RNBX.toast('Everything reset to the start', '', { label: 'Undo', fn: () => RNBX.history.undo() });
+};
 const sel = () => S.selection.length > 0;
 
 M.items = {
   File: () => [
     { label: 'New figure', icon: 'file', action: M.newDoc },
+    { label: 'Reset everything', icon: 'reset', action: M.resetAll },
     { label: 'Templates…', icon: 'grid', action: () => RNBX.dialogs.templates() },
     { label: 'Open project…', key: mod + 'O', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.project.openFile(f)) },
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
@@ -43,6 +58,8 @@ M.items = {
     { label: 'Journal check', action: () => RNBX.dialogs.check() },
     { label: 'Caption helper', action: () => RNBX.dialogs.caption() },
     '-',
+    { label: 'Guide ↗ (illustrated)', icon: 'book', action: () => window.open(RNBX.links.guide, '_blank', 'noopener') },
+    { label: 'User manual ↗', action: () => window.open(RNBX.links.manual, '_blank', 'noopener') },
     { label: 'Open RNSpectraX ↗ (spectra)', action: () => window.open(RNBX.links.spectrax, '_blank', 'noopener') },
     { label: 'Rakesh Naik — website ↗', action: () => window.open(RNBX.links.home, '_blank', 'noopener') },
   ],
@@ -123,6 +140,7 @@ M.init = () => {
   tools.append(
     D.iconBtn('undo', 'Undo (' + mod + 'Z)', () => RNBX.history.undo(), { id: 'tUndo' }),
     D.iconBtn('redo', 'Redo (' + mod + 'Shift+Z)', () => RNBX.history.redo(), { id: 'tRedo' }),
+    D.iconBtn('reset', 'Reset everything to the start (undo brings it back)', () => M.resetAll(), { id: 'tReset' }),
     el('span', { class: 'sep' }),
     D.iconBtn('grid', 'Grid (G)', () => toggleUi('grid', 'Grid'), { id: 'tGrid' }),
     D.iconBtn('magnet', 'Snap to grid, guides and beams', () => toggleUi('snap', 'Snapping'), { id: 'tSnap' }),
@@ -138,6 +156,8 @@ M.init = () => {
   // links to the companion app and the authors' site (addresses in js/config.js)
   D.$('#lnkSpectrax').href = RNBX.links.spectrax;
   D.$('#lnkHome').href = RNBX.links.home;
+  D.$('#lnkGuide').href = RNBX.links.guide;
+  D.$('#lnkManual').href = RNBX.links.manual;
   D.$('#btnTemplates').onclick = () => RNBX.dialogs.templates();
   D.$('#btnHelp').innerHTML = D.icon('help');
   D.$('#btnHelp').onclick = () => RNBX.dialogs.help();
@@ -177,6 +197,7 @@ M.init = () => {
     D.iconBtn('grid', 'Components', () => M.toggleDrawer()),
     D.iconBtn('undo', 'Undo', () => RNBX.history.undo(), { id: 'tbUndo' }),
     D.iconBtn('redo', 'Redo', () => RNBX.history.redo(), { id: 'tbRedo' }),
+    D.iconBtn('reset', 'Reset everything', () => M.resetAll()),
     D.iconBtn('rotate', 'Rotate 15°', () => RNBX.inspector.rotateBy(15)),
     D.iconBtn('flip', 'Flip', () => RNBX.inspector.flip()),
     D.iconBtn('copy', 'Duplicate', () => RNBX.project.duplicate()),

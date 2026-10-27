@@ -104,6 +104,7 @@ lib.register({
   defaults: { d: 9, f: 100, R: 1 },
   params: [P.diameter(9), { key: 'f', label: 'Reflected focal length', type: 'number', unit: 'mm', min: 1, max: 5000, step: 1 }, { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 }],
   hint: 'Focuses a collimated beam at 90° without chromatic aberration.',
+  variants: [{ name: 'Large parabolic mirror', abbr: 'PM', keywords: 'large parabolic mirror collector telescope ftir', props: { d: 22, f: 250 } }],
   snap: 'mirror', mount: true, labelPos: [0, 7.5],
   bbox: p => [-0.2, -p.d / 2, p.d * 0.6, p.d / 2],
   draw(p, S) {
@@ -118,6 +119,43 @@ lib.register({
 
 /* ---------- custom component (your own drawing or photo) ---------- */
 const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['splitter', 'Beam splitter'], ['lens', 'Lens'], ['absorb', 'Detector / block'], ['filter', 'Filter (band-pass)'], ['pass', 'Transparent (passes light)'], ['sample', 'Sample (can emit)'], ['source', 'Light source']];
+/* ---------- black-box module the beam passes through (FTIR, monochromator, …) ---------- */
+lib.register({
+  type: 'module', name: 'Optical module (beam passes through)', abbr: 'MOD', category: 'Samples & mechanics', autoLabel: false,
+  keywords: 'module box instrument black box michelson interferometer ftir monochromator spectrometer unit pass through',
+  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none' },
+  params: [{ key: 'title', label: 'Text in the box', type: 'textarea' },
+    { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator']] },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 200, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
+    { key: 'color', label: 'Box colour', type: 'color' }],
+  variants: [{ name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
+  snap: 'perp', mount: false,
+  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
+  draw(p, S) {
+    const L = p.L, Hh = p.H;
+    let s = `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
+    if (p.inside === 'michelson') {
+      const k = Math.min(L, Hh) * 0.2, cx = -L * 0.1, cy = Hh * 0.2;
+      s += `<line x1="${n(cx - k * 0.45)}" y1="${n(cy + k * 0.45)}" x2="${n(cx + k * 0.45)}" y2="${n(cy - k * 0.45)}" ${H.stroke(S, 1.6, '#4a7fb5')}/>`;
+      s += `<rect x="${n(cx - k * 0.5)}" y="${n(cy - k * 1.45)}" width="${n(k)}" height="${n(k * 0.16)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
+      s += `<rect x="${n(cx + k * 1.3)}" y="${n(cy - k * 0.5)}" width="${n(k * 0.16)}" height="${n(k)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
+      s += H.arrowGlyph(S, cx + k * 1.38, cy + k * 0.75, k * 0.6, S.ink);
+    }
+    if (p.inside === 'grating') {
+      const k = Math.min(L, Hh) * 0.22;
+      s += `<path d="M ${n(-k)} ${n(-k)} l ${n(k * 0.3)} ${n(k * 0.3)}" ${H.stroke(S, 1.2)}/>`;
+      for (let i = 0; i < 7; i++) s += `<line x1="${n(k * 0.6)}" y1="${n(-k + i * k * 0.3)}" x2="${n(k * 0.85)}" y2="${n(-k + i * k * 0.3 + k * 0.15)}" ${H.stroke(S, 0.6)}/>`;
+    }
+    if (p.title) {
+      const lines = String(p.title).split('\n'), fs = Math.min(S.fs * 1.05, Hh / (lines.length + 1.5)), y0 = p.inside === 'none' ? -(lines.length - 1) * fs * 0.6 : -Hh / 2 + fs * 0.95;
+      lines.forEach((ln, i) => { s += `<text x="0" y="${n(y0 + i * fs * 1.2)}" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${S.ink}" text-anchor="middle" dominant-baseline="central" font-weight="700">${RNBX.text.markup(ln, fs)}</text>`; });
+    }
+    return s;
+  },
+  optics: p => [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }],
+  solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [0, bh + Math.min(p.H, p.L) * 0.35], mat: { color: p.color, spec: 0.2 } }],
+});
+
 lib.register({
   type: 'custom', name: 'Custom component', abbr: 'X', category: 'Samples & mechanics',
   keywords: 'custom import svg png photo own drawing user component',

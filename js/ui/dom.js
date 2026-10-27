@@ -55,6 +55,8 @@ const P = {
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
   flip: '<path d="M12 3v18M16 7l4 5-4 5M8 7l-4 5 4 5"/>',
   rotate: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l2.5 2.5"/>',
+  book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/>',
   alignL: '<path d="M4 3v18M8 7h10v4H8zM8 14h6v4H8z"/>', alignC: '<path d="M12 3v18M6 7h12v4H6zM8 14h8v4H8z"/>', alignR: '<path d="M20 3v18M6 7h10v4H6zM10 14h6v4h-6z"/>',
   alignT: '<path d="M3 4h18M7 8v10h4V8zM14 8v6h4V8z"/>', alignM: '<path d="M3 12h18M7 6v12h4V6zM14 8v8h4V8z"/>', alignB: '<path d="M3 20h18M7 6v10h4V6zM14 10v6h4v-6z"/>',
   distH: '<path d="M4 3v18M20 3v18M10 8h4v8h-4z"/>', distV: '<path d="M3 4h18M3 20h18M8 10h8v4H8z"/>',
@@ -69,10 +71,12 @@ D.icon = (name, size) => `<svg viewBox="0 0 24 24" ${size ? `width="${size}" hei
 D.iconBtn = (name, title, onclick, extra = {}) => D.el('button', Object.assign({ class: 'icon-btn', title, html: D.icon(name), onclick, type: 'button' }, extra));
 
 /* ---------- toast ---------- */
-RNBX.toast = (msg, kind) => {
+/* action: optional { label, fn } shown as a button (e.g. Undo) */
+RNBX.toast = (msg, kind, action) => {
   const t = D.el('div', { class: 'toast' + (kind ? ' ' + kind : ''), text: msg });
+  if (action) t.append(D.el('button', { class: 'toast-act', type: 'button', text: action.label, onclick: () => { t.remove(); action.fn(); } }));
   D.$('#toastRoot').append(t);
-  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, kind === 'error' ? 4200 : 2400);
+  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, kind === 'error' ? 4200 : action ? 6500 : 2400);
 };
 
 /* ---------- modal ---------- */

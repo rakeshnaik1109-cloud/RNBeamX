@@ -1,10 +1,13 @@
 # RNBeamX User Manual
 
+> New here? The illustrated [Guide](https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html)
+> (also the **Guide** button in the top bar) walks through a first figure in five steps.
+
 ## 1. The workspace
 
 | Area | What it does |
 |---|---|
-| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), view toggles, Templates, Export |
+| **Top bar** | File / Edit / Arrange / View menus, figure style (Schematic · Shaded · 3D), undo · redo · **↺ reset**, view toggles, Guide, Manual, Templates, Export |
 | **Library** (left) | Every component, grouped and searchable. Drag a tile onto the page, or click it |
 | **Canvas** (centre) | The page at its true printed size, in millimetres |
 | **Properties** (right) | With nothing selected: page, journal preset, style, beams, 3D camera. With a selection: that object |
@@ -99,6 +102,41 @@ there is room, otherwise below it, growing the page). In its inspector:
 colours and axis titles. Set axis titles, ranges, a reversed axis, stacked
 offsets and legend in the inspector.
 
+## 5b2. Device sketches, molecules and lab equipment
+
+Two library groups cover figures that are more than an optical table. These
+parts are illustrations: beams are not traced through them (use the optical
+parts for that).
+
+| Part | Notes |
+|---|---|
+| **Multilayer / grating stack** | Edit the layers bottom → top in the inspector: colour, name, drawn thickness, tag (e.g. M₁, I, M₂); ↑ reorders, the bin removes, **+ Layer on top** adds. Surface profile flat, sinusoidal, trapezoid or square; period, ridge fraction and depth; Λ and a dimension labels; layer key; view angle and depth (oblique projection). Variants: SiO₂/Ag/PDMS grating, sensor chip |
+| **Molecule (ball and stick)** | Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide, or **Custom (XYZ)**: one atom per line, `element x y z` in Å. Bonds are found from covalent radii. Rotations about x, y, z can be keyframed. Vivid (green carbon) or CPK colours |
+| **Hydrogen bond (dashed)** | A red dashed line; drag the end handle between two atoms |
+| **3D cylinder**, **3D block / slab** | Detector housings with coaxial face rings, substrates, chips |
+| **Hot plate**, **Lab jack / tilt stage**, **Thermal / IR camera**, **Laptop**, **Pipette with droplet**, **Flow cell (inlet / outlet)**, **Light bulb** | Lab equipment for measurement sketches; texts and colours are editable |
+| **Angle marker (θ)** | Arc between two directions with an optional dashed normal |
+| **Dimension line (Λ = …)** | Arrows or ticks, label follows the line |
+| **Angle fan (θ arrows)** | Observation or emission angles, e.g. 0–70° with a θ_obs arc |
+
+Optical parts for these figures:
+
+- **SPR prism (Kretschmann)**, a variant of *Dispersive prism*: apex down, with
+  a metal film and sensing layer on the base. The beam is refracted and totally
+  internally reflected at the base.
+- **Optical module (beam passes through)**, with the variant **Michelson
+  interferometer (FTIR)**: a labelled box the beam crosses unchanged, for
+  instruments drawn as black boxes.
+- **Cylindrical mirror** and **Large parabolic mirror** (Mirrors & splitters).
+- **Arrow / line** can carry text along it (*Process arrow with text*), for
+  fabrication steps and "Incident light" arrows.
+- **Beams ▸ Drawing ▸ Wide translucent ribbon** draws beams as wide bands of
+  constant width with a darker edge (set **Ribbon width**), as in FTIR and
+  telescope path sketches.
+
+Templates in this style: *Device sketch · metasurface absorber*, *FTIR beam
+path (ribbon beams)*, *Thermal emission setup*, *SPR sensor (Kretschmann prism)*.
+
 ## 5c. Your own components and styles
 
 - **Custom component** (*Samples & mechanics*): choose an SVG (kept as vector)
@@ -149,6 +187,15 @@ Run **File ▸ Journal check**. It flags small text, thin lines, non-standard
 widths, fonts, stray beams, detectors without light, unlabelled optics, red/green
 beam pairs and objects outside the page. Then open the **Caption helper** to copy
 a caption starter with every abbreviation defined.
+
+## 8b. Reset and undo
+
+**↺ Reset** (top bar, next to undo and redo; also *File ▸ Reset everything* and
+the touch toolbar) returns RNBeamX to its first state in one click: an empty
+default figure (Nature double column), grid and snapping on, the select tool,
+the timeline closed and the view fitted. The reset is a single undo step:
+press **Ctrl+Z**, or **Undo** in the notice that appears, to get everything back.
+*File ▸ New figure* keeps the current page preset instead.
 
 ## 9. Keyboard shortcuts
 

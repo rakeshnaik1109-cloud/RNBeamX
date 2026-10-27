@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RNBeamX Guide</title>
+<meta name="description" content="Illustrated guide to RNBeamX, the web-based optical setup and scientific figure designer.">
+<link rel="icon" href="assets/favicon.svg">
+<style>
+:root {
+  --bg: #f6f7fb; --card: #ffffff; --ink: #1b1e27; --muted: #5d6475; --line: #e2e5ee;
+  --accent: #5b4bdb; --accent-soft: #eeebff; --code: #f1f2f7; --ok: #1f8a4c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #12141b; --card: #1b1e27; --ink: #e9ecf3; --muted: #a2a9ba; --line: #2c303c; --accent: #9d92ff; --accent-soft: #262341; --code: #252937; }
+}
+:root[data-theme="dark"] { --bg: #12141b; --card: #1b1e27; --ink: #e9ecf3; --muted: #a2a9ba; --line: #2c303c; --accent: #9d92ff; --accent-soft: #262341; --code: #252937; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+a { color: var(--accent); }
+header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1120px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.brand { font-weight: 800; font-size: 17px; text-decoration: none; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.brand img { width: 26px; height: 26px; }
+.bar nav { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.bar nav a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 13.5px; padding: 5px 9px; border-radius: 7px; }
+.bar nav a:hover { background: var(--accent-soft); color: var(--accent); }
+.btn { display: inline-block; background: var(--accent); color: #fff !important; text-decoration: none; font-weight: 700; padding: 9px 16px; border-radius: 9px; }
+.btn.ghost { background: transparent; color: var(--accent) !important; border: 1px solid var(--accent); }
+main { max-width: 1120px; margin: 0 auto; padding: 0 16px 80px; }
+.hero { padding: 48px 0 28px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; }
+.hero h1 { font-size: clamp(28px, 4.4vw, 44px); line-height: 1.12; margin: 0 0 12px; letter-spacing: -0.02em; }
+.hero p { color: var(--muted); font-size: 16.5px; margin: 0 0 20px; }
+.hero .cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.shot { width: 100%; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(20, 24, 40, .12); background: #fff; display: block; }
+section { padding: 34px 0 8px; border-top: 1px solid var(--line); }
+section h2 { font-size: 24px; margin: 0 0 6px; letter-spacing: -0.01em; }
+section > p.lead { color: var(--muted); margin: 0 0 18px; max-width: 760px; }
+.steps { counter-reset: s; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; padding: 0; list-style: none; }
+.steps li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px 14px 52px; position: relative; }
+.steps li::before { counter-increment: s; content: counter(s); position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; display: grid; place-items: center; font-size: 13px; }
+.steps b { display: block; margin-bottom: 2px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card p, .card ul { margin: 0; color: var(--muted); font-size: 14px; }
+.card ul { padding-left: 18px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+figure img { width: 100%; display: block; background: #fff; border-bottom: 1px solid var(--line); }
+figcaption { padding: 10px 14px 12px; font-size: 13.5px; color: var(--muted); }
+figcaption b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--accent-soft); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+kbd, code { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.tip { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin: 16px 0 0; font-size: 14px; }
+.table-wrap { overflow-x: auto; }
+footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+footer .bar { padding: 20px 16px; }
+@media (max-width: 820px) { .hero { grid-template-columns: 1fr; padding-top: 28px; } .bar nav { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="">RNBeamX Guide</a>
+    <nav>
+      <a href="#start">Quick start</a><a href="#build">Beams</a><a href="#illustration">Illustration parts</a><a href="#styles">Styles</a>
+      <a href="#data">Panels &amp; data</a><a href="#export">Export</a><a href="#reset">Reset &amp; undo</a><a href="#keys">Shortcuts</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div>
+      <h1>Publication figures of optical experiments, in your browser.</h1>
+      <p>RNBeamX traces real beams through real optics, and has the device sketches, molecules and lab equipment that papers also need. Everything stays vector and editable, so you can export straight to PDF, SVG or PNG at journal size.</p>
+      <div class="cta">
+        <a class="btn" href="index.html">Open RNBeamX</a>
+        <a class="btn ghost" href="https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/docs/USER_MANUAL.md" target="_blank" rel="noopener noreferrer">Full user manual</a>
+      </div>
+    </div>
+    <img class="shot" src="assets/guide/workspace.png" alt="RNBeamX workspace with a confocal Raman setup">
+  </div>
+
+  <section id="start">
+    <h2>Quick start</h2>
+    <p class="lead">A complete figure in five steps. Nothing is ever lost: every action can be undone with <kbd>Ctrl+Z</kbd>.</p>
+    <ol class="steps">
+      <li><b>Pick a page</b>Choose a journal preset under <i>Page &amp; journal preset</i>, e.g. Nature double column (183 mm).</li>
+      <li><b>Add a source</b>Click <i>Laser</i> in the library. Its beam is traced at once.</li>
+      <li><b>Drop optics on the beam</b>Drag a mirror, lens or splitter onto the beam. It snaps on and turns to face the beam.</li>
+      <li><b>Tune in the inspector</b>Wavelength, focal length, reflectance, wave-plate angle… the beams update live.</li>
+      <li><b>Export</b>Press <i>Export</i>, choose the width and format, and get a file ready to submit.</li>
+    </ol>
+    <div class="tip"><b>Faster:</b> press <i>Templates</i> and start from a finished setup: interferometers, a Raman microscope, pump–probe, SPR, FTIR, thermal emission and more.</div>
+  </section>
+
+  <section id="build">
+    <h2>Building beam paths</h2>
+    <p class="lead">Beams are traced, not drawn. Change any part and the light follows.</p>
+    <div class="grid">
+      <div class="card"><h3>Snapping</h3><p>Optics dropped on a beam snap onto it and turn to face it. Hold <kbd>Alt</kbd> to place freely. <kbd>R</kbd> rotates by 15°, <kbd>F</kbd> flips, <kbd>O</kbd> re-orients to the beam.</p></div>
+      <div class="card"><h3>Physics</h3><ul><li>Reflection, splitting, paraxial lenses</li><li>Sellmeier dispersion in prisms, the grating equation</li><li>Jones-calculus polarisation (λ/2, λ/4, PBS)</li><li>Gaussian beams, Fresnel ghosts, interference</li></ul></div>
+      <div class="card"><h3>Off the table</h3><p>Fold mirrors and periscopes send beams up or down, to an upright objective or another level. Shown correctly in 2D and 3D.</p></div>
+      <div class="card"><h3>Readouts</h3><p>Click a detector to see the power, wavelengths, polarisation, beam size and interference phase reaching it.</p></div>
+    </div>
+  </section>
+
+  <section id="illustration">
+    <h2>Device sketches, molecules and lab equipment</h2>
+    <p class="lead">Many figures are more than an optical table. The <i>Structures &amp; molecules</i> and <i>Lab &amp; illustration</i> groups in the library cover cross-sections, analytes, instruments and measurement geometry.</p>
+    <div class="gallery">
+      <figure><img src="assets/guide/tpl-absorber.png" alt="Metasurface absorber device sketch"><figcaption><b>Multilayer / grating stack.</b> Edit layers bottom → top (colour, name, thickness, tag) and choose flat, sinusoidal, trapezoid or square gratings. Λ and a dimensions and the M₁ / I / M₂ layer key are built in. Template: <i>Device sketch · metasurface absorber</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-ftir.png" alt="FTIR beam path with ribbon beams"><figcaption><b>Ribbon beams and modules.</b> Set <i>Beams ▸ Drawing</i> to <i>Wide translucent ribbon</i> for instrument sketches. The <i>Optical module</i> box (e.g. a Michelson interferometer) passes the beam through. Cylindrical and large parabolic mirrors are under Mirrors. Template: <i>FTIR beam path</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-thermal.png" alt="Thermal emission measurement"><figcaption><b>Lab equipment and angle fans.</b> Hot plate with a temperature display, lab jack or tilt stage, IR camera, laptop, pipette, flow cell and light bulb. The <i>Angle fan</i> draws 0–70° observation arrows with a θ<sub>obs</sub> arc. Template: <i>Thermal emission setup</i>.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-spr.png" alt="SPR sensor with Kretschmann prism"><figcaption><b>SPR prism (Kretschmann).</b> An inverted prism with a metal film and a sensing layer on its base. The beam is traced through it with total internal reflection. Add a flow cell with inlet and outlet. Template: <i>SPR sensor</i>.</figcaption></figure>
+    </div>
+    <div class="table-wrap" style="margin-top:18px">
+    <table>
+      <tr><th>Part</th><th>Where</th><th>Useful settings</th></tr>
+      <tr><td>Molecule (ball and stick)</td><td>Structures &amp; molecules</td><td>Water, ethanol, methanol, acetone, CO₂, methane, ammonia, benzene, cyanide or your own XYZ (Å); rotate on three axes, and the rotation can be animated.</td></tr>
+      <tr><td>Hydrogen bond</td><td>Structures &amp; molecules</td><td>A red dashed line; drag its end handle between atoms.</td></tr>
+      <tr><td>3D cylinder, 3D block</td><td>Structures &amp; molecules</td><td>Coaxial face rings (e.g. an absorber-coated detector), slab substrates, chips.</td></tr>
+      <tr><td>Angle marker, dimension line</td><td>Annotations</td><td>θ<sub>i</sub> arcs with a dashed normal; Λ = 1450 nm lines with arrows or ticks.</td></tr>
+      <tr><td>Arrow with text</td><td>Graphical abstract</td><td>Fabrication steps (“Annealing 300 °C”), incident or reflected light.</td></tr>
+    </table>
+    </div>
+    <div class="tip">Text everywhere accepts markup: <code>θ_i</code>, <code>θ_{obs}</code>, <code>TiO_2</code>, <code>x^{2+}</code>, <code>\lambda</code>, <code>*italic*</code>, <code>**bold**</code>.</div>
+  </section>
+
+  <section id="styles">
+    <h2>Figure styles</h2>
+    <p class="lead">One setup, several looks. Switch at the top of the window or with <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>.</p>
+    <div class="gallery">
+      <figure><img src="assets/guide/tpl-michelson.png" alt="Schematic style"><figcaption><b>Schematic and shaded.</b> Clean line art for journals, or gradients and sheen. <i>Style presets</i> (classic line art, high-impact journal, monochrome print, colour-blind safe, dark graphical abstract, or your own group style) apply a whole look in one click.</figcaption></figure>
+      <figure><img src="assets/guide/tpl-ga-shg.png" alt="3D graphical abstract"><figcaption><b>3D table.</b> Orthographic 3D with posts, glow and an animated camera, made for graphical abstracts and cover art.</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="data">
+    <h2>Multi-panel figures and data</h2>
+    <div class="grid">
+      <div class="card"><h3>Data panels</h3><p><i>File ▸ Add data panel</i> places a vector plot next to the setup. Import CSV or TXT, or paste columns.</p></div>
+      <div class="card"><h3>From RNSpectraX</h3><p>In <a href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer">RNSpectraX</a> press <i>Export ▾ → RNBeamX</i>. The processed spectrum arrives here as panel b.</p></div>
+      <div class="card"><h3>Labels</h3><p>Labels place themselves away from parts and beams. <kbd>Shift+L</kbd> re-arranges all of them, in 2D and in 3D.</p></div>
+      <div class="card"><h3>Animation</h3><p>Open the timeline, set keyframes (<kbd>I</kbd>) on any property (a wave-plate angle, a piezo, a molecule rotation), then export an MP4 or WebM video.</p></div>
+    </div>
+  </section>
+
+  <section id="export">
+    <h2>Export and submission</h2>
+    <p class="lead">PDF and SVG stay fully vector with real text; PNG and TIFF render at the dpi you choose. <i>File ▸ Journal check</i> lists what a figure editor will look at (font sizes, line weights, colour-blind safety, image resolution), and the <i>Caption helper</i> drafts a caption with every abbreviation defined.</p>
+  </section>
+
+  <section id="reset">
+    <h2>Reset and undo</h2>
+    <p class="lead">The <b>↺ Reset</b> button next to undo and redo, also in <i>File ▸ Reset everything</i> and the touch toolbar, returns RNBeamX to its first state in one click: an empty default figure, default grid and snapping, and the timeline closed. The reset is a single undo step, so <kbd>Ctrl+Z</kbd> (or <i>Undo</i> in the notice that appears) brings your figure back.</p>
+  </section>
+
+  <section id="keys">
+    <h2>Keyboard shortcuts</h2>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Action</th><th>Keys</th><th>Action</th><th>Keys</th></tr>
+      <tr><td>Undo / redo</td><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Rotate ±15°</td><td><kbd>R</kbd> / <kbd>Shift+R</kbd></td></tr>
+      <tr><td>Duplicate</td><td><kbd>Ctrl+D</kbd></td><td>Flip</td><td><kbd>F</kbd></td></tr>
+      <tr><td>Delete</td><td><kbd>Del</kbd></td><td>Orient to beam</td><td><kbd>O</kbd></td></tr>
+      <tr><td>Fit page</td><td><kbd>0</kbd></td><td>Styles</td><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td></tr>
+      <tr><td>Grid / labels</td><td><kbd>G</kbd> / <kbd>L</kbd></td><td>Auto-arrange labels</td><td><kbd>Shift+L</kbd></td></tr>
+      <tr><td>Timeline / play</td><td><kbd>T</kbd> / <kbd>K</kbd></td><td>Keyframe</td><td><kbd>I</kbd></td></tr>
+      <tr><td>Save / export</td><td><kbd>Ctrl+S</kbd> / <kbd>Ctrl+E</kbd></td><td>Help</td><td><kbd>?</kbd></td></tr>
+    </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="bar">© 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. · <a href="index.html">RNBeamX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer">RNSpectraX</a> · <a href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer">Website</a></div>
+</footer>
+</body>
+</html>

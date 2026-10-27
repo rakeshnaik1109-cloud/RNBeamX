@@ -299,7 +299,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
       const s0 = seg.len * i / steps, s1 = seg.len * (i + 1) / steps;
       const a = at(seg, s0), b = at(seg, s1);
       let pa = cam.p(a[0], a[1], a[2]), pb = cam.p(b[0], b[1], b[2]);
-      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1);
+      const wm = (doc.style.beamStyle === 'line' ? doc.style.beamWidth * 0.5 : doc.style.beamStyle === 'ribbon' ? (doc.style.ribbonWidth || 3) * 0.7 : Math.max(0.1, 2 * RNBX.beams.hw(seg, (s0 + s1) / 2))) * sk * (seg.ghost ? 0.4 : 1);
       const w = Math.max(0.12, wm * k);
       if (seg.ghost) {
         items.push({ z: (pa[2] + pb[2]) / 2 + 0.01, svg: `<line x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}" stroke="${col}" stroke-opacity="${n(Math.max(0.35, op))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 3)} ${n(w * 3)}"/>` });

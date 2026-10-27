@@ -191,7 +191,7 @@ const KEYS = [
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
   ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
   ['Play / pause', 'K'], ['Keyframe selection', 'I'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
-  ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
+  ['Reset everything (undoable)', '↺ toolbar button'], ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];
 Dl.help = () => {
   const grid = el('div', { class: 'help-grid' }, KEYS.map(k => el('div', {}, el('span', { text: k[0] }), el('kbd', { text: k[1] }))));
@@ -199,7 +199,7 @@ Dl.help = () => {
     title: 'RNBeamX ' + RNBX.VERSION, sub: 'Optical setup designer · © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.', wide: true,
     body: [
       el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Fold mirrors and periscopes take beams off the table; Gaussian beams, Fresnel ghosts, cavities, ring resonators and interference (with piezo-driven fringes) are modelled too. Click any detector to see the power, phase and beam size that reach it.' }),
-      el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source &amp; manual</a>` }),
+      el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.guide}" target="_blank" rel="noopener">Illustrated guide</a> · <a href="${RNBX.links.manual}" target="_blank" rel="noopener noreferrer">User manual</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source</a>` }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),
       grid,
     ],

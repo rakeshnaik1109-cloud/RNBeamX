@@ -11,7 +11,7 @@ const St = RNBX.styles = {};
 const KEY = 'rnbx_house_styles';
 
 /* style keys that define a look (page size and content are never touched) */
-St.KEYS = ['mode', 'lineWidthPt', 'outline', 'font', 'fontSizePt', 'labelColor', 'showLabels', 'beamStyle', 'beamWidth', 'beamGlow', 'beamArrows', 'beamFade', 'beamOpacity', 'colorMode', 'polarization', 'fiberColor', 'wireColor', 'beamModel', 'gaussMag', 'waistLabels', 'ghosts'];
+St.KEYS = ['mode', 'lineWidthPt', 'outline', 'font', 'fontSizePt', 'labelColor', 'showLabels', 'beamStyle', 'ribbonWidth', 'beamWidth', 'beamGlow', 'beamArrows', 'beamFade', 'beamOpacity', 'colorMode', 'polarization', 'fiberColor', 'wireColor', 'beamModel', 'gaussMag', 'waistLabels', 'ghosts'];
 
 St.BUILTIN = [
   { id: 'lineart', name: 'Classic line art', desc: 'Optics Express / Optics Letters look: flat parts, uniform beams with arrows',

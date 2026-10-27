@@ -44,6 +44,7 @@ lib.register({
   defaults: { d: 9, t: 1.6, f: 100, R: 1 },
   params: [P.diameter(9), P.thick(1.6), { key: 'f', label: 'Focal length (R/2)', type: 'number', unit: 'mm', min: -5000, max: 5000, step: 1, hint: 'Physical mm; drawn scale set in Figure ▸ Scale' },
     { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01 }],
+  variants: [{ name: 'Cylindrical mirror', abbr: 'CYM', keywords: 'cylindrical mirror line focus curved', props: { d: 12, t: 1.8, f: 150 } }],
   snap: 'mirror', mount: true, labelPos: [0, 7.5],
   bbox: p => [0, -p.d / 2, p.t + 0.6, p.d / 2],
   draw(p, S) {
@@ -331,20 +332,36 @@ lib.register({
 
 lib.register({
   type: 'prism', name: 'Dispersive prism', abbr: 'PR', category: 'Filters & dispersion', keywords: 'prism dispersive equilateral refraction',
-  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60 },
+  defaults: { s: 10, mat: 'SF11', n: 1.6, apex: 60, inverted: false, chip: false, chipT: 1.2, chipColor: '#c4c9d1', chipColor2: '#e9eef2' },
   params: [{ key: 's', label: 'Side length', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 },
     { key: 'apex', label: 'Apex angle', type: 'number', unit: '°', min: 10, max: 120, step: 1 },
-    P.material(), { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.mat === 'custom' }],
+    P.material(), { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.mat === 'custom' },
+    { key: 'inverted', label: 'Apex down (base on top)', type: 'bool' },
+    { key: 'chip', label: 'Sensor chip on the base (Kretschmann)', type: 'bool' },
+    { key: 'chipT', label: 'Chip thickness (drawn)', type: 'number', unit: 'mm', min: 0.2, max: 10, step: 0.1, show: p => p.chip },
+    { key: 'chipColor', label: 'Metal film', type: 'color', show: p => p.chip }, { key: 'chipColor2', label: 'Sensing layer', type: 'color', allowEmpty: true, show: p => p.chip }],
+  variants: [{ name: 'SPR prism (Kretschmann)', abbr: 'SPR', keywords: 'spr surface plasmon resonance kretschmann sensor chip coupling prism attenuated total reflection atr', props: { s: 14, apex: 90, inverted: true, chip: true } }],
   labelPos: [0, 8],
   geom(p) {
-    const a = U.rad(p.apex || 60) / 2, h = p.s * Math.cos(a), half = p.s * Math.sin(a);
-    return [[0, -h * 2 / 3], [half, h / 3], [-half, h / 3]];
+    const a = U.rad(p.apex || 60) / 2, h = p.s * Math.cos(a), half = p.s * Math.sin(a), k = p.inverted ? -1 : 1;
+    return [[0, -h * 2 / 3 * k], [half, h / 3 * k], [-half, h / 3 * k]];
   },
-  bbox(p) { const g = lib.get('prism').geom(p); return [g[2][0], g[0][1], g[1][0], g[1][1]]; },
+  bbox(p) {
+    const g = lib.get('prism').geom(p), ys = g.map(q => q[1]), top = Math.min(...ys) - (p.chip && p.inverted ? p.chipT * 2 : 0), bot = Math.max(...ys) + (p.chip && !p.inverted ? p.chipT * 2 : 0);
+    return [g[2][0], top, g[1][0], bot];
+  },
   draw(p, S) {
     const g = lib.get('prism').geom(p);
     let s = `<path d="M ${g.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}/>`;
-    if (S.shaded) s += `<path d="M ${n(g[0][0] - 0.3)} ${n(g[0][1] + 1.2)} L ${n(g[2][0] * 0.55)} ${n(g[2][1] * 0.6)}" stroke="#fff" stroke-opacity="0.8" stroke-width="${n(S.lw * 1.5)}" stroke-linecap="round"/>`;
+    if (S.shaded) s += `<path d="M ${n(g[0][0] - 0.3)} ${n(g[0][1] + (p.inverted ? -1.2 : 1.2))} L ${n(g[2][0] * 0.55)} ${n(g[2][1] * 0.6)}" stroke="#fff" stroke-opacity="0.8" stroke-width="${n(S.lw * 1.5)}" stroke-linecap="round"/>`;
+    if (p.chip) {
+      // metal film + sensing layer on the base, outside the glass
+      const y0 = g[1][1], sg = p.inverted ? -1 : 1, x0 = g[2][0], w = g[1][0] - g[2][0];
+      const film = Math.max(0.25, p.chipT * 0.4), layer = p.chipColor2 ? p.chipT - film : 0;
+      const r = (y, h, c) => `<rect x="${n(x0)}" y="${n(sg > 0 ? y : y - h)}" width="${n(w)}" height="${n(h)}" fill="${c}" ${H.stroke(S, 0.6)}/>`;
+      s += r(y0, film, p.chipColor);
+      if (layer > 0) s += r(y0 + sg * film, layer, p.chipColor2);
+    }
     return s;
   },
   optics: p => [{ poly: lib.get('prism').geom(p), mat: p.mat, n: p.n }],
