@@ -1,21 +1,45 @@
 cff-version: 1.2.0
-message: "If you use RNBeamX to prepare figures, please cite it as below."
 title: "RNBeamX (Optical Setup Designer)"
-version: "1.1.0"
-date-released: 2026-10-26
+message: "If you use RNBeamX to prepare figures, please cite it as below."
+type: software
 authors:
   - family-names: Naik
     given-names: Rakesh
     affiliation: "Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
+    website: "https://rakeshnaik1109-cloud.github.io/RakeshNaik/"
   - family-names: Srivastava
     given-names: Sachin Kumar
-    affiliation: "Centre for Photonics and Quantum Communication Technology and Department of Physics, IIT Roorkee"
+    affiliation: "Department of Physics and Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
+version: "1.2"
+date-released: "2026-10-27"
+identifiers:
+  - type: url
+    value: "https://github.com/rakeshnaik1109-cloud/RNBeamX/releases/tag/v1.2"
+    description: "GitHub release v1.2"
+url: "https://rakeshnaik1109-cloud.github.io/RNBeamX/"
 repository-code: "https://github.com/rakeshnaik1109-cloud/RNBeamX"
 license-url: "https://github.com/rakeshnaik1109-cloud/RNBeamX/blob/main/LICENSE"
+abstract: >-
+  RNBeamX is a browser-based designer for publication-ready figures of
+  optical experiments and graphical abstracts. Optical parts placed on the
+  page are traced live: reflection, splitting, refraction with dispersion and
+  total internal reflection, ideal and real spherical-surface lenses,
+  Gaussian beams, Jones-calculus polarisation, ghost reflections,
+  interference, gratings, emission and nonlinear conversion. Ray bundles
+  give imaging ray diagrams with spot-size and best-focus readouts. Device
+  cross-sections built from stackable blocks are calculated with a
+  transfer-matrix method or RCWA using measured optical constants. Figures
+  are exported as SVG, PDF, PNG, TIFF, PowerPoint, TikZ or video, and all
+  calculations run locally in the browser.
 keywords:
   - optics
   - photonics
-  - scientific illustration
   - optical setup
-  - graphical abstract
+  - scientific illustration
   - ray tracing
+  - Gaussian beams
+  - lens aberrations
+  - thin-film optics
+  - RCWA
+  - graphical abstract
+  - microscopy

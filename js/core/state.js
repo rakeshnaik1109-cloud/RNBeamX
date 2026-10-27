@@ -18,7 +18,7 @@
 const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
-RNBX.VERSION = '1.1.0';
+RNBX.VERSION = '1.2.0';
 RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX', guide: 'guide.html'}, window.RNBX_LINKS || {});
 
 /* ---------- event bus ---------- */

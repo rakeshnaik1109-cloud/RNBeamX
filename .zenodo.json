@@ -1,0 +1,46 @@
+{
+  "title": "RNBeamX (Optical Setup Designer)",
+  "upload_type": "software",
+  "version": "1.2",
+  "description": "<p>RNBeamX is a browser-based designer for publication-ready figures of optical experiments and graphical abstracts. Lasers, lamps, mirrors, splitters, lenses, objectives, filters, gratings, prisms, wave plates, modulators, nonlinear crystals, fibre devices, optomechanics and detectors are placed on a page, and the light is traced live: reflection, splitting, refraction with Sellmeier dispersion and total internal reflection, paraxial and real spherical-surface lenses (spherical and chromatic aberration, achromatic doublets), Gaussian beams, Jones-calculus polarisation, Fresnel ghost reflections, interference, diffraction gratings, fluorescence and Raman emission, OPO and harmonic conversion. Ray bundles give imaging ray diagrams with spot-size and best-focus readouts. Device cross-sections can be assembled from stackable building blocks, and their reflectance, transmittance and absorptance are calculated with a transfer-matrix method or rigorous coupled-wave analysis (RCWA) using measured optical constants. Figures can be shown in schematic, shaded or 3D styles, animated, and exported as SVG, PDF, PNG, TIFF, PowerPoint, TikZ or video. All calculations run locally in the browser.</p><p>Copyright © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved; see LICENSE.</p>",
+  "creators": [
+    {
+      "name": "Naik, Rakesh",
+      "affiliation": "Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
+    },
+    {
+      "name": "Srivastava, Sachin Kumar",
+      "affiliation": "Department of Physics and Centre for Photonics and Quantum Communication Technology, IIT Roorkee"
+    }
+  ],
+  "keywords": [
+    "optics",
+    "photonics",
+    "optical setup",
+    "scientific illustration",
+    "ray tracing",
+    "Gaussian beams",
+    "lens aberrations",
+    "thin-film optics",
+    "RCWA",
+    "graphical abstract",
+    "microscopy"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/rakeshnaik1109-cloud/RNBeamX",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://rakeshnaik1109-cloud.github.io/RNBeamX/",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    },
+    {
+      "identifier": "10.5281/zenodo.23593680",
+      "relation": "references",
+      "scheme": "doi"
+    }
+  ]
+}
