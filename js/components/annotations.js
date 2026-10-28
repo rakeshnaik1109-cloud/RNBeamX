@@ -41,7 +41,7 @@ lib.register({
   type: 'fiber', name: 'Optical fibre', abbr: '', category: 'Connections', connection: true, autoLabel: false,
   keywords: 'fiber fibre patch cable single mode multimode pm',
   tool: 'fiber', hint: 'Click a fibre coupler, then a second coupler.',
-  defaults: { from: '', to: '', fiberType: 'smf', eff: 0.8, colorMode: 'light', color: '', width: 0.9, bend: 0.45, coil: false, length: 40 },
+  defaults: { from: '', to: '', fiberType: 'smf', eff: 0.8, colorMode: 'light', color: '', width: 0.9, bend: 0.45, coil: false, length: 40, boots: false },
   params: [
     { key: 'fiberType', label: 'Fibre type', type: 'select', options: [['smf', 'Single-mode'], ['mmf', 'Multimode'], ['pm', 'Polarisation-maintaining']] },
     { key: 'eff', label: 'Coupling efficiency', type: 'range', min: 0, max: 1, step: 0.01 },
@@ -50,6 +50,7 @@ lib.register({
     { key: 'width', label: 'Line weight', type: 'number', unit: 'pt', min: 0.25, max: 6, step: 0.05 },
     { key: 'bend', label: 'Curvature', type: 'range', min: 0, max: 1.5, step: 0.01 },
     { key: 'coil', label: 'Draw a fibre coil', type: 'bool' },
+    { key: 'boots', label: 'Connector boots at the ends', type: 'bool', hint: 'thick strain-relief boots, as on patch cables' },
   ],
   geometry(obj, doc) {
     const A = RNBX.getObjIn(doc, obj.props.from), B = RNBX.getObjIn(doc, obj.props.to);
@@ -77,6 +78,11 @@ lib.register({
     const w = U.pt2mm(p.width || 0.9);
     let s = `<path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w)}" stroke-linecap="round" ${p.fiberType === 'mmf' ? '' : ''}/>`;
     if (S.shaded) s = `<path d="${g.d}" fill="none" stroke="${U.darken(col, 0.35)}" stroke-width="${n(w * 1.5)}" stroke-linecap="round"/>` + s + `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="${n(w * 0.35)}" stroke-linecap="round"/>`;
+    if (p.boots) {
+      // strain-relief boots: short thick sections leaving each end along the cable
+      const boot = (P, C) => { const dx = C[0] - P[0], dy = C[1] - P[1], L = Math.hypot(dx, dy) || 1, l = Math.min(3, L * 0.6), e = [P[0] + dx / L * l, P[1] + dy / L * l]; return `<line x1="${n(P[0])}" y1="${n(P[1])}" x2="${n(e[0])}" y2="${n(e[1])}" stroke="#16181c" stroke-width="${n(Math.max(w * 3.2, 1.1))}" stroke-linecap="round"/>`; };
+      s += boot(g.a, g.c1) + boot(g.b, g.c2);
+    }
     if (p.coil) {
       // a small spool at the curve midpoint
       const t = 0.5, mt = 1 - t;
@@ -91,9 +97,10 @@ lib.register({
   type: 'wire', name: 'Electrical connection', abbr: '', category: 'Connections', connection: true, autoLabel: false,
   keywords: 'wire cable signal electrical trigger bnc connection',
   tool: 'wire', hint: 'Click the first object, then the second.',
-  defaults: { from: '', to: '', route: 'hv', arrow: 'end', dashed: false, color: '', width: 0.5 },
+  defaults: { from: '', to: '', route: 'hv', arrow: 'end', dashed: false, color: '', width: 0.5, sag: 0.5 },
   params: [
-    { key: 'route', label: 'Routing', type: 'select', options: [['hv', 'Horizontal → vertical'], ['vh', 'Vertical → horizontal'], ['hvh', 'Horizontal–vertical–horizontal'], ['straight', 'Straight']] },
+    { key: 'route', label: 'Routing', type: 'select', options: [['hv', 'Horizontal → vertical'], ['vh', 'Vertical → horizontal'], ['hvh', 'Horizontal–vertical–horizontal'], ['straight', 'Straight'], ['curve', 'Hanging cable (smooth curve)']] },
+    { key: 'sag', label: 'Cable sag', type: 'range', min: -1.5, max: 1.5, step: 0.01, show: p => p.route === 'curve', hint: 'negative arches upwards' },
     { key: 'arrow', label: 'Arrowheads', type: 'select', options: [['end', 'At end'], ['start', 'At start'], ['both', 'Both ends'], ['none', 'None']] },
     { key: 'dashed', label: 'Dashed', type: 'bool' },
     { key: 'color', label: 'Colour', type: 'color', allowEmpty: true },
@@ -121,6 +128,12 @@ lib.register({
         const dir = V.norm(V.sub(cb, ca));
         pts = [boxExit(ca, dir, ba), boxExit(cb, V.mul(dir, -1), bb)];
         break;
+      }
+      case 'curve': {
+        // a cable hanging between the two parts (cubic curve that sags downwards)
+        const dir = V.norm(V.sub(cb, ca)), a = boxExit(ca, dir, ba), b = boxExit(cb, V.mul(dir, -1), bb), L = V.dist(a, b), sag = (obj.props.sag == null ? 0.5 : obj.props.sag) * L * 0.6;
+        const c1 = [a[0] + (b[0] - a[0]) * 0.15, a[1] + sag], c2 = [b[0] - (b[0] - a[0]) * 0.15, b[1] + sag];
+        return { pts: [a, c1, c2, b], d: `M ${n(a[0])} ${n(a[1])} C ${n(c1[0])} ${n(c1[1])} ${n(c2[0])} ${n(c2[1])} ${n(b[0])} ${n(b[1])}` };
       }
       default: {
         const a = boxExit(ca, [sgn(cb[0] - ca[0]), 0], ba), b = boxExit(cb, [0, sgn(ca[1] - cb[1])], bb);

@@ -112,17 +112,26 @@ lib.register({
 lib.register({
   type: 'cagecube', name: 'Cage cube', abbr: 'CC', category: OM,
   keywords: 'cage cube system rods beam splitter turning mirror dichroic insert 30 mm 60 mm',
-  defaults: { s: 8, insert: 'bs', R: 0.5, edge: 550, mode: 'longpass' },
-  params: [{ key: 'insert', label: 'Insert', type: 'select', options: [['bs', 'Beam splitter'], ['pbs', 'Polarising beam splitter'], ['mirror', 'Turning mirror'], ['dichroic', 'Dichroic mirror']] },
+  defaults: { s: 8, insert: 'bs', R: 0.5, edge: 550, mode: 'longpass', look: 'flat' },
+  params: [{ key: 'look', label: 'Drawn as', type: 'select', options: [['flat', 'Cage cube (side view)'], ['box3d', 'Metal cube (3D look)']] },
+    { key: 'insert', label: 'Insert', type: 'select', options: [['bs', 'Beam splitter'], ['pbs', 'Polarising beam splitter'], ['mirror', 'Turning mirror'], ['dichroic', 'Dichroic mirror']] },
     { key: 'R', label: 'Reflectance', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.insert === 'bs' },
     { key: 'edge', label: 'Edge', type: 'wavelength', unit: 'nm', min: 200, max: 5000, step: 1, show: p => p.insert === 'dichroic' },
     { key: 'mode', label: 'Dichroic', type: 'select', options: [['longpass', 'Long-pass (reflects short)'], ['shortpass', 'Short-pass (reflects long)']], show: p => p.insert === 'dichroic' },
     { key: 's', label: 'Size', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
-  variants: [{ name: 'Cage turning mirror', props: { insert: 'mirror' } }, { name: 'Cage dichroic cube', props: { insert: 'dichroic' } }],
+  variants: [{ name: 'Cage turning mirror', props: { insert: 'mirror' } }, { name: 'Cage dichroic cube', props: { insert: 'dichroic' } }, { name: 'Cage cube (3D look)', props: { look: 'box3d' }, keywords: 'cube 3d metal beam splitter cube housing perspective' }],
   snap: 'cube', mount: true, labelPos: [0, 7],
-  bbox: p => [-p.s / 2 - 0.8, -p.s / 2 - 0.8, p.s / 2 + 0.8, p.s / 2 + 0.8],
-  draw(p, S) {
+  bbox: p => (p.look === 'box3d' ? [-p.s / 2, -p.s / 2 - p.s * 0.28, p.s / 2 + p.s * 0.22, p.s / 2] : [-p.s / 2 - 0.8, -p.s / 2 - 0.8, p.s / 2 + 0.8, p.s / 2 + 0.8]),
+  draw(p, S, obj) {
     const h = p.s / 2;
+    if (p.look === 'box3d') {
+      const dx = p.s * 0.22, dy = p.s * 0.28, id = 'rbx-cc3-' + (obj ? obj.id : 'x');
+      let q = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0.3"><stop offset="0" stop-color="#eef0f3"/><stop offset="0.45" stop-color="#b7bcc4"/><stop offset="0.7" stop-color="#e3e6ea"/><stop offset="1" stop-color="#8d939c"/></linearGradient></defs>`;
+      q += `<path d="M ${n(-h)} ${n(-h)} L ${n(-h + dx)} ${n(-h - dy)} L ${n(h + dx)} ${n(-h - dy)} L ${n(h)} ${n(-h)} Z" fill="#d9cdb6" stroke="#6b7078" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<path d="M ${n(h)} ${n(-h)} L ${n(h + dx)} ${n(-h - dy)} L ${n(h + dx)} ${n(h - dy)} L ${n(h)} ${n(h)} Z" fill="#9aa0a8" stroke="#6b7078" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<rect x="${n(-h)}" y="${n(-h)}" width="${n(p.s)}" height="${n(p.s)}" fill="url(#${id})" stroke="#6b7078" stroke-width="${n(S.lw * 0.6)}"/>`;
+      return q + H.line(S, -h + 0.3, -h + 0.3, h - 0.3, h - 0.3, '', 1.2, '#ffffff') + H.line(S, -h + 0.3, -h + 0.3, h - 0.3, h - 0.3, '', 0.5, '#7d838c');
+    }
     let s = H.rect(S, -h, -h, p.s, p.s, S.shaded ? 'url(#rbx-metal)' : '#f1f3f5', 'rx="0.6"');
     s += H.rect(S, -h + 1, -h + 1, p.s - 2, p.s - 2, S.shaded ? '#2b3038' : '#ffffff');
     [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b]) => { s += `<circle cx="${n(a * (h - 0.45))}" cy="${n(b * (h - 0.45))}" r="0.42" fill="${S.fill('metal')}" ${H.stroke(S, 0.5)}/>`; });
@@ -491,6 +500,136 @@ lib.register({
     if (p.stand) out.push({ kind: 'box', x: [-g.xe, g.xe], y: [-R * 0.8, R * 0.8], z: [0, 0.9], mat: 'metal' });
     return out;
   },
+  noPost: true,
+});
+
+/* ================= Cage plate in perspective, cage rods ================= */
+/* A cage plate seen at an angle (for exploded-view illustrations of cage
+   systems): the beam runs along the part's own axis through the hole, so
+   with the part turned 90° it reads as a plate lying across a vertical beam. */
+lib.register({
+  type: 'cageplate3d', name: 'Cage plate (perspective)', abbr: 'CP', category: OM,
+  keywords: 'cage plate perspective exploded view 3d mount lens tube adapter sma fibre adapter filter holder rounded square plate',
+  defaults: { s: 14, insert: 'lens', f: 100, r: 0.6, color: '#3a3f47', glass: '#cfe6f2', center: 532, width: 20, beamWidth: 0.4, divergence: 6 },
+  params: [{ key: 'insert', label: 'Holds', type: 'select', options: [['lens', 'Lens'], ['filter', 'Filter'], ['iris', 'Iris'], ['fiber', 'Fibre adapter (cable comes in)'], ['empty', 'Nothing (open hole)']] },
+    { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -5000, max: 5000, step: 1, show: p => p.insert === 'lens' },
+    { key: 'center', label: 'Filter centre', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.insert === 'filter' },
+    { key: 'width', label: 'Filter bandwidth', type: 'number', unit: 'nm', min: 0.5, max: 2000, step: 0.5, show: p => p.insert === 'filter' },
+    { key: 'r', label: 'Iris opening (drawn radius)', type: 'number', unit: 'mm', min: 0.05, max: 20, step: 0.05, show: p => p.insert === 'iris' },
+    { key: 'divergence', label: 'Light leaving the fibre: divergence', type: 'number', unit: '°', min: 0, max: 45, step: 0.5, show: p => p.insert === 'fiber' },
+    { key: 'beamWidth', label: 'Beam diameter at the fibre (drawn)', type: 'number', unit: 'mm', min: 0.02, max: 10, step: 0.02, show: p => p.insert === 'fiber' },
+    { key: 's', label: 'Plate size', type: 'number', unit: 'mm', min: 4, max: 60, step: 0.5 },
+    { key: 'color', label: 'Plate colour', type: 'color' }, { key: 'glass', label: 'Glass colour', type: 'color', show: p => p.insert === 'lens' || p.insert === 'filter' }],
+  variants: [{ name: 'Cage plate with fibre adapter (perspective)', props: { insert: 'fiber' } }, { name: 'Cage plate with filter (perspective)', props: { insert: 'filter', glass: '#9ad0e6' } }],
+  snap: 'perp', mount: true, labelPos: [0, 9],
+  hint: 'With a fibre adapter it is a fibre end: connect a fibre-output laser (or a coupler) to it with the Fibre tool, and the light leaves along the cage axis.',
+  // with a fibre adapter the plate is a fibre end: the cable enters at the top of the adapter, the light leaves along +x
+  fiberPort: p => (p.insert === 'fiber' ? [-p.s * 0.42 - 0.4, 0] : [0, 0]),
+  fiberDir: () => [-1, 0],
+  fiberOk: p => p.insert === 'fiber',
+  port: () => ({ o: [0.2, 0], d: [1, 0] }),
+  bbox: p => [-p.s * 0.2 - (p.insert === 'fiber' ? p.s * 0.45 : 0), -p.s / 2, p.s * 0.2 + p.s * 0.12, p.s / 2],
+  draw(p, S) {
+    const s = p.s, k = 0.3, t = s * 0.12, rr = s * 0.18, c = p.color;
+    // rounded square squashed along x (seen at an angle), extruded by t along +x
+    const face = dx => { const a = s / 2, ry = rr, rx = rr * k, ax = a * k; return `M ${n(dx - ax + rx)} ${n(-a)} L ${n(dx + ax - rx)} ${n(-a)} Q ${n(dx + ax)} ${n(-a)} ${n(dx + ax)} ${n(-a + ry)} L ${n(dx + ax)} ${n(a - ry)} Q ${n(dx + ax)} ${n(a)} ${n(dx + ax - rx)} ${n(a)} L ${n(dx - ax + rx)} ${n(a)} Q ${n(dx - ax)} ${n(a)} ${n(dx - ax)} ${n(a - ry)} L ${n(dx - ax)} ${n(-a + ry)} Q ${n(dx - ax)} ${n(-a)} ${n(dx - ax + rx)} ${n(-a)} Z`; };
+    const edge = `stroke="${U.darken(c, 0.5)}" stroke-width="${n(S.lw * 0.6)}" stroke-linejoin="round"`;
+    let q = `<path d="${face(t)}" fill="${U.darken(c, 0.25)}" ${edge}/>`;
+    q += `<rect x="${n(-s / 2 * k + 0.01)}" y="${n(-s / 2 + rr)}" width="${n(t)}" height="${n(s - 2 * rr)}" fill="${U.darken(c, 0.25)}"/>`;
+    q += `<path d="${face(0)}" fill="${c}" ${edge}/>`;
+    q += `<path d="${face(0)}" fill="none" stroke="${U.lighten(c, 0.35)}" stroke-width="${n(S.lw * 1.2)}" transform="translate(${n(-0.15)} 0) scale(0.97 0.97)"/>`;
+    const hr = s * 0.3, hx = hr * k;
+    q += `<ellipse cx="0" cy="0" rx="${n(hx)}" ry="${n(hr)}" fill="${U.darken(c, 0.55)}" ${edge}/>`;
+    if (p.insert === 'lens' || p.insert === 'filter') {
+      q += `<ellipse cx="0" cy="0" rx="${n(hx * 0.92)}" ry="${n(hr * 0.92)}" fill="${p.glass}" fill-opacity="${p.insert === 'lens' ? 0.9 : 0.85}" stroke="${U.darken(p.glass, 0.3)}" stroke-width="${n(S.lw * 0.5)}"/>`;
+      for (let i = 1; i <= 3; i++) q += `<ellipse cx="0" cy="0" rx="${n(hx * 0.92 * i / 4)}" ry="${n(hr * 0.92 * i / 4)}" fill="none" stroke="#ffffff" stroke-opacity="${p.insert === 'lens' ? 0.6 : 0.25}" stroke-width="${n(S.lw * 0.6)}"/>`;
+    } else if (p.insert === 'iris') {
+      q += `<ellipse cx="0" cy="0" rx="${n(hx * 0.92)}" ry="${n(hr * 0.92)}" fill="#1d1f23"/><ellipse cx="0" cy="0" rx="${n(Math.min(hx * 0.9, p.r * k))}" ry="${n(Math.min(hr * 0.9, p.r))}" fill="#ffffff"/>`;
+    } else if (p.insert === 'fiber') {
+      // SMA-style adapter with a knurled collar and the boot of the incoming cable
+      const cr = hr * 0.55, top = -s * 0.42;
+      q += `<rect x="${n(top * 0.35)}" y="${n(-cr)}" width="${n(-top * 0.35)}" height="${n(2 * cr)}" fill="${U.darken(c, 0.15)}" ${edge}/>`;
+      for (let i = 1; i < 6; i++) q += H.line(S, top * 0.35 * i / 6, -cr, top * 0.35 * i / 6, cr, '', 0.3, U.lighten(c, 0.3));
+      q += `<ellipse cx="${n(top * 0.35)}" cy="0" rx="${n(cr * k)}" ry="${n(cr)}" fill="${U.lighten(c, 0.15)}" ${edge}/>`;
+      q += `<path d="M ${n(top * 0.35)} ${n(-cr * 0.45)} C ${n(top * 0.6)} ${n(-cr * 0.55)} ${n(top)} ${n(-cr * 0.4)} ${n(top - 0.4)} 0 C ${n(top)} ${n(cr * 0.4)} ${n(top * 0.6)} ${n(cr * 0.55)} ${n(top * 0.35)} ${n(cr * 0.45)} Z" fill="#16181c"/>`;
+    }
+    return q;
+  },
+  optics: p => {
+    const h = p.s * 0.28;
+    if (p.insert === 'lens') return [{ kind: 'lens', a: [0, -h], b: [0, h], f: p.f }];
+    if (p.insert === 'filter') return [{ kind: 'filter', a: [0, -h], b: [0, h], mode: 'bandpass', center: p.center, width: p.width, T: 0.95 }];
+    if (p.insert === 'iris') return [{ kind: 'aperture', a: [0, -h], b: [0, h], r: p.r }];
+    if (p.insert === 'fiber') return [{ kind: 'fiberIn', a: [-0.2, -h * 0.5], b: [-0.2, h * 0.5] }];
+    return [{ kind: 'pass', a: [0, -h], b: [0, h] }];
+  },
+  solid: (p, bh) => [anodBox(-p.s * 0.06, p.s * 0.06, -p.s / 2, p.s / 2, bh - p.s / 2, bh + p.s / 2)],
+});
+lib.register({
+  type: 'cagerods', name: 'Cage rods', abbr: '', category: OM, autoLabel: false,
+  keywords: 'cage rods steel rods cage system 4 rods posts vertical assembly',
+  defaults: { L: 40, gap: 8, r: 0.35 },
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 2, max: 400, step: 0.5 }, { key: 'gap', label: 'Rod spacing', type: 'number', unit: 'mm', min: 1, max: 80, step: 0.5 }, { key: 'r', label: 'Rod radius', type: 'number', unit: 'mm', min: 0.05, max: 5, step: 0.05 }],
+  hint: 'Two rods along the part’s axis: rotate by 90° for a vertical cage, then stack cage plates and cubes along it.',
+  bbox: p => [-p.L / 2, -p.gap / 2 - p.r, p.L / 2, p.gap / 2 + p.r],
+  draw(p, S, obj) {
+    const id = 'rbx-rod-' + (obj ? obj.id : 'x');
+    let q = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8d939c"/><stop offset="0.4" stop-color="#f4f6f8"/><stop offset="1" stop-color="#7d838c"/></linearGradient></defs>`;
+    [-1, 1].forEach(k => { q += `<rect x="${n(-p.L / 2)}" y="${n(k * p.gap / 2 - p.r)}" width="${n(p.L)}" height="${n(2 * p.r)}" rx="${n(p.r)}" fill="${S.shaded ? `url(#${id})` : '#e5e7eb'}" ${H.stroke(S, 0.5)}/>`; });
+    return q;
+  },
+  optics: () => [],
+  solid: p => [-1, 1].map(k => ({ kind: 'cyl', x: [-p.L / 2, p.L / 2], r: [p.r, p.r], cy: k * p.gap / 2, mat: 'metal' })),
+  noPost: true,
+});
+
+/* ================= Hot plate / heating stage ================= */
+lib.register({
+  type: 'hotplate', name: 'Hot plate / heating stage', abbr: 'HP', category: 'Samples & mechanics',
+  keywords: 'hot plate hotplate heating stage heater stirrer temperature thermal sample heating',
+  defaults: { w: 26, h: 9, body: '#344a7a', top: '#e4e6ea', plate: '#f4f4f2', disc: true, sample: true, sampleColor: '#5fae63', text: '150 °C', displayColor: '#1b0f12', textColor: '#ff5b4f', knob: '#2b2f36' },
+  params: [{ key: 'text', label: 'Display', type: 'text', placeholder: 'e.g. 150 °C' },
+    { key: 'disc', label: 'Round heating plate', type: 'bool' }, { key: 'sample', label: 'Sample on top', type: 'bool' }, { key: 'sampleColor', label: 'Sample colour', type: 'color', show: p => p.sample },
+    { key: 'body', label: 'Body colour', type: 'color' }, { key: 'top', label: 'Top colour', type: 'color' }, { key: 'plate', label: 'Plate colour', type: 'color', show: p => p.disc },
+    { key: 'displayColor', label: 'Display colour', type: 'color' }, { key: 'textColor', label: 'Display text colour', type: 'color' }, { key: 'knob', label: 'Knob colour', type: 'color' },
+    { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 6, max: 120, step: 0.5 }, { key: 'h', label: 'Body height', type: 'number', unit: 'mm', min: 2, max: 60, step: 0.5 }],
+  hint: 'Light from above stops on the sample (or the plate); use it under a probe, objective or fibre.',
+  labelPos: [0, 9],
+  geo: p => { const d = p.w * 0.36, top = -p.h / 2, py = top - d * 0.25, ph = Math.max(0.8, p.h * 0.2); return { d, top, py, ph, sy: p.disc ? py - ph : top - d * 0.25 }; },
+  bbox(p) { const g = this.geo(p); return [-p.w / 2, g.sy - (p.sample ? 1.2 : 0) - g.d * 0.12, p.w / 2 + g.d * 0.35, p.h / 2]; },
+  draw(p, S) {
+    const w = p.w, h = p.h, g = this.geo(p), d = g.d, ox = d * 0.35, oy = d * 0.5;
+    const edge = c => `stroke="${U.darken(c, 0.45)}" stroke-width="${n(S.lw * 0.6)}" stroke-linejoin="round"`;
+    // top face (seen from above), front and side faces
+    let q = `<path d="M ${n(-w / 2)} ${n(g.top)} L ${n(-w / 2 + ox)} ${n(g.top - oy)} L ${n(w / 2 + ox)} ${n(g.top - oy)} L ${n(w / 2)} ${n(g.top)} Z" fill="${p.top}" ${edge(p.top)}/>`;
+    q += `<path d="M ${n(w / 2)} ${n(g.top)} L ${n(w / 2 + ox)} ${n(g.top - oy)} L ${n(w / 2 + ox)} ${n(h / 2 - oy)} L ${n(w / 2)} ${n(h / 2)} Z" fill="${U.darken(p.body, 0.25)}" ${edge(p.body)}/>`;
+    q += `<rect x="${n(-w / 2)}" y="${n(g.top)}" width="${n(w)}" height="${n(h)}" fill="${p.body}" ${edge(p.body)}/>`;
+    if (S.shaded) q += `<rect x="${n(-w / 2)}" y="${n(g.top)}" width="${n(w)}" height="${n(h * 0.4)}" fill="#ffffff" fill-opacity="0.1"/>`;
+    // display and knob on the front
+    const dw = w * 0.28, dh = h * 0.5;
+    q += `<rect x="${n(-w / 2 + w * 0.06)}" y="${n(-dh / 2)}" width="${n(dw)}" height="${n(dh)}" rx="0.3" fill="${p.displayColor}" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    if (p.text) q += `<text x="${n(-w / 2 + w * 0.06 + dw / 2)}" y="0" font-family="${U.esc(S.font)}" font-size="${n(Math.min(dh * 0.55, dw / Math.max(3, p.text.length) * 1.8))}" fill="${p.textColor}" text-anchor="middle" dominant-baseline="central" font-weight="700">${U.esc(p.text)}</text>`;
+    q += `<ellipse cx="${n(w * 0.22)}" cy="0" rx="${n(h * 0.22)}" ry="${n(h * 0.16)}" fill="${p.knob}" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    // round heating plate and sample
+    const cx = ox / 2, cy = g.top - oy / 2, rx = w * 0.3, ry = rx * 0.32;
+    if (p.disc) {
+      q += `<path d="M ${n(cx - rx)} ${n(cy)} L ${n(cx - rx)} ${n(cy - g.ph)} A ${n(rx)} ${n(ry)} 0 0 1 ${n(cx + rx)} ${n(cy - g.ph)} L ${n(cx + rx)} ${n(cy)} A ${n(rx)} ${n(ry)} 0 0 1 ${n(cx - rx)} ${n(cy)} Z" fill="${U.darken(p.plate, 0.25)}" ${edge(p.plate)}/>`;
+      q += `<ellipse cx="${n(cx)}" cy="${n(cy - g.ph)}" rx="${n(rx)}" ry="${n(ry)}" fill="${p.plate}" ${edge(p.plate)}/>`;
+    }
+    if (p.sample) {
+      const sz = w * 0.13, sy0 = cy - (p.disc ? g.ph : 0), t = Math.max(0.35, h * 0.06);
+      const pts = [[cx - sz, sy0], [cx, sy0 - sz * 0.32], [cx + sz, sy0], [cx, sy0 + sz * 0.32]];
+      q += `<path d="M ${n(pts[0][0])} ${n(pts[0][1])} L ${n(pts[3][0])} ${n(pts[3][1])} L ${n(pts[2][0])} ${n(pts[2][1])} L ${n(pts[2][0])} ${n(pts[2][1] - t)} L ${n(pts[0][0])} ${n(pts[0][1] - t)} Z" fill="${U.darken(p.sampleColor, 0.35)}"/>`;
+      q += `<path d="M ${pts.map(v => n(v[0]) + ' ' + n(v[1] - t)).join(' L ')} Z" fill="${p.sampleColor}" ${edge(p.sampleColor)}/>`;
+    }
+    return q;
+  },
+  optics(p) {
+    // light from above stops on the sample (or the plate) surface
+    const g = this.geo(p), cx = g.d * 0.35 / 2, cy = g.top - g.d * 0.5 / 2, y = cy - (p.disc ? g.ph : 0) - (p.sample ? Math.max(0.35, p.h * 0.06) : 0), r = p.sample ? p.w * 0.13 : p.w * 0.3;
+    return [{ kind: 'absorb', a: [cx - r, y], b: [cx + r, y] }].concat(H.boxAbsorb(-p.w / 2, g.top, p.w / 2, p.h / 2));
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.w / 2, p.w / 2], y: [-p.w * 0.3, p.w * 0.3], z: [0, p.h], mat: { color: p.body } }, { kind: 'vcyl', cx: 0, cy: 0, r: p.w * 0.3, z: [p.h, p.h + 1], mat: { color: p.plate } }],
   noPost: true,
 });
 

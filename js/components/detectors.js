@@ -267,8 +267,10 @@ lib.register({
 lib.register({
   type: 'instrument', name: 'Instrument / electronics box', abbr: '', category: 'Electronics', autoLabel: false,
   keywords: 'lock in amplifier computer pc oscilloscope function generator driver controller daq electronics box',
-  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic', look: 'flat', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#ffffff', knob: false },
-  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['flat', 'Flat box (schematic)'], ['box3d', 'Benchtop box (3D look)'], ['pc', 'Computer (monitor and tower)']] },
+  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic', look: 'flat', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#ffffff', knob: false, screen: 'plot', curves: 5, led: '#e6c44a' },
+  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['flat', 'Flat box (schematic)'], ['box3d', 'Benchtop box (3D look)'], ['brick', 'Compact box seen from above (USB spectrometer, light source)'], ['pc', 'Computer (monitor and tower)'], ['laptop', 'Laptop']] },
+    { key: 'screen', label: 'Screen shows', type: 'select', options: [['plot', 'A plot of spectra'], ['blank', 'Nothing'], ['text', 'The text']], show: p => p.look === 'laptop' },
+    { key: 'curves', label: 'Curves on the plot', type: 'number', min: 1, max: 12, step: 1, show: p => p.look === 'laptop' && p.screen === 'plot' },
     { key: 'text', label: 'Text', type: 'text' },
     { key: 'color', label: 'Box colour', type: 'color', show: p => p.look !== 'flat' },
     { key: 'displayColor', label: 'Display colour', type: 'color', show: p => p.look === 'box3d' },
@@ -284,11 +286,49 @@ lib.register({
     { name: 'Spectrometer (benchtop box)', props: { look: 'box3d', text: 'Spectrometer', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#7fe0a8', w: 20, h: 8 }, keywords: 'spectrometer box benchtop 3d' },
     { name: 'Controller (benchtop box)', props: { look: 'box3d', text: '', color: '#7fa7d6', displayColor: '#13202b', textColor: '#7fe0a8', knob: true, w: 18, h: 8 }, keywords: 'controller driver laser driver box benchtop 3d knob' },
     { name: 'Computer (monitor and tower)', props: { look: 'pc', text: '', color: '#4b5059', w: 22, h: 14 }, keywords: 'computer pc desktop monitor tower workstation' },
+    { name: 'Laptop (with a plot on screen)', props: { look: 'laptop', text: '', color: '#2b2f36', w: 24, h: 18, screen: 'plot', curves: 5 }, keywords: 'laptop notebook computer screen plot spectra data acquisition' },
+    { name: 'Compact spectrometer / light source (box)', props: { look: 'brick', text: '', color: '#5f7fbf', w: 14, h: 9, led: '#e6c44a' }, keywords: 'usb spectrometer compact light source box halogen led source small box fibre port' },
   ],
   bbox: p => (p.look === 'box3d' ? [-p.w / 2, -p.h / 2 - H.benchDepth(p.w, p.h) * 0.6, p.w / 2 + H.benchDepth(p.w, p.h) * 0.8, p.h / 2] : [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2]),
   draw(p, S) {
     const w = p.w, h = p.h;
     if (p.look === 'box3d') return H.bench(S, w, h, { color: p.color, text: p.text, displayColor: p.displayColor, textColor: p.textColor, knob: p.knob });
+    if (p.look === 'laptop') {
+      // open laptop seen from the front: screen (tilted back a little) above a keyboard base
+      const c = p.color, sw = w * 0.84, sh = h * 0.66, sx = -w / 2 + w * 0.1, sy = -h / 2, sk = w * 0.06;
+      let q = `<path d="M ${n(sx + sk)} ${n(sy)} L ${n(sx + sw + sk)} ${n(sy)} L ${n(sx + sw)} ${n(sy + sh)} L ${n(sx)} ${n(sy + sh)} Z" fill="${c}" stroke="${U.darken(c, 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+      const ix = sx + w * 0.035, iy = sy + h * 0.035, iw = sw - w * 0.07, ih = sh - h * 0.07;
+      q += `<path d="M ${n(ix + sk)} ${n(iy)} L ${n(ix + iw + sk * 0.95)} ${n(iy)} L ${n(ix + iw)} ${n(iy + ih)} L ${n(ix)} ${n(iy + ih)} Z" fill="#ffffff"/>`;
+      if (p.screen === 'plot') {
+        // small generic plot: axes and a family of smooth curves
+        const ax = ix + iw * 0.14 + sk * 0.5, ay = iy + ih * 0.86, aw = iw * 0.78, ah = ih * 0.7;
+        q += `<path d="M ${n(ax)} ${n(ay - ah)} L ${n(ax)} ${n(ay)} L ${n(ax + aw)} ${n(ay)}" fill="none" stroke="#111" stroke-width="${n(S.lw * 0.6)}"/>`;
+        const pal = ['#1f2125', '#d62828', '#3a6fd8', '#2a9d4f', '#8a3b12', '#4fc3e0', '#f08c00', '#7b4fd8', '#c2185b', '#607d8b', '#9e9d24', '#00897b'];
+        const N = Math.max(1, Math.round(p.curves || 5));
+        for (let k = 0; k < N; k++) {
+          let d = '';
+          const gs = (u, c, wd) => Math.exp(-Math.pow((u - c) / wd, 2)), slope = 0.12 + 0.55 * (N > 1 ? k / (N - 1) : 0.5);
+          for (let i = 0; i <= 40; i++) { const u = i / 40, y = 0.48 + 0.2 * gs(u, 0.1, 0.06) - 0.3 * gs(u, 0.3, 0.09) + slope * Math.max(0, u - 0.3); d += (i ? ' L ' : 'M ') + n(ax + aw * u) + ' ' + n(ay - ah * Math.min(1, Math.max(0, y))); }
+          q += `<path d="${d}" fill="none" stroke="${pal[k % pal.length]}" stroke-width="${n(S.lw * 0.7)}" stroke-linejoin="round"/>`;
+        }
+      } else if (p.screen === 'text' && p.text) q += `<text x="${n(ix + iw / 2 + sk / 2)}" y="${n(iy + ih / 2)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(S.fs, ih * 0.2))}" fill="${S.ink}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(p.text)}</text>`;
+      const by = sy + sh, bh = h - sh;
+      q += `<path d="M ${n(sx)} ${n(by)} L ${n(sx + sw)} ${n(by)} L ${n(w / 2 - w * 0.02)} ${n(by + bh * 0.8)} L ${n(-w / 2)} ${n(by + bh * 0.8)} Z" fill="${c}" stroke="${U.darken(c, 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<path d="M ${n(sx + w * 0.04)} ${n(by + bh * 0.12)} L ${n(sx + sw - w * 0.03)} ${n(by + bh * 0.12)} L ${n(w / 2 - w * 0.08)} ${n(by + bh * 0.62)} L ${n(-w / 2 + w * 0.05)} ${n(by + bh * 0.62)} Z" fill="#e7e9ec"/>`;
+      q += `<path d="M ${n(-w / 2)} ${n(by + bh * 0.8)} L ${n(w / 2 - w * 0.02)} ${n(by + bh * 0.8)} L ${n(w / 2 - w * 0.03)} ${n(h / 2)} L ${n(-w / 2 + w * 0.01)} ${n(h / 2)} Z" fill="${U.darken(c, 0.3)}"/>`;
+      return q;
+    }
+    if (p.look === 'brick') {
+      // compact box seen from above and in front: large top face, thin front with a port and a light
+      const c = p.color, t = h * 0.32, k = w * 0.32;
+      let q = `<path d="M ${n(-w / 2)} ${n(-h / 2 + t)} L ${n(-w / 2 + k)} ${n(-h / 2)} L ${n(w / 2)} ${n(-h / 2)} L ${n(w / 2 - k)} ${n(h / 2 - t)} Z" fill="${c}" stroke="${U.darken(c, 0.45)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<path d="M ${n(-w / 2)} ${n(-h / 2 + t)} L ${n(w / 2 - k)} ${n(h / 2 - t)} L ${n(w / 2 - k)} ${n(h / 2)} L ${n(-w / 2)} ${n(-h / 2 + 2 * t)} Z" fill="${U.darken(c, 0.35)}" stroke="${U.darken(c, 0.5)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<path d="M ${n(w / 2 - k)} ${n(h / 2 - t)} L ${n(w / 2)} ${n(-h / 2)} L ${n(w / 2)} ${n(-h / 2 + t)} L ${n(w / 2 - k)} ${n(h / 2)} Z" fill="${U.lighten(c, 0.15)}" stroke="${U.darken(c, 0.5)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+      q += `<circle cx="${n(w / 2 - k * 0.55)}" cy="${n(h / 2 - t * 0.4)}" r="${n(Math.min(0.6, t * 0.22))}" fill="${p.led || '#e6c44a'}" stroke="#222" stroke-width="${n(S.lw * 0.4)}"/>`;
+      if (S.shaded) q += `<path d="M ${n(-w / 2 + k * 0.4)} ${n(-h / 2 + t * 0.6)} L ${n(w / 2 - k * 0.3)} ${n(-h / 2 + t * 0.2)}" stroke="#ffffff" stroke-opacity="0.35" stroke-width="${n(S.lw * 2)}" stroke-linecap="round"/>`;
+      if (p.text) q += `<text x="${n(0)}" y="${n(-t * 0.3)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(S.fs, h * 0.18))}" fill="#ffffff" text-anchor="middle" dominant-baseline="central" transform="rotate(${n(-Math.atan2(h - 2 * t, w - k) * 57.3 * 0.35)} 0 ${n(-t * 0.3)})">${RNBX.text.markup(p.text)}</text>`;
+      return q;
+    }
     if (p.look === 'pc') {
       // flat icon: monitor on a stand, tower to its right
       const c = p.color, mw = w * 0.62, mh = h * 0.68, mx = -w / 2, my = -h / 2, tw = w * 0.26, tx = w / 2 - tw;

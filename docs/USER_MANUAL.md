@@ -83,6 +83,12 @@ amplifier, motion controller, power supply, DAQ). Search the library by name.
 | **Fibre-optic probe head** | Samples & mechanics | An *Optical module* with the excitation and collection paths drawn inside and a focusing nose: the beam focuses the set distance below it. |
 | **Tilted disc look** | Lens, filter | *Drawn as ▸ Tilted disc (3D look)* draws round optics as seen at an angle, for perspective illustrations; filters take any glass colour. The optics are unchanged. |
 | **Block arrow** | Graphical abstract | Wide filled arrows (light in / out). |
+| **Laptop** | Electronics | *Instrument ▸ Looks like ▸ Laptop*: the screen shows a small plot of spectra (1–12 curves), nothing, or your text. |
+| **Compact box seen from above** | Electronics | USB spectrometer or compact light source: a box seen from above with a status light. |
+| **Hanging cable** | Connections | *Electrical connection ▸ Routing ▸ Hanging cable* draws a smooth curve with adjustable sag (negative arches up); set the line weight for thick cables. Fibres can have **connector boots** at both ends. |
+| **Cage plate (perspective)** | Optomechanics | A cage plate seen at an angle holding a lens, filter, iris, nothing, or a **fibre adapter**. With the fibre adapter it is a fibre end: connect a fibre-output laser to it and the light leaves along the cage axis. Turn it 90° for a vertical cage. |
+| **Cage cube (3D look)** and **Cage rods** | Optomechanics | A metal cube with its diagonal insert (it still splits or turns the beam), and pairs of rods to run along a cage. |
+| **Hot plate / heating stage** | Samples & mechanics | Body, top and round heating plate with a sample, a temperature display and a knob, all colours editable. Light from above stops on the sample. |
 | **Groove fill, see-through cover, nanoflakes** | Nanostructures & films | *Grating ridges ▸ Fill the grooves with*; *Transparent cover / superstrate* (slab opacity); *Tilted nanoflakes / nanosheets* (random standing plates with a lean angle). |
 
 ### Ray bundles and real glass lenses

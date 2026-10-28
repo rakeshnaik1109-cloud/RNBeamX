@@ -24,7 +24,8 @@ module.exports = async ({ base, getBrowser, H }) => {
     // every new look renders (2D shaded, schematic and 3D) without problems
     const looks = [['instrument', { look: 'box3d', text: 'Power supply', knob: true }], ['instrument', { look: 'pc' }], ['camera', { look: 'photo' }], ['emagnet', { field: true }], ['emagnet', { pole: 'none', gap: 12, coilL: 3, coilR: 9 }],
       ['lens', { look: 'tilted' }], ['filter', { look: 'tilted', tintColor: '#999999' }], ['arrow', { style: 'block', dx: 0, dy: 12, head: 'both' }], ['coupler', { look: 'tip' }], ['module', { inside: 'probe', snout: true, f: 5 }],
-      ['narray', { shape: 'flake', layout: 'random', count: 30, h: 3, tilt: 30 }], ['nridges', { fill: '#a9d1ef' }], ['nslab', { alpha: 0.4 }], ['benchlaser', {}]];
+      ['narray', { shape: 'flake', layout: 'random', count: 30, h: 3, tilt: 30 }], ['nridges', { fill: '#a9d1ef' }], ['nslab', { alpha: 0.4 }], ['benchlaser', {}],
+      ['instrument', { look: 'laptop', screen: 'plot', curves: 7 }], ['instrument', { look: 'brick', text: 'USB' }], ['cageplate3d', { insert: 'fiber' }], ['cageplate3d', { insert: 'iris' }], ['cagecube', { look: 'box3d' }], ['cagerods', {}], ['hotplate', {}]];
     out.looks = looks.map(([type, props]) => {
       const d = RNBX.newDocument(); d.objects = [mk(type, 60, 40, 0, props)];
       try { return ['schematic', 'shaded', '3d'].every(m => { d.style.mode = m; const svg = RNBX.render.build(d).svg; return svg.length > 300 && !/NaN|undefined/.test(svg); }) ? 'ok' : type + ' bad'; } catch (e) { return type + ': ' + e.message; }
@@ -33,6 +34,15 @@ module.exports = async ({ base, getBrowser, H }) => {
     { const las = mk('laser', 10, 50, 0, {}), L = mk('lens', 40, 50, 0, { f: 200, look: 'tilted' }), d = RNBX.newDocument(); d.objects = [las, L]; const t = RNBX.trace(d); out.tilted = t.segments.some(q => q.a[0] >= 39.9 && q.dw < -1e-3); }
     // the electromagnet's gap is centred on the part, so a sample at its position sits between the poles
     { const em = RNBX.lib.get('emagnet'), g = em.geo(RNBX.createObject('emagnet', 0, 0).props); out.gap = [g.x1 > 0, em.bbox(RNBX.createObject('emagnet', 0, 0).props)[0] < -g.x2]; }
+    // cage plate with a fibre adapter is a fibre end: light goes down the cage, through a lens, onto the sample on a hot plate
+    { const lz = mk('benchlaser', 20, 10, 0, { lambda: 600 }), top = mk('cageplate3d', 80, 30, 90, { insert: 'fiber', s: 20 }), fib = link('fiber', lz, top, { boots: true, width: 2.2 }),
+        lens = mk('cageplate3d', 80, 55, 90, { insert: 'lens', f: 250, s: 20 }), hp = mk('hotplate', 78, 95, 0, { w: 30 });
+      const { t } = run([lz, top, fib, lens, hp]);
+      const after = t.segments.find(q => q.src === lz.id && q.a[1] > 54.9 && q.a[1] < 56 && q.b[1] > q.a[1]);
+      out.cage = { start: t.segments.find(q => q.src === lz.id).a.map(v => +v.toFixed(2)), hp: t.hits[hp.id] ? +t.hits[hp.id].P.toFixed(3) : 0, collimated: after ? Math.abs(after.dw) < 0.1 * Math.abs(t.segments.find(q => q.src === lz.id).dw) : null }; }
+    // hanging cable route draws a smooth curve
+    { const a = mk('instrument', 20, 20, 0, { look: 'laptop' }), c = mk('instrument', 60, 40, 0, { look: 'brick' }), w = link('wire', a, c, { route: 'curve', width: 2.5 }), d = RNBX.newDocument(); d.objects = [a, c, w];
+      out.cable = / C /.test(RNBX.lib.get('wire').geometry(w, d).d); }
     // block arrow is a filled shape
     { const d = RNBX.newDocument(); d.objects = [mk('arrow', 20, 20, 0, { style: 'block', dx: 20, dy: 0, shaft: 3, color: '#d9704a' })]; out.block = /<path d="M [^"]+Z" fill="#d9704a"/.test(RNBX.render.build(d).svg); }
     return out;
@@ -47,6 +57,8 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('tilted (3D-look) lens still focuses', r.tilted);
   H.check('electromagnet: the gap is at the part position', r.gap.every(Boolean), r.gap);
   H.check('block arrow is drawn as a filled shape', r.block);
+  H.check('cage plate with a fibre adapter is a fibre end; the light goes down the cage onto the hot-plate sample', Math.abs(r.cage.start[0] - 80) < 0.01 && Math.abs(r.cage.start[1] - 30) < 0.5 && r.cage.hp > 0 && r.cage.collimated === true, r.cage);
+  H.check('hanging cable route is a smooth curve', r.cable);
   H.check('no errors', page.errors.length === 0, page.errors.join(' | '));
   await page.context().close();
 };
