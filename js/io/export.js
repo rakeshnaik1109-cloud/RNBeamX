@@ -188,6 +188,33 @@ X.copyPng = async (dpi = 300) => {
 };
 X.copySvg = async () => navigator.clipboard.writeText(X.svgString());
 
+/* ---------- animated GIF (LinkedIn, websites, slides) ---------- */
+X.gif = async (opt = {}, onProgress) => {
+  const an = S.doc.animation, fps = U.clamp(opt.fps || 15, 4, 30), D = an.duration || 6;
+  const W = S.doc.page.width, H = S.doc.page.height;
+  const wpx = Math.round(opt.width || 960), hpx = Math.round(wpx * H / W);
+  const c = document.createElement('canvas'); c.width = wpx; c.height = hpx;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const frames = [], N = Math.max(1, Math.round(D * fps));
+  const bg = S.doc.page.background === 'transparent' ? '#ffffff' : null;
+  for (let i = 0; i < N; i++) {
+    if (X.cancelVideo) { X.cancelVideo = false; return; }
+    const img = await new Promise((res, rej) => {
+      const im = new Image(), url = URL.createObjectURL(new Blob([RNBX.render.build(S.doc, { time: i / fps, motion: true }).svg], { type: 'image/svg+xml' }));
+      im.onload = () => { URL.revokeObjectURL(url); res(im); }; im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Frame rendering failed')); }; im.src = url;
+    });
+    ctx.fillStyle = bg || '#ffffff'; ctx.fillRect(0, 0, wpx, hpx);
+    ctx.drawImage(img, 0, 0, wpx, hpx);
+    frames.push(ctx.getImageData(0, 0, wpx, hpx).data);
+    if (onProgress) onProgress(0.6 * (i + 1) / N);
+    if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+  }
+  await new Promise(r => setTimeout(r, 0));
+  const blob = RNBX.gif.encode(frames, wpx, hpx, Math.round(100 / fps), f => onProgress && onProgress(0.6 + 0.4 * f));
+  U.download(blob, U.slug(S.doc.meta.title) + '.gif');
+  return blob;
+};
+
 /* ---------- video ---------- */
 X.videoTypes = () => {
   const cands = [['video/mp4;codecs=avc1.42E01E', 'mp4'], ['video/mp4', 'mp4'], ['video/webm;codecs=vp9', 'webm'], ['video/webm;codecs=vp8', 'webm'], ['video/webm', 'webm']];

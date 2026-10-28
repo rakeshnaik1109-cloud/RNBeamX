@@ -277,6 +277,33 @@ a.icon-btn { text-decoration: none; }
 /* ---------- timeline ---------- */
 .timeline { grid-area: time; background: var(--panel); border-top: 1px solid var(--line); height: 190px; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
 .tl-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tl-bar .rec { font-weight: 700; color: var(--muted); }
+.tl-bar .rec.on { color: #d6336c; }
+.tl-nm { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.tl-nm > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-nm small { font-size: 10.5px; color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anim-applied { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
+.anim-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft, #eeebff); color: var(--accent, #5b4bdb); border-radius: 999px; padding: 3px 4px 3px 10px; font-weight: 600; font-size: 12px; }
+.anim-chip button { border: 0; background: transparent; color: inherit; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 5px; }
+.anim-wrap { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(250px, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .anim-wrap { grid-template-columns: 1fr; } }
+.anim-gallery .tpl-head:first-child { margin-top: 0; }
+.anim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.anim-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: inherit; cursor: pointer; font: inherit; text-align: center; }
+.anim-card .ic { color: var(--accent, #5b4bdb); display: inline-flex; }
+.anim-card .nm { font-size: 12px; font-weight: 600; line-height: 1.25; }
+.anim-card:hover { border-color: var(--accent); }
+.anim-card:hover .ic svg { animation: animPop .9s ease-in-out infinite alternate; }
+.anim-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft, #eeebff); }
+.anim-card.off { opacity: .45; }
+@keyframes animPop { from { transform: translateY(0) rotate(0); } to { transform: translateY(-2px) rotate(-8deg); } }
+.anim-side { position: sticky; top: 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
+.anim-side-head { display: flex; gap: 10px; align-items: flex-start; color: var(--accent, #5b4bdb); margin-bottom: 10px; }
+.anim-side-head b { display: block; color: var(--ink, inherit); font-size: 14px; }
+.anim-side-head small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 2px; }
+.anim-form .field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 9px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.anim-form .field.row { flex-direction: row; align-items: center; gap: 8px; }
+.anim-form select, .anim-form input[type=number] { width: 100%; }
 .tl-bar .time { font: 600 12px var(--mono); min-width: 92px; }
 .tl-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .tl-bar input[type=number] { width: 64px; }
@@ -383,6 +410,7 @@ a.icon-btn { text-decoration: none; }
     <div class="top-right">
       <a class="btn ghost family-link" id="lnkSpectrax" href="https://rakeshnaik1109-cloud.github.io/RNSpectra_X/" target="_blank" rel="noopener noreferrer" title="RNSpectraX: process and plot the spectra for this setup (companion app)">RNSpectraX ↗</a>
       <a class="btn ghost family-link" id="lnkGuide" href="https://rakeshnaik1109-cloud.github.io/RNBeamX/guide.html" target="_blank" rel="noopener" title="Illustrated guide: quick start, components, physics, export">Guide</a>
+      <button class="btn ghost" id="btnAnimate" title="One-click animations: 3D rotation, beam switch-on, scans, build-up… (A)">Animate</button>
       <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
       <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
       <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
@@ -2250,7 +2278,7 @@ RNBX.trace = function trace(doc) {
 
   while (queue.length && segments.length < MAX_SEGMENTS && guard++ < MAX_SEGMENTS * 3) {
     const ray = queue.shift();
-    if (ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;
+    if (!(ray.P0 > 0) || ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;   // a source switched off (power 0) emits nothing
 
     if (ray.vz) {
       /* ---------- vertical travel ---------- */
@@ -6764,7 +6792,8 @@ R.label = (obj, doc, x, y, interactive) => {
     const sz = RNBX.labels.size(obj, doc);
     lead = RNBX.labels.leader(lib.worldBox(obj), [x - sz.w / 2, y - sz.h / 2, x + sz.w / 2, y + sz.h / 2], RNBX.isDarkPage(doc.page) ? '#c9d1dc' : '#4b5563', n(Math.max(0.12, U.pt2mm(doc.style.lineWidthPt || 0.5) * 0.7)));
   }
-  return lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
+  const lop = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
+  return (lop ? `<g${lop}>` : '') + lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>` + (lop ? '</g>' : '');
 };
 
 R.object2D = (obj, S, interactive) => {
@@ -6814,7 +6843,9 @@ R.build = (srcDoc, opt = {}) => {
   const time = opt.time != null ? opt.time : null;
   const doc = time != null && RNBX.anim ? RNBX.anim.evaluate(srcDoc, time) : srcDoc;
   const W = doc.page.width, H = doc.page.height;
-  const trace = RNBX.trace(doc);
+  const full = RNBX.trace(doc);
+  // during a "switch on" animation the beams grow out of the sources
+  const trace = RNBX.anim && doc.animation && doc.animation.reveal ? RNBX.anim.revealTrace(doc, full, time) : full;
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
   S.trace = trace;
@@ -7153,26 +7184,30 @@ R3.scene = (doc, trace, S, opt = {}) => {
     // decals (stripes, bands) sit on a body's surface, so they go after it
     opaque.sort((a, b) => (a.f.decal - b.f.decal) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
     trans.filter(q => q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 1); });
-    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj._group || obj.id}"` : ''}>${svg}</g>` });
+    const op3 = obj.opacity != null && obj.opacity < 1 ? obj.opacity : 1;
+    if (op3 <= 0.001) continue;
+    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj._group || obj.id}"` : ''}${op3 < 1 ? ` opacity="${op3}"` : ''}>${svg}</g>` });
     // contact shadow
     if (v3.shadow !== false) {
       const b = def.bbox ? def.bbox(obj.props) : [-2, -2, 2, 2];
       const rr = Math.max(1.2, Math.max(b[2] - b[0], b[3] - b[1]) * 0.55 * (obj.scale || 1));
       const sc = cam.p(obj.x + 0.6, obj.y + 0.9, 0);
-      shadows += `<ellipse cx="${n(sc[0])}" cy="${n(sc[1])}" rx="${n(rr * k)}" ry="${n(rr * k * Math.sin(cam.th) * 0.75)}" fill="#000" fill-opacity="0.28"/>`;
+      shadows += `<ellipse cx="${n(sc[0])}" cy="${n(sc[1])}" rx="${n(rr * k)}" ry="${n(rr * k * Math.sin(cam.th) * 0.75)}" fill="#000" fill-opacity="${n(0.28 * op3)}"/>`;
     }
     // label above the part
-    if (obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
+    // while the camera is animated, labels can follow their parts (offsets fit only one view) or hide
+    const camMoves = opt.time != null && doc.animation && doc.animation.camera && doc.animation.camera.length > 1, lab3 = camMoves ? (doc.animation.labels3d || 'follow') : 'keep';
+    if (lab3 !== 'hide' && obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
       const lp = cam.p(obj.x, obj.y, zmax + 2.2);
-      const lx = lp[0] + (obj.label.dx3 || 0), ly = lp[1] + (obj.label.dy3 || 0);
-      if (obj.label.leader3 && RNBX.labels) {
+      const lx = lp[0] + (lab3 === 'follow' ? 0 : obj.label.dx3 || 0), ly = lp[1] + (lab3 === 'follow' ? 0 : obj.label.dy3 || 0);
+      if (lab3 !== 'follow' && obj.label.leader3 && RNBX.labels) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         proj.forEach(q => q.sp.forEach(p2 => { x0 = Math.min(x0, p2[0]); y0 = Math.min(y0, p2[1]); x1 = Math.max(x1, p2[0]); y1 = Math.max(y1, p2[1]); }));
         const sz = RNBX.labels.size(obj, doc);
         const rect = [lx - sz.w / 2, ly + sz.fs * 0.32 - sz.h, lx + sz.w / 2, ly + sz.fs * 0.32];
         labels += RNBX.labels.leader([x0, y0, x1, y1], rect, dark3 ? '#d5dbe4' : '#4b5563', 0.14);
       }
-      labels += label3d(obj, doc, lx, ly, I);
+      labels += op3 < 1 ? `<g opacity="${op3}">${label3d(obj, doc, lx, ly, I)}</g>` : label3d(obj, doc, lx, ly, I);
     }
   }
 
@@ -7460,8 +7495,9 @@ const EASE = {
   inout: u => u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2,
   in: u => u * u,
   out: u => 1 - (1 - u) * (1 - u),
+  step: u => (u < 1 ? 0 : 1),           // hold, then jump (shutters, blinking)
 };
-A.EASINGS = [['inout', 'Ease in-out'], ['linear', 'Linear'], ['in', 'Ease in'], ['out', 'Ease out']];
+A.EASINGS = [['inout', 'Ease in-out'], ['linear', 'Linear'], ['in', 'Ease in'], ['out', 'Ease out'], ['step', 'Hold, then jump']];
 
 /* numbers blend; nested settings (e.g. a stack's layers or its calculation
    angle) blend field by field when both keys have the same shape */
@@ -7520,6 +7556,7 @@ A.evaluate = (doc, t) => {
   return out;
 };
 
+A.sample = (keys, t) => sample(keys, t, ['x', 'y', 'rot', 'scale', 'opacity']);
 const snapshot = o => ({ x: o.x, y: o.y, rot: o.rot || 0, scale: o.scale || 1, opacity: o.opacity == null ? 1 : o.opacity, props: U.deepClone(o.props) });
 const frameTol = () => 0.5 / (S.doc.animation.fps || 30);
 
@@ -7570,10 +7607,68 @@ A.clearTrack = id => {
   RNBX.changed();
 };
 
+/* Merge a short animation ("curve": keys that set only some fields) into an
+   object's track. Existing keys keep everything else, so several presets can
+   animate the same part (e.g. a scan and a fade) without undoing each other. */
+const FIELDS = ['x', 'y', 'rot', 'scale', 'opacity'];
+A.applyCurve = (id, curve) => {
+  const o = RNBX.getObj(id);
+  if (!o || !curve.length) return;
+  const tracks = S.doc.animation.tracks, old = tracks[id] && tracks[id].length ? tracks[id].map(k => U.deepClone(k)) : null;
+  const base = snapshot(o);
+  curve = curve.map(k => Object.assign({}, k, { t: U.round(k.t, 4) })).sort((a, b) => a.t - b.t);
+  const times = [...new Set((old || []).map(k => k.t).concat(curve.map(k => k.t)).map(t => U.round(t, 4)))].sort((a, b) => a - b);
+  const keys = times.map(t => {
+    const ok = old && old.find(k => Math.abs(k.t - t) < 1e-6), ck = curve.find(k => Math.abs(k.t - t) < 1e-6);
+    const st = old ? U.deepClone(ok || sample(old, t, FIELDS)) : U.deepClone(base);
+    const c = sample(curve, t, Object.keys(curve[0]).filter(f => FIELDS.includes(f)));
+    FIELDS.forEach(f => { if (c[f] !== undefined) st[f] = c[f]; });
+    st.props = Object.assign({}, base.props, st.props || {}, c.props || {});
+    FIELDS.forEach(f => { if (st[f] === undefined) st[f] = base[f]; });
+    delete st.t;
+    return Object.assign({ t, ease: (ck && ck.ease) || (ok && ok.ease) || 'inout' }, st);
+  });
+  tracks[id] = keys;
+};
+/* take one field (e.g. "opacity" or "props.angle") out of a track again */
+A.removeField = (id, field) => {
+  const o = RNBX.getObj(id), keys = S.doc.animation.tracks[id];
+  if (!o || !keys) return;
+  const [a, b] = field.split('.');
+  const v = keys[0] ? (b ? keys[0].props[b] : keys[0][a]) : undefined;
+  keys.forEach(k => { if (b) k.props[b] = v; else k[a] = v; });
+  if (b) o.props[b] = v; else if (v !== undefined) o[a] = v;
+  const sig = k => JSON.stringify(Object.assign({}, k, { t: 0, ease: '' }));
+  if (keys.every(k => sig(k) === sig(keys[0]))) delete S.doc.animation.tracks[id];
+};
+
+/* Record mode: with the timeline open, any edit becomes a step at the playhead,
+   also on parts that were not animated yet (their earlier state is kept at 0 s). */
+A.record = true;
+A.recording = () => A.record && S.ui && S.ui.timeline;
+A.recordEdit = ids => {
+  if (!A.recording()) return false;
+  const tracks = S.doc.animation.tracks;
+  let prev = null;
+  try { const h = RNBX.history.undoStack; prev = h.length ? JSON.parse(h[h.length - 1]) : null; } catch (e) { prev = null; }
+  let any = false;
+  ids.forEach(id => {
+    if (tracks[id] && tracks[id].length) return;
+    const o = RNBX.getObj(id);
+    if (!o || RNBX.lib.get(o.type).connection) return;
+    const was = prev && prev.objects.find(q => q.id === id);
+    const keys = tracks[id] = [];
+    if (S.time > frameTol()) upsert(keys, 0, snapshot(was || o));
+    upsert(keys, S.time, snapshot(o));
+    any = true;
+  });
+  return any;
+};
+
 /* auto-key: editing an animated object updates its key at the playhead */
 A.touch = ids => {
   const tracks = S.doc.animation.tracks;
-  let any = false;
+  let any = A.recordEdit(ids);
   ids.forEach(id => {
     if (!tracks[id] || !tracks[id].length) return;
     const o = RNBX.getObj(id);
@@ -7632,7 +7727,318 @@ A.toggle = () => (S.playing ? A.pause() : A.play());
 A.stop = () => { A.pause(); A.setTime(0); };
 
 /* is the scene time-dependent at all? (decides whether frames differ) */
-A.isLive = doc => A.hasAnimation(doc) || doc.animation.flow || doc.animation.pulses || doc.objects.some(o => o.props && o.props.pulsed);
+A.isLive = doc => A.hasAnimation(doc) || doc.animation.flow || doc.animation.pulses || !!doc.animation.reveal || doc.objects.some(o => o.props && o.props.pulsed);
+
+/* "switch on": the light grows out of the sources along the beam path
+   between reveal.t0 and reveal.t1 (path length shown grows linearly) */
+A.pathLength = trace => trace.segments.reduce((m, s) => (s.ghost ? m : Math.max(m, (s.s0 || 0) + (s.len || 0))), 0);
+A.revealTrace = (doc, trace, t) => {
+  const rv = doc.animation.reveal;
+  if (!rv || t == null) return trace;
+  const L = A.pathLength(trace), u = U.clamp((t - rv.t0) / Math.max(1e-6, rv.t1 - rv.t0), 0, 1), sMax = L * u;
+  if (u >= 1) return trace;
+  const segments = [];
+  trace.segments.forEach(s => {
+    const s0 = s.s0 || 0;
+    if (s0 >= sMax || s.len <= 0) return;
+    if (s0 + s.len <= sMax) { segments.push(s); return; }
+    const f = (sMax - s0) / s.len;
+    segments.push(Object.assign({}, s, { b: [s.a[0] + (s.b[0] - s.a[0]) * f, s.a[1] + (s.b[1] - s.a[1]) * f], len: s.len * f, zb: s.za + (s.zb - s.za) * f, end: 'open' }));
+  });
+  return Object.assign({}, trace, { segments });
+};
+/* how far along the light path (drawn mm) each part is first reached; sources are 0 */
+A.arrival = (doc, trace) => {
+  const out = {};
+  doc.objects.forEach(o => {
+    const def = RNBX.lib.get(o.type);
+    if (!def || def.annotation || def.connection || o.hidden) return;
+    if (def.source) { out[o.id] = 0; return; }
+    let box; try { box = RNBX.lib.worldBox(o); } catch (e) { return; }
+    const pad = 0.8;
+    let best = Infinity;
+    trace.segments.forEach(s => {
+      if (s.ghost) return;
+      const e = s.b, end = (s.s0 || 0) + s.len;
+      if (e[0] >= box[0] - pad && e[0] <= box[2] + pad && e[1] >= box[1] - pad && e[1] <= box[3] + pad) best = Math.min(best, end);
+      const a = s.a;
+      if (a[0] >= box[0] - pad && a[0] <= box[2] + pad && a[1] >= box[1] - pad && a[1] <= box[3] + pad) best = Math.min(best, s.s0 || 0);
+    });
+    if (isFinite(best)) out[o.id] = best;
+  });
+  return out;
+};
+})();
+
+</script>
+<script>
+/* js/anim/presets.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — anim/presets.js
+   One-click animations. Each preset finds a suitable part in the
+   figure (or uses the selected one), asks for two or three plain
+   settings, and writes ordinary keyframes, so the result can be
+   played, exported, combined with other presets, fine-tuned in the
+   timeline by hand, and undone with Ctrl+Z.
+
+   A preset:
+     { id, group, name, desc, icon,
+       types: part types it can animate (omit for whole-figure presets),
+       params: [{ key, label, type, min, max, step, unit, def(doc, target) }],
+       apply(doc, target, o) → list of what it changed (for "remove") }
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, A = RNBX.anim, S = RNBX.state, lib = RNBX.lib;
+const P = RNBX.animPresets = { list: [] };
+const add = p => P.list.push(p);
+P.GROUPS = ['Presentation', 'Light', 'Optics'];
+
+/* ---------- helpers ---------- */
+const dur = { key: 'dur', label: 'Length', type: 'number', unit: 's', min: 0.5, max: 120, step: 0.5, def: d => (isStill(d) ? 6 : d.animation.duration) };
+const bounce = { key: 'bounce', label: 'Back and forth', type: 'bool', def: () => true };
+const isStill = doc => { const an = doc.animation; return !A.hasAnimation(doc) && !an.flow && !an.pulses && !an.reveal; };
+/* the first animation sets the length; later ones only extend it */
+const fitDuration = (doc, D, fresh) => { const an = doc.animation; an.duration = fresh ? D : Math.max(an.duration, D); an.loop = true; };
+/* keys for a value that goes a → b (→ a) over D seconds */
+const sweep = (D, a, b, back, make) => back
+  ? [Object.assign({ t: 0 }, make(a)), Object.assign({ t: D / 2 }, make(b)), Object.assign({ t: D }, make(a))]
+  : [Object.assign({ t: 0 }, make(a)), Object.assign({ t: D, ease: 'linear' }, make(b))];
+const propCurve = (id, key, keys) => { A.applyCurve(id, keys); return [{ kind: 'field', id, field: 'props.' + key }]; };
+const camOf = doc => doc.view3d;
+const optical = doc => doc.objects.filter(o => { const d = lib.get(o.type); return d && !o.hidden && !d.annotation && !d.connection && !d.special && !d.under; });
+/* parts in the order the light reaches them */
+const beamOrder = doc => {
+  const tr = RNBX.trace(doc), arr = A.arrival(doc, tr), L = A.pathLength(tr) || 1;
+  const parts = optical(doc).filter(o => arr[o.id] != null).sort((a, b) => arr[a.id] - arr[b.id]);
+  return { parts, arr, L, rest: optical(doc).filter(o => arr[o.id] == null) };
+};
+const along = (o, d) => { const ax = U.dirToWorld(o, [1, 0]); return [o.x + ax[0] * d, o.y + ax[1] * d]; };
+const to3d = doc => { if (doc.style.mode !== '3d') { doc.style.mode = '3d'; return true; } return false; };
+const labelOf = o => (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/\n/g, ' ') : '') || lib.get(o.type).name;
+P.labelOf = labelOf;
+
+/* which part a preset will animate: the selected one if it fits, else the first suitable one */
+P.candidates = (p, doc) => (p.types ? doc.objects.filter(o => !o.hidden && p.types.includes(o.type) && (!p.accept || p.accept(o))) : []);
+P.target = (p, doc, sel) => {
+  if (!p.types) return null;
+  const c = P.candidates(p, doc);
+  const s = (sel || []).map(id => c.find(o => o.id === id)).find(Boolean);
+  return s || (p.prefer ? p.prefer(c) : c[0]) || null;
+};
+P.available = (p, doc) => (p.types ? P.candidates(p, doc).length > 0 : (p.ok ? p.ok(doc) : true));
+
+/* apply one preset (one undo step) and remember it so it can be listed and removed */
+P.apply = (p, target, o) => {
+  const doc = S.doc;
+  RNBX.history.checkpoint();
+  if (S.playing) A.pause();
+  const D = o.dur || 6, fresh = isStill(doc);
+  const changes = p.apply(doc, target, o, D) || [];
+  fitDuration(doc, D, fresh);
+  doc.animation.applied = (doc.animation.applied || []).concat([{ uid: U.uid(), preset: p.id, name: p.name + (target ? ' · ' + labelOf(target) : ''), changes }]);
+  A.setTime(0);
+  RNBX.emit('document');
+  RNBX.emit('animation');
+  RNBX.changed();
+  U.track('anim-' + p.id);
+};
+P.remove = uid => {
+  const an = S.doc.animation, i = (an.applied || []).findIndex(a => a.uid === uid);
+  if (i < 0) return;
+  RNBX.history.checkpoint();
+  if (S.playing) A.pause();
+  an.applied[i].changes.forEach(c => {
+    if (c.kind === 'field') A.removeField(c.id, c.field);
+    else if (c.kind === 'flag') an[c.key] = c.was;
+    else if (c.kind === 'camera') an.camera = [];
+    else if (c.kind === 'reveal') delete an.reveal;
+    else if (c.kind === 'mode') S.doc.style.mode = c.was;
+  });
+  an.applied.splice(i, 1);
+  A.setTime(0);
+  RNBX.emit('document'); RNBX.emit('animation'); RNBX.changed();
+};
+P.clearAll = () => {
+  RNBX.history.checkpoint();
+  if (S.playing) A.pause();
+  const an = S.doc.animation;
+  an.tracks = {}; an.camera = []; an.flow = false; an.pulses = false; delete an.reveal; an.applied = [];
+  A.setTime(0);
+  RNBX.emit('document'); RNBX.emit('animation'); RNBX.changed();
+};
+
+/* small line icons (24 × 24) */
+const I = {
+  flow: '<path d="M3 12h13"/><path d="M13 8l4 4-4 4"/><circle cx="6" cy="12" r="1" fill="currentColor"/><circle cx="10" cy="12" r="1" fill="currentColor"/>',
+  pulse: '<path d="M2 14h4l2-6 2 10 2-8 2 4h8"/>',
+  on: '<path d="M4 12h6"/><path d="M10 12h10" stroke-dasharray="2 2"/><rect x="2" y="9" width="3" height="6" rx="1"/>',
+  rainbow: '<path d="M4 18a8 8 0 0 1 16 0"/><path d="M7 18a5 5 0 0 1 10 0"/><path d="M10 18a2 2 0 0 1 4 0"/>',
+  blink: '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M5.6 18.4l2-2M16.4 7.6l2-2"/><circle cx="12" cy="12" r="3"/>',
+  rotate: '<path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/><path d="M12 7v10"/>',
+  polar: '<circle cx="12" cy="12" r="8"/><path d="M8 6v12M12 4v16M16 6v12"/>',
+  scan: '<path d="M4 18L12 6l8 12"/><path d="M12 6v12" stroke-dasharray="2 2"/>',
+  fringes: '<path d="M5 4v16M9 4v16M13 4v16M17 4v16"/>',
+  delay: '<path d="M4 8h12l3 4-3 4H4"/><path d="M8 20h8M8 20l2-2M8 20l2 2"/>',
+  focus: '<path d="M3 6l9 6-9 6"/><path d="M21 6l-9 6 9 6"/>',
+  shutter: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h16"/>',
+  aom: '<rect x="7" y="6" width="10" height="12"/><path d="M2 12h5M17 12h5M17 12l5-4"/>',
+  field: '<path d="M4 6l16 6M4 12h16M4 18l16-6"/>',
+  binding: '<path d="M3 18h18"/><circle cx="7" cy="15" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="17" cy="15" r="2"/>',
+  orbit: '<ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3v18"/><path d="M19 9l2 3-3 1"/>',
+  zoom: '<circle cx="10" cy="10" r="6"/><path d="M15 15l6 6M10 7v6M7 10h6"/>',
+  build: '<rect x="3" y="14" width="5" height="5"/><rect x="10" y="9" width="5" height="10"/><rect x="17" y="4" width="4" height="15"/>',
+  spot: '<path d="M12 2l3 7H9z"/><ellipse cx="12" cy="18" rx="7" ry="3"/>',
+  lift: '<path d="M3 16l9 4 9-4-9-4z"/><path d="M12 12V3M9 6l3-3 3 3"/>',
+};
+P.icon = id => `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${I[id] || ''}</svg>`;
+
+/* ================= Light ================= */
+add({ id: 'flow', group: 'Light', name: 'Light flow', icon: 'flow', desc: 'Light streams along every beam.',
+  params: [{ key: 'speed', label: 'Speed', type: 'number', unit: 'mm/s', min: 1, max: 500, step: 1, def: d => d.animation.flowSpeed || 25 }, dur],
+  apply(doc, t, o) { const an = doc.animation, ch = [{ kind: 'flag', key: 'flow', was: !!an.flow }]; an.flow = true; an.flowSpeed = o.speed; return ch; } });
+add({ id: 'pulses', group: 'Light', name: 'Pulse train', icon: 'pulse', desc: 'Short pulses travel through the setup (ultrafast look).',
+  params: [{ key: 'speed', label: 'Speed', type: 'number', unit: 'mm/s', min: 1, max: 500, step: 1, def: d => d.animation.flowSpeed || 25 }, dur],
+  apply(doc, t, o) { const an = doc.animation, ch = [{ kind: 'flag', key: 'pulses', was: !!an.pulses }]; an.pulses = true; an.flowSpeed = o.speed; return ch; } });
+add({ id: 'switchon', group: 'Light', name: 'Switch on', icon: 'on', desc: 'The beam grows out of the source and runs through the setup.',
+  ok: d => d.objects.some(o => lib.get(o.type) && lib.get(o.type).source),
+  params: [{ key: 'grow', label: 'Growing time', type: 'number', unit: 's', min: 0.5, max: 60, step: 0.5, def: () => 3 }, dur],
+  apply(doc, t, o, D) { doc.animation.reveal = { t0: 0.2, t1: Math.min(D, 0.2 + o.grow) }; return [{ kind: 'reveal' }]; } });
+add({ id: 'wavelength', group: 'Light', name: 'Wavelength sweep', icon: 'rainbow', desc: 'A tunable source sweeps its colour; prisms and gratings fan out live.', types: ['laser', 'led'],
+  params: [{ key: 'a', label: 'From', type: 'number', unit: 'nm', min: 150, max: 12000, step: 1, def: () => 450 }, { key: 'b', label: 'To', type: 'number', unit: 'nm', min: 150, max: 12000, step: 1, def: () => 700 }, bounce, dur],
+  apply(doc, t, o, D) { return propCurve(t.id, 'lambda', sweep(D, o.a, o.b, o.bounce, v => ({ props: { lambda: v } }))); } });
+add({ id: 'blink', group: 'Light', name: 'Laser on / off', icon: 'blink', desc: 'The source switches off and on again (blinks).', types: ['laser', 'led', 'lamp'],
+  params: [{ key: 'n', label: 'Blinks', type: 'number', min: 1, max: 20, step: 1, def: () => 2 }, dur],
+  apply(doc, t, o, D) {
+    const P0 = t.props.power || 1, keys = [{ t: 0, props: { power: P0 } }], n = Math.max(1, Math.round(o.n)), dt = D / n;
+    for (let i = 0; i < n; i++) { keys.push({ t: i * dt + dt * 0.45, ease: 'step', props: { power: 0 } }); keys.push({ t: i * dt + dt * 0.9, ease: 'step', props: { power: P0 } }); }
+    return propCurve(t.id, 'power', keys);
+  } });
+
+/* ================= Optics ================= */
+add({ id: 'waveplate', group: 'Optics', name: 'Rotate wave plate', icon: 'rotate', desc: 'A λ/2 or λ/4 plate turns: power moves between the outputs of a PBS.', types: ['hwp', 'qwp', 'eom'],
+  params: [{ key: 'a', label: 'From', type: 'number', unit: '°', min: -360, max: 360, step: 1, def: (d, t) => (t ? t.props.angle || 0 : 0) }, { key: 'b', label: 'To', type: 'number', unit: '°', min: -360, max: 360, step: 1, def: (d, t) => (t ? (t.props.angle || 0) + (t.type === 'qwp' ? 90 : 45) : 45) }, bounce, dur],
+  apply(doc, t, o, D) { return propCurve(t.id, 'angle', sweep(D, o.a, o.b, o.bounce, v => ({ props: { angle: v } }))); } });
+add({ id: 'polariser', group: 'Optics', name: 'Rotate polariser', icon: 'polar', desc: 'The transmitted power follows Malus’s law as the polariser turns.', types: ['polarizer'],
+  params: [{ key: 'a', label: 'From', type: 'number', unit: '°', min: -360, max: 360, step: 1, def: (d, t) => (t ? t.props.angle || 0 : 0) }, { key: 'b', label: 'To', type: 'number', unit: '°', min: -360, max: 360, step: 1, def: (d, t) => (t ? (t.props.angle || 0) + 90 : 90) }, bounce, dur],
+  apply(doc, t, o, D) { return propCurve(t.id, 'angle', sweep(D, o.a, o.b, o.bounce, v => ({ props: { angle: v } }))); } });
+add({ id: 'scan', group: 'Optics', name: 'Mirror / galvo scan', icon: 'scan', desc: 'A scanning mirror sweeps the beam across the sample.', types: ['galvo', 'kmount', 'mirror'],
+  prefer: c => c.find(o => o.type === 'galvo') || c.find(o => o.type === 'kmount') || c[0],
+  params: [{ key: 'amp', label: 'Scan angle ±', type: 'number', unit: '°', min: 0.05, max: 20, step: 0.05, def: () => 1 }, dur],
+  apply(doc, t, o, D) {
+    const a = o.amp;
+    if (t.type === 'galvo') { const c = t.props.scan || 0; return propCurve(t.id, 'scan', [{ t: 0, props: { scan: c } }, { t: D / 4, props: { scan: c + a } }, { t: 3 * D / 4, props: { scan: c - a } }, { t: D, props: { scan: c } }]); }
+    if (t.type === 'kmount') { const c = t.props.tilt || 0; return propCurve(t.id, 'tilt', [{ t: 0, props: { tilt: c } }, { t: D / 4, props: { tilt: c + a } }, { t: 3 * D / 4, props: { tilt: c - a } }, { t: D, props: { tilt: c } }]); }
+    const r = t.rot || 0; A.applyCurve(t.id, [{ t: 0, rot: r }, { t: D / 4, rot: r + a }, { t: 3 * D / 4, rot: r - a }, { t: D, rot: r }]); return [{ kind: 'field', id: t.id, field: 'rot' }];
+  } });
+add({ id: 'fringes', group: 'Optics', name: 'Piezo fringes', icon: 'fringes', desc: 'A piezo moves a mirror by a wavelength: interference fringes run across the detector.', types: ['mirror', 'kmount', 'retro'],
+  prefer: c => c.find(o => o.props.piezo) || c[0],
+  params: [{ key: 'nm', label: 'Travel', type: 'number', unit: 'nm', min: 10, max: 100000, step: 10, def: d => { const l = d.objects.find(q => q.type === 'laser'); return l ? l.props.lambda : 633; } }, bounce, dur],
+  apply(doc, t, o, D) { const c = t.props.piezo || 0; return propCurve(t.id, 'piezo', sweep(D, c, c + o.nm, o.bounce, v => ({ props: { piezo: v } }))); } });
+add({ id: 'delay', group: 'Optics', name: 'Delay-line scan', icon: 'delay', desc: 'The retroreflector (and its stage) moves back and forth, changing the path length.', types: ['retro'],
+  params: [{ key: 'd', label: 'Travel', type: 'number', unit: 'mm', min: 0.5, max: 200, step: 0.5, def: () => 15 }, dur],
+  apply(doc, t, o, D) {
+    const ax = U.dirToWorld(t, [-1, 0]), ch = [];
+    const move = q => { A.applyCurve(q.id, [{ t: 0, x: q.x, y: q.y }, { t: D / 2, x: q.x + ax[0] * o.d, y: q.y + ax[1] * o.d }, { t: D, x: q.x, y: q.y }]); ch.push({ kind: 'field', id: q.id, field: 'x' }, { kind: 'field', id: q.id, field: 'y' }); };
+    move(t);
+    doc.objects.filter(q => q.type === 'stage' && Math.hypot(q.x - t.x, q.y - t.y) < 8).forEach(move);
+    return ch;
+  } });
+add({ id: 'focus', group: 'Optics', name: 'Focus sweep', icon: 'focus', desc: 'A screen, camera, sample or lens moves along the beam through the focus.', types: ['screen', 'camera', 'profiler', 'sample', 'pd', 'lens', 'objective'],
+  prefer: c => c.find(o => ['screen', 'camera', 'profiler'].includes(o.type)) || c[0],
+  params: [{ key: 'd', label: 'Travel ±', type: 'number', unit: 'mm', min: 0.1, max: 100, step: 0.1, def: () => 4 }, dur],
+  apply(doc, t, o, D) { const p1 = along(t, -o.d), p2 = along(t, o.d); A.applyCurve(t.id, [{ t: 0, x: t.x, y: t.y }, { t: D / 4, x: p1[0], y: p1[1] }, { t: 3 * D / 4, x: p2[0], y: p2[1] }, { t: D, x: t.x, y: t.y }]); return [{ kind: 'field', id: t.id, field: 'x' }, { kind: 'field', id: t.id, field: 'y' }]; } });
+add({ id: 'shutter', group: 'Optics', name: 'Shutter open / close', icon: 'shutter', desc: 'The beam shutter closes and opens.', types: ['shutter'],
+  params: [{ key: 'n', label: 'Closings', type: 'number', min: 1, max: 20, step: 1, def: () => 2 }, dur],
+  apply(doc, t, o, D) { const keys = [{ t: 0, props: { open: true } }], n = Math.max(1, Math.round(o.n)), dt = D / n; for (let i = 0; i < n; i++) { keys.push({ t: i * dt + dt * 0.4, ease: 'step', props: { open: false } }); keys.push({ t: i * dt + dt * 0.85, ease: 'step', props: { open: true } }); } return propCurve(t.id, 'open', keys); } });
+add({ id: 'aom', group: 'Optics', name: 'AOM frequency sweep', icon: 'aom', desc: 'The RF drive changes, so the diffracted beam steers.', types: ['aom'],
+  params: [{ key: 'a', label: 'From', type: 'number', unit: 'MHz', min: 1, max: 2000, step: 1, def: () => 60 }, { key: 'b', label: 'To', type: 'number', unit: 'MHz', min: 1, max: 2000, step: 1, def: () => 140 }, bounce, dur],
+  apply(doc, t, o, D) { t.props.drive = 'rf'; return propCurve(t.id, 'rf', sweep(D, o.a, o.b, o.bounce, v => ({ props: { rf: v, drive: 'rf' } }))); } });
+add({ id: 'field', group: 'Optics', name: 'Field-angle sweep', icon: 'field', desc: 'A ray bundle tilts, so the image point moves (imaging diagrams).', types: ['raysource'],
+  params: [{ key: 'amp', label: 'Angle ±', type: 'number', unit: '°', min: 0.1, max: 45, step: 0.5, def: () => 6 }, dur],
+  apply(doc, t, o, D) { const c = t.props.tilt || 0; return propCurve(t.id, 'tilt', [{ t: 0, props: { tilt: c } }, { t: D / 4, props: { tilt: c + o.amp } }, { t: 3 * D / 4, props: { tilt: c - o.amp } }, { t: D, props: { tilt: c } }]); } });
+add({ id: 'binding', group: 'Optics', name: 'Binding / film growth', icon: 'binding', desc: 'An SPR chip sees the analyte index rise (the dip shifts), or a coating grows.', types: ['prism', 'ncoat', 'nslab'],
+  accept: o => (o.type === 'prism' ? !!o.props.chip : true),
+  prefer: c => c.find(o => o.type === 'prism') || c.find(o => o.type === 'ncoat') || c[0],
+  params: [{ key: 'b', label: 'Change to', type: 'number', min: 0, max: 5000, step: 0.001, def: (d, t) => (t && t.type === 'prism' ? 1.36 : t ? Math.round((t.props.nm || 50) * 2) : 100) }, bounce, dur],
+  apply(doc, t, o, D) {
+    if (t.type === 'prism') { const a = t.props.analyte === 'custom' ? t.props.analyteN : 1.333; t.props.analyte = 'custom'; t.props.analyteN = a; return propCurve(t.id, 'analyteN', sweep(D, a, o.b, o.bounce, v => ({ props: { analyteN: v, analyte: 'custom' } }))); }
+    const a = t.props.nm || 50; return propCurve(t.id, 'nm', sweep(D, a, o.b, o.bounce, v => ({ props: { nm: v } })));
+  } });
+
+/* ================= Presentation ================= */
+add({ id: 'orbit', group: 'Presentation', name: '3D rotation (turntable)', icon: 'orbit', desc: 'The whole setup turns on its optical table: a full 360° turn or a gentle swing.',
+  params: [{ key: 'kind', label: 'Motion', type: 'select', options: [['full', 'Full 360° turn'], ['swing', 'Swing left and right'], ['rise', 'Turn and rise (top view at the end)']], def: () => 'full' },
+    { key: 'pitch', label: 'Elevation', type: 'number', unit: '°', min: 10, max: 85, step: 1, def: d => Math.round(d.view3d.pitch || 34) },
+    { key: 'dir', label: 'Direction', type: 'select', options: [['1', 'Anticlockwise'], ['-1', 'Clockwise']], def: () => '1' },
+    { key: 'labels', label: 'Labels while turning', type: 'select', options: [['follow', 'Above each part'], ['hide', 'Hidden'], ['keep', 'As placed']], def: d => d.animation.labels3d || 'follow' },
+    Object.assign({}, dur, { def: () => 12 })],
+  apply(doc, t, o, D) {
+    const ch = [{ kind: 'camera' }], was = doc.style.mode;
+    if (to3d(doc)) ch.push({ kind: 'mode', was });
+    const v = camOf(doc), y0 = v.yaw || -28, s = +o.dir || 1, z = v.zoom || 1, base = { pitch: o.pitch, zoom: z, panX: 0, panY: 0 };
+    ch.push({ kind: 'flag', key: 'labels3d', was: doc.animation.labels3d }); doc.animation.labels3d = o.labels || 'follow';
+    if (o.kind === 'swing') doc.animation.camera = [Object.assign({ t: 0, yaw: y0 }, base), Object.assign({ t: D / 2, yaw: y0 + 50 * s }, base), Object.assign({ t: D, yaw: y0 }, base)];
+    else if (o.kind === 'rise') doc.animation.camera = [Object.assign({ t: 0, yaw: y0 }, base), Object.assign({ t: D * 0.7, yaw: y0 + 270 * s, ease: 'inout' }, base), Object.assign({ t: D, yaw: y0 + 360 * s }, base, { pitch: 88 })];
+    else doc.animation.camera = [Object.assign({ t: 0, yaw: y0 }, base), Object.assign({ t: D, yaw: y0 + 360 * s, ease: 'linear' }, base)];
+    return ch;
+  } });
+add({ id: 'zoom', group: 'Presentation', name: 'Zoom to a part', icon: 'zoom', desc: 'The 3D view flies in to one part (e.g. the objective) and back out.',
+  types: null, ok: d => optical(d).length > 0,
+  params: [{ key: 'part', label: 'Part', type: 'part', def: (d) => { const sel = S.selection.map(id => optical(d).find(o => o.id === id)).find(Boolean); const c = sel || optical(d).find(o => ['objective', 'sample', 'filtercube'].includes(o.type)) || optical(d)[0]; return c ? c.id : ''; } },
+    { key: 'z', label: 'Magnify', type: 'number', unit: '×', min: 1.2, max: 8, step: 0.1, def: () => 2.6 }, dur],
+  apply(doc, t, o, D) {
+    const ch = [{ kind: 'camera' }], was = doc.style.mode;
+    if (to3d(doc)) ch.push({ kind: 'mode', was });
+    const target = doc.objects.find(q => q.id === o.part) || optical(doc)[0];
+    const v = camOf(doc), W = doc.page.width, H = doc.page.height, bh = v.beamHeight || 6;
+    const c0 = { yaw: v.yaw, pitch: v.pitch, zoom: v.zoom || 1, panX: v.panX || 0, panY: v.panY || 0 };
+    const zin = c0.zoom * o.z, cam = RNBX.render3d.camera(Object.assign({}, doc, { view3d: Object.assign({}, v, { zoom: zin, panX: 0, panY: 0 }) }));
+    const pt = cam.p(target.x, target.y, bh + (target.z || 0));
+    const cin = Object.assign({}, c0, { zoom: zin, panX: U.round(W / 2 - pt[0], 3), panY: U.round(H / 2 - pt[1], 3) });
+    doc.animation.camera = [Object.assign({ t: 0 }, c0), Object.assign({ t: D * 0.35 }, cin), Object.assign({ t: D * 0.65 }, cin), Object.assign({ t: D }, c0)];
+    return ch;
+  } });
+add({ id: 'build', group: 'Presentation', name: 'Build-up', icon: 'build', desc: 'Parts appear one by one as the light reaches them: ideal for talks.',
+  ok: d => d.objects.some(o => lib.get(o.type) && lib.get(o.type).source),
+  params: [{ key: 'grow', label: 'Build time', type: 'number', unit: 's', min: 1, max: 60, step: 0.5, def: () => 5 }, dur],
+  apply(doc, t, o, D) {
+    const { parts, arr, L, rest } = beamOrder(doc), t0 = 0.3, t1 = Math.min(D, t0 + o.grow), ch = [{ kind: 'reveal' }];
+    doc.animation.reveal = { t0, t1 };
+    const fade = Math.min(0.4, (t1 - t0) / 8);
+    parts.forEach(q => {
+      const ta = t0 + (t1 - t0) * arr[q.id] / L, keys = [{ t: 0, opacity: 0 }];
+      if (ta - fade > 0) keys.push({ t: Math.max(0.01, ta - fade), opacity: 0 });
+      keys.push({ t: Math.max(0.02, ta), opacity: 1 });
+      A.applyCurve(q.id, keys); ch.push({ kind: 'field', id: q.id, field: 'opacity' });
+    });
+    rest.forEach(q => { A.applyCurve(q.id, [{ t: 0, opacity: 0 }, { t: t1, opacity: 0 }, { t: Math.min(D, t1 + 0.5), opacity: 1 }]); ch.push({ kind: 'field', id: q.id, field: 'opacity' }); });
+    return ch;
+  } });
+add({ id: 'spotlight', group: 'Presentation', name: 'Spotlight tour', icon: 'spot', desc: 'Each part lights up in turn along the beam while the rest is dimmed.',
+  ok: d => optical(d).length > 1,
+  params: [{ key: 'dim', label: 'Dimmed to', type: 'number', unit: '%', min: 0, max: 90, step: 5, def: () => 20 }, Object.assign({}, dur, { def: d => Math.max(4, Math.min(30, beamOrder(d).parts.length * 1.2)) })],
+  apply(doc, t, o, D) {
+    const { parts, rest } = beamOrder(doc), all = parts.concat(rest), n = all.length, lo = o.dim / 100, ch = [];
+    const slot = D / (n + 1);
+    all.forEach((q, i) => {
+      const a = slot * (i + 0.5), keys = [{ t: 0, opacity: 1 }, { t: Math.min(0.4, slot / 2), opacity: lo }];
+      keys.push({ t: Math.max(keys[1].t + 0.01, a - slot * 0.25), opacity: lo }, { t: a, opacity: 1 }, { t: a + slot * 0.6, opacity: 1 }, { t: a + slot * 0.85, opacity: lo });
+      keys.push({ t: D - slot * 0.5, opacity: lo }, { t: D, opacity: 1 });
+      const ks = keys.filter((k, j) => j === 0 || k.t > keys[j - 1].t + 1e-3 && k.t <= D);
+      A.applyCurve(q.id, ks); ch.push({ kind: 'field', id: q.id, field: 'opacity' });
+    });
+    return ch;
+  } });
+add({ id: 'lift', group: 'Presentation', name: '2D → 3D reveal', icon: 'lift', desc: 'Starts as the flat figure seen from above, then tilts into the 3D table view.',
+  params: [{ key: 'pitch', label: 'End elevation', type: 'number', unit: '°', min: 10, max: 80, step: 1, def: d => Math.round(d.view3d.pitch || 34) }, Object.assign({}, dur, { def: () => 5 })],
+  apply(doc, t, o, D) {
+    const ch = [{ kind: 'camera' }], was = doc.style.mode;
+    if (to3d(doc)) ch.push({ kind: 'mode', was });
+    const v = camOf(doc), y = v.yaw || -28, z = v.zoom || 1;
+    doc.animation.camera = [{ t: 0, yaw: 0, pitch: 90, zoom: z, panX: 0, panY: 0 }, { t: D * 0.15, yaw: 0, pitch: 90, zoom: z, panX: 0, panY: 0 }, { t: D * 0.85, yaw: y, pitch: o.pitch, zoom: z, panX: 0, panY: 0 }, { t: D, yaw: y, pitch: o.pitch, zoom: z, panX: 0, panY: 0 }];
+    return ch;
+  } });
 })();
 
 </script>
@@ -7928,6 +8334,33 @@ X.copyPng = async (dpi = 300) => {
 };
 X.copySvg = async () => navigator.clipboard.writeText(X.svgString());
 
+/* ---------- animated GIF (LinkedIn, websites, slides) ---------- */
+X.gif = async (opt = {}, onProgress) => {
+  const an = S.doc.animation, fps = U.clamp(opt.fps || 15, 4, 30), D = an.duration || 6;
+  const W = S.doc.page.width, H = S.doc.page.height;
+  const wpx = Math.round(opt.width || 960), hpx = Math.round(wpx * H / W);
+  const c = document.createElement('canvas'); c.width = wpx; c.height = hpx;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const frames = [], N = Math.max(1, Math.round(D * fps));
+  const bg = S.doc.page.background === 'transparent' ? '#ffffff' : null;
+  for (let i = 0; i < N; i++) {
+    if (X.cancelVideo) { X.cancelVideo = false; return; }
+    const img = await new Promise((res, rej) => {
+      const im = new Image(), url = URL.createObjectURL(new Blob([RNBX.render.build(S.doc, { time: i / fps, motion: true }).svg], { type: 'image/svg+xml' }));
+      im.onload = () => { URL.revokeObjectURL(url); res(im); }; im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Frame rendering failed')); }; im.src = url;
+    });
+    ctx.fillStyle = bg || '#ffffff'; ctx.fillRect(0, 0, wpx, hpx);
+    ctx.drawImage(img, 0, 0, wpx, hpx);
+    frames.push(ctx.getImageData(0, 0, wpx, hpx).data);
+    if (onProgress) onProgress(0.6 * (i + 1) / N);
+    if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+  }
+  await new Promise(r => setTimeout(r, 0));
+  const blob = RNBX.gif.encode(frames, wpx, hpx, Math.round(100 / fps), f => onProgress && onProgress(0.6 + 0.4 * f));
+  U.download(blob, U.slug(S.doc.meta.title) + '.gif');
+  return blob;
+};
+
 /* ---------- video ---------- */
 X.videoTypes = () => {
   const cands = [['video/mp4;codecs=avc1.42E01E', 'mp4'], ['video/mp4', 'mp4'], ['video/webm;codecs=vp9', 'webm'], ['video/webm;codecs=vp8', 'webm'], ['video/webm', 'webm']];
@@ -7976,6 +8409,124 @@ X.video = async (opt = {}, onProgress) => {
   const cancelled = X.cancelVideo; X.cancelVideo = false;
   if (cancelled) return;
   U.download(new Blob(chunks, { type: types[0][0].split(';')[0] }), U.slug(S.doc.meta.title) + '.' + types[0][1]);
+};
+})();
+
+</script>
+<script>
+/* js/io/gif.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — io/gif.js
+   Small animated-GIF writer (GIF89a, no libraries):
+   • one shared 255-colour palette from a median cut of pixels
+     sampled across the animation, with a 32k-entry lookup table;
+   • index 255 is transparent: pixels that did not change since the
+     previous frame are written as transparent, so mostly static
+     figures (only the light moves) stay small;
+   • LZW compression as in the GIF specification; loops forever.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX;
+const G = RNBX.gif = {};
+
+/* ---- palette: median cut on RGB samples ---- */
+G.palette = (samples, n = 255) => {
+  // samples: Uint8Array of r,g,b triples
+  let boxes = [{ idx: Array.from({ length: samples.length / 3 }, (_, i) => i) }];
+  const range = b => { const lo = [255, 255, 255], hi = [0, 0, 0]; b.idx.forEach(i => { for (let c = 0; c < 3; c++) { const v = samples[i * 3 + c]; if (v < lo[c]) lo[c] = v; if (v > hi[c]) hi[c] = v; } }); b.lo = lo; b.hi = hi; b.span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]); b.ch = [0, 1, 2].reduce((m, c) => (hi[c] - lo[c] > hi[m] - lo[m] ? c : m), 0); };
+  boxes.forEach(range);
+  while (boxes.length < n) {
+    boxes.sort((a, b) => b.span * Math.sqrt(b.idx.length) - a.span * Math.sqrt(a.idx.length));
+    const b = boxes[0];
+    if (b.idx.length < 2 || b.span === 0) break;
+    const c = b.ch;
+    b.idx.sort((i, j) => samples[i * 3 + c] - samples[j * 3 + c]);
+    const mid = b.idx.length >> 1, A = { idx: b.idx.slice(0, mid) }, B = { idx: b.idx.slice(mid) };
+    range(A); range(B);
+    boxes.splice(0, 1, A, B);
+  }
+  const pal = boxes.map(b => { const s = [0, 0, 0]; b.idx.forEach(i => { s[0] += samples[i * 3]; s[1] += samples[i * 3 + 1]; s[2] += samples[i * 3 + 2]; }); return s.map(v => Math.round(v / b.idx.length)); });
+  while (pal.length < n) pal.push([0, 0, 0]);
+  return pal;
+};
+/* nearest palette entry for every 15-bit colour */
+G.lookup = pal => {
+  const lut = new Uint8Array(32768);
+  for (let k = 0; k < 32768; k++) {
+    const r = ((k >> 10) & 31) * 8 + 4, g = ((k >> 5) & 31) * 8 + 4, b = (k & 31) * 8 + 4;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < pal.length; i++) { const p = pal[i], d = (p[0] - r) ** 2 * 2 + (p[1] - g) ** 2 * 4 + (p[2] - b) ** 2 * 3; if (d < bd) { bd = d; best = i; } }
+    lut[k] = best;
+  }
+  return lut;
+};
+
+/* growable byte buffer */
+G.bytes = () => {
+  let buf = new Uint8Array(1 << 16), n = 0;
+  return {
+    push(...b) { if (n + b.length > buf.length) { const nb = new Uint8Array(Math.max(buf.length * 2, n + b.length)); nb.set(buf); buf = nb; } for (let i = 0; i < b.length; i++) buf[n++] = b[i]; },
+    data: () => buf.subarray(0, n),
+  };
+};
+
+/* ---- LZW (GIF variant) ---- */
+function lzw(indices, minCode, out) {
+  const clear = 1 << minCode, eoi = clear + 1;
+  let codeSize = minCode + 1, next = eoi + 1, dict = new Map();
+  let bitBuf = 0, bitCnt = 0;
+  const block = [];
+  const flushByte = b => { block.push(b); if (block.length === 255) { out.push(255, ...block); block.length = 0; } };
+  const emit = code => { bitBuf |= code << bitCnt; bitCnt += codeSize; while (bitCnt >= 8) { flushByte(bitBuf & 255); bitBuf >>>= 8; bitCnt -= 8; } };
+  out.push(minCode);
+  emit(clear);
+  let prefix = indices[0];
+  for (let i = 1; i < indices.length; i++) {
+    const k = indices[i], key = prefix * 256 + k, hit = dict.get(key);
+    if (hit !== undefined) { prefix = hit; continue; }
+    emit(prefix);
+    if (next < 4096) { dict.set(key, next++); if (next > (1 << codeSize) && codeSize < 12) codeSize++; }
+    else { emit(clear); dict = new Map(); codeSize = minCode + 1; next = eoi + 1; }
+    prefix = k;
+  }
+  emit(prefix); emit(eoi);
+  if (bitCnt > 0) flushByte(bitBuf & 255);
+  if (block.length) out.push(block.length, ...block);
+  out.push(0);
+}
+
+/* frames: array of Uint8ClampedArray RGBA, all w × h; delay in 1/100 s */
+G.encode = (frames, w, h, delayCs, onProgress) => {
+  // shared palette from samples of up to 12 frames
+  const pick = Math.max(1, Math.floor(frames.length / 12)), samples = [];
+  for (let f = 0; f < frames.length; f += pick) { const d = frames[f]; for (let i = 0; i < d.length; i += 4 * 37) samples.push(d[i], d[i + 1], d[i + 2]); }
+  const pal = G.palette(new Uint8Array(samples), 255), lut = G.lookup(pal);
+  const out = G.bytes();
+  const str = s => { for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); };
+  const u16 = v => out.push(v & 255, (v >> 8) & 255);
+  str('GIF89a'); u16(w); u16(h); out.push(0xF7, 0, 0);                         // global table of 256 colours
+  for (let i = 0; i < 256; i++) { const p = pal[i] || [0, 0, 0]; out.push(p[0], p[1], p[2]); }
+  out.push(0x21, 0xFF, 11); str('NETSCAPE2.0'); out.push(3, 1, 0, 0, 0);       // loop forever
+  let prev = null;
+  const N = w * h;
+  frames.forEach((d, f) => {
+    const idx = new Uint8Array(N);
+    for (let p = 0, q = 0; p < N; p++, q += 4) {
+      const k = ((d[q] >> 3) << 10) | ((d[q + 1] >> 3) << 5) | (d[q + 2] >> 3);
+      const v = lut[k];
+      idx[p] = prev && prev[p] === v ? 255 : v;
+    }
+    // remember the colours actually shown, for the next frame's comparison
+    const shown = prev ? Uint8Array.from(idx, (v, p) => (v === 255 ? prev[p] : v)) : idx.slice();
+    out.push(0x21, 0xF9, 4, prev ? 0x05 : 0x04, delayCs & 255, (delayCs >> 8) & 255, prev ? 255 : 0, 0);   // keep previous frame; index 255 transparent
+    out.push(0x2C); u16(0); u16(0); u16(w); u16(h); out.push(0);
+    lzw(idx, 8, out);
+    prev = shown;
+    if (onProgress) onProgress((f + 1) / frames.length);
+  });
+  out.push(0x3B);
+  return new Blob([out.data()], { type: 'image/gif' });
 };
 })();
 
@@ -10779,9 +11330,12 @@ T.build = () => {
     chk('flow', 'Light flow', 'Animate light travelling along every beam'),
     chk('pulses', 'Pulses', 'Draw all beams as travelling pulses'),
     num('flowSpeed', 'Speed', 1, 500, 1),
-    el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Key selected', disabled: !S.selection.length, onclick: () => RNBX.anim.addKey(S.selection) }),
-    S.doc.style.mode === '3d' ? el('button', { class: 'btn small', type: 'button', html: D.icon('camera', 14) + ' Key camera', onclick: () => RNBX.anim.addCameraKey() }) : null,
-    el('button', { class: 'btn small primary', type: 'button', html: D.icon('download', 14) + ' Export video', onclick: () => RNBX.dialogs.exporter('video') }));
+    el('button', { class: 'btn small primary', type: 'button', text: 'Animate…', title: 'One-click animations (A)', onclick: () => RNBX.animateUI.open() }),
+    el('label', { title: 'Record: with this on, any change you make (move, rotate, edit a setting) is saved as a step at the current time. Change the time, change the part again: it animates between the two.' },
+      el('input', { type: 'checkbox', checked: RNBX.anim.record, onchange: e => { RNBX.anim.record = e.target.checked; U.store.set('rnbx_record', RNBX.anim.record); T.build(); } }), el('span', { class: RNBX.anim.record ? 'rec on' : 'rec', text: '● Record' })),
+    el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Add step', title: 'Save the selected parts as they are now, at this time (I)', disabled: !S.selection.length, onclick: () => RNBX.anim.addKey(S.selection) }),
+    S.doc.style.mode === '3d' ? el('button', { class: 'btn small', type: 'button', html: D.icon('camera', 14) + ' Add camera step', title: 'Save the current 3D view at this time', onclick: () => RNBX.anim.addCameraKey() }) : null,
+    el('button', { class: 'btn small', type: 'button', html: D.icon('download', 14) + ' Video / GIF', onclick: () => RNBX.dialogs.exporter('video') }));
   bodyEl = el('div', { class: 'tl-body' });
   tl.append(bar, bodyEl);
   T.buildRows();
@@ -10793,12 +11347,12 @@ T.buildRows = () => {
   const an = S.doc.animation, Dur = an.duration || 6;
   bodyEl.innerHTML = '';
   const rows = [];
-  if (an.camera.length) rows.push({ id: '__camera', name: '3D camera', keys: an.camera });
+  if (an.camera.length) rows.push({ id: '__camera', name: '3D camera', keys: an.camera, what: T.describeCam(an.camera) });
   Object.keys(an.tracks).forEach(id => {
     const o = RNBX.getObj(id);
     if (!o || !an.tracks[id].length) return;
     const def = lib.get(o.type);
-    rows.push({ id, name: (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/\n/g, ' ') : '') || o.kindName || def.name, keys: an.tracks[id] });
+    rows.push({ id, name: (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/\n/g, ' ') : '') || o.kindName || def.name, keys: an.tracks[id], what: T.describe(o, an.tracks[id]) });
   });
   // ruler
   const ruler = el('div', { class: 'tl-row' }, el('div', { class: 'tl-name muted', text: rows.length ? 'Tracks' : '' }), el('div', { class: 'tl-track tl-ruler' }));
@@ -10808,7 +11362,7 @@ T.buildRows = () => {
   bodyEl.append(ruler);
   headEl = el('div', { class: 'tl-head' });
   if (!rows.length) {
-    bodyEl.append(el('div', { class: 'tl-empty', html: 'No keyframes yet. Select an object, move the playhead, then press <b>Key selected</b> (or <kbd>I</kbd>). Adjust the object at another time and add a second key: RNBeamX interpolates and re-traces the beams on every frame. Tick <b>Light flow</b> or <b>Pulses</b> to animate the light itself.' }));
+    bodyEl.append(el('div', { class: 'tl-empty', html: '<b>Quickest:</b> press <b>Animate…</b> and pick a ready-made animation (3D rotation, switch-on, scans, build-up…).<br><b>By hand</b> (with <b>● Record</b> on): drag the time slider to a later time, then move, rotate or change any part. That change becomes a step, and RNBeamX animates smoothly from the start to it, re-tracing the beams on every frame. Repeat at other times for more steps.' }));
   }
   rows.forEach(r => {
     const track = el('div', { class: 'tl-track' });
@@ -10836,11 +11390,42 @@ T.buildRows = () => {
       track.append(key);
     });
     track.addEventListener('pointerdown', e => { const rect = track.getBoundingClientRect(); RNBX.anim.setTime((e.clientX - rect.left) / rect.width * Dur); });
-    const name = el('div', { class: 'tl-name', title: r.name }, r.name, D.iconBtn('trash', 'Remove all keys', () => RNBX.anim.clearTrack(r.id)));
+    const name = el('div', { class: 'tl-name', title: r.name + (r.what ? ' · ' + r.what : '') }, el('span', { class: 'tl-nm' }, el('span', { text: r.name }), r.what ? el('small', { text: r.what }) : null), D.iconBtn('trash', 'Remove this part’s animation', () => RNBX.anim.clearTrack(r.id)));
     name.addEventListener('click', e => { if (r.id !== '__camera' && e.target === name) RNBX.select([r.id]); });
     bodyEl.append(el('div', { class: 'tl-row' }, name, track));
   });
   bodyEl.append(headEl);
+};
+
+/* what a track changes, in words: "angle 0 → 45 → 0°", "moves", "fades in" */
+T.describe = (o, keys) => {
+  if (!keys || keys.length < 2) return keys && keys.length ? 'one step (add another at a different time)' : '';
+  const def = lib.get(o.type), out = [];
+  const vals = f => keys.map(f);
+  const varies = a => a.some(v => JSON.stringify(v) !== JSON.stringify(a[0]));
+  const seq = (a, unit = '') => { const c = a.filter((v, i) => i === 0 || v !== a[i - 1]); const f = v => (typeof v === 'number' ? U.fmt(v, 3) : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v)); return (c.length > 4 ? [c[0], '…', c[c.length - 1]] : c).map(v => (v === '…' ? v : f(v))).join(' → ') + unit; };
+  if (varies(vals(k => [k.x, k.y]))) out.push('moves');
+  if (varies(vals(k => k.rot))) out.push('turns ' + seq(vals(k => U.round(k.rot || 0, 2)), '°'));
+  if (varies(vals(k => k.scale))) out.push('size ' + seq(vals(k => U.round(k.scale || 1, 3)), '×'));
+  if (varies(vals(k => (k.opacity == null ? 1 : k.opacity)))) { const a = vals(k => (k.opacity == null ? 1 : k.opacity)); out.push(a[0] < 0.5 && a[a.length - 1] > 0.5 ? 'appears' : 'fades ' + seq(a.map(v => U.round(v * 100, 0)), '%')); }
+  const props = keys[0].props ? Object.keys(keys[0].props) : [];
+  props.forEach(p => {
+    const a = vals(k => (k.props ? k.props[p] : undefined));
+    if (!varies(a) || a.some(v => v && typeof v === 'object')) return;
+    const prm = def && def.params && def.params.find(q => q.key === p);
+    out.push((prm ? prm.label.replace(/\s*\(.*\)$/, '').toLowerCase() : p) + ' ' + seq(a.map(v => (typeof v === 'number' ? U.round(v, 3) : v)), prm && prm.unit ? ' ' + prm.unit : ''));
+  });
+  return out.join(' · ') || 'no change between steps';
+};
+
+T.describeCam = keys => {
+  if (keys.length < 2) return 'one view (add another at a different time)';
+  const out = [], a = f => keys.map(k => k[f] || 0), span = v => Math.max(...v) - Math.min(...v);
+  const yaw = a('yaw'), turn = yaw[yaw.length - 1] - yaw[0];
+  if (Math.abs(turn) >= 1) out.push(`turns ${U.fmt(Math.abs(turn), 3)}° ${turn > 0 ? 'anticlockwise' : 'clockwise'}`); else if (span(yaw) >= 1) out.push(`swings ±${U.fmt(span(yaw) / 2, 3)}°`);
+  if (span(a('pitch')) >= 1) out.push(`tilts ${U.fmt(a('pitch')[0], 3)} → ${U.fmt(a('pitch')[keys.length - 1], 3)}°`);
+  if (span(keys.map(k => k.zoom || 1)) > 0.01) out.push(`zooms to ${U.fmt(Math.max(...keys.map(k => k.zoom || 1)), 3)}×`);
+  return out.join(' · ') || 'no change between views';
 };
 
 T.sync = () => {
@@ -10859,12 +11444,125 @@ T.sync = () => {
 
 T.init = () => {
   D.$('#btnTimeline').onclick = T.toggle;
+  RNBX.anim.record = U.store.get('rnbx_record', true) !== false;
   RNBX.on('time', T.sync);
   RNBX.on('animation', () => { T.buildRows(); T.sync(); });
   RNBX.on('document', () => T.build());
   RNBX.on('selection', () => { if (!D.$('#timeline').hidden) T.build(); });
   RNBX.on('playstate', p => { if (playBtn) playBtn.innerHTML = D.icon(p ? 'pause' : 'play'); });
 };
+})();
+
+</script>
+<script>
+/* js/ui/animate.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/animate.js
+   The "Animate" dialog: a gallery of one-click animations
+   (anim/presets.js). Pick one, check its two or three settings,
+   press Apply: it plays at once. Applied animations are listed
+   and can be removed one by one; everything stays editable in the
+   timeline, and every step can be undone.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, lib = RNBX.lib;
+const AN = RNBX.animateUI = {};
+const P = () => RNBX.animPresets;
+
+const HINT = {
+  wavelength: 'Add a laser or LED first.', blink: 'Add a laser, LED or lamp first.', waveplate: 'Add a λ/2 or λ/4 plate first.',
+  polariser: 'Add a polariser first.', scan: 'Add a galvo, kinematic mount or mirror first.', fringes: 'Add a mirror in an interferometer first.',
+  delay: 'Add a retroreflector (delay line) first.', focus: 'Add a screen, camera, sample or lens first.', shutter: 'Add a beam shutter first.',
+  aom: 'Add an acousto-optic modulator first.', field: 'Add a Ray bundle / object first.', binding: 'Add an SPR prism with a chip, or a coating block.',
+  switchon: 'Add a light source first.', build: 'Add a light source first.', spotlight: 'Add a few parts first.', zoom: 'Add some parts first.',
+};
+
+AN.open = (focusId) => {
+  const doc = S.doc;
+  let chosen = null;
+  const right = el('div', { class: 'anim-side' });
+  const applied = el('div', { class: 'anim-applied' });
+  const gallery = el('div', { class: 'anim-gallery' });
+
+  const showApplied = () => {
+    const list = S.doc.animation.applied || [];
+    applied.innerHTML = '';
+    const other = RNBX.anim.hasAnimation(S.doc) || S.doc.animation.flow || S.doc.animation.pulses;
+    applied.append(el('b', { text: list.length ? 'In this figure:' : other ? 'This figure already moves (its own animation steps).' : 'Nothing animated yet: pick one below.' }));
+    list.forEach(a => applied.append(el('span', { class: 'anim-chip' }, a.name, el('button', { type: 'button', title: 'Remove this animation', text: '×', onclick: () => { P().remove(a.uid); showApplied(); } }))));
+    if (list.length || RNBX.anim.hasAnimation(S.doc)) applied.append(el('button', { class: 'btn small ghost', type: 'button', text: 'Remove all animation', onclick: () => { P().clearAll(); showApplied(); } }));
+  };
+
+  const settings = p => {
+    chosen = p;
+    gallery.querySelectorAll('.anim-card').forEach(c => c.classList.toggle('on', c.dataset.id === p.id));
+    right.innerHTML = '';
+    const avail = P().available(p, S.doc);
+    right.append(el('div', { class: 'anim-side-head', html: P().icon(p.icon) }, el('div', {}, el('b', { text: p.name }), el('small', { text: p.desc }))));
+    if (!avail) { right.append(el('div', { class: 'note', text: HINT[p.id] || 'This figure has nothing this animation can move.' })); return; }
+    const vals = {};
+    let target = null;
+    const form = el('div', { class: 'anim-form' });
+    const build = () => {
+      form.innerHTML = '';
+      if (p.types) {
+        const c = P().candidates(p, S.doc);
+        target = target && c.includes(target) ? target : P().target(p, S.doc, S.selection);
+        const sel = el('select', {}, c.map(o => el('option', { value: o.id, text: P().labelOf(o) })));
+        sel.value = target.id;
+        sel.onchange = () => { target = c.find(o => o.id === sel.value); Object.keys(vals).forEach(k => delete vals[k]); build(); };
+        form.append(el('label', { class: 'field' }, el('span', { text: 'Animate' }), sel));
+      }
+      p.params.forEach(q => {
+        if (vals[q.key] === undefined) vals[q.key] = q.def ? q.def(S.doc, target) : 0;
+        let input;
+        if (q.type === 'bool') { input = el('input', { type: 'checkbox', checked: !!vals[q.key], onchange: () => { vals[q.key] = input.checked; } }); form.append(el('label', { class: 'field row' }, input, el('span', { text: q.label }))); return; }
+        if (q.type === 'select') { input = el('select', { onchange: () => { vals[q.key] = input.value; } }, q.options.map(([v, t]) => el('option', { value: v, text: t }))); input.value = vals[q.key]; }
+        else if (q.type === 'part') {
+          const parts = S.doc.objects.filter(o => { const d = lib.get(o.type); return d && !o.hidden && !d.annotation && !d.connection && !d.special; });
+          input = el('select', { onchange: () => { vals[q.key] = input.value; } }, parts.map(o => el('option', { value: o.id, text: P().labelOf(o) })));
+          input.value = vals[q.key];
+        } else input = el('input', { type: 'number', min: q.min, max: q.max, step: q.step, value: vals[q.key], oninput: () => { const v = parseFloat(input.value); if (isFinite(v)) vals[q.key] = U.clamp(v, q.min, q.max); } });
+        form.append(el('label', { class: 'field' }, el('span', { text: q.label + (q.unit ? ` (${q.unit})` : '') }), input));
+      });
+    };
+    build();
+    const go = el('button', { class: 'btn primary', type: 'button', text: 'Apply and play', onclick: () => {
+      const o = Object.assign({}, vals);
+      P().apply(p, target, o);
+      m.close();
+      RNBX.anim.play();
+      const extra = ['orbit', 'zoom', 'lift'].includes(p.id) ? ' (switched to the 3D view)' : '';
+      RNBX.toast(`${p.name} added${extra}. Add more with Animate, fine-tune in the timeline, export from Export ▸ Video / GIF. Ctrl+Z to undo.`);
+    } });
+    right.append(form, el('div', { class: 'row', style: { gap: '8px', marginTop: '12px', flexWrap: 'wrap' } }, go));
+    if (RNBX.anim.hasAnimation(S.doc) || S.doc.animation.flow || S.doc.animation.reveal) right.append(el('div', { class: 'note', style: { marginTop: '10px' }, text: 'It is added to the animations already in the figure; the length grows if needed.' }));
+  };
+
+  P().GROUPS.forEach(g => {
+    gallery.append(el('h4', { class: 'tpl-head', text: g }));
+    const grid = el('div', { class: 'anim-grid' });
+    P().list.filter(p => p.group === g).forEach(p => {
+      const ok = P().available(p, doc);
+      const card = el('button', { class: 'anim-card' + (ok ? '' : ' off'), type: 'button', 'data-id': p.id, title: ok ? p.desc : (HINT[p.id] || '') },
+        el('span', { class: 'ic', html: P().icon(p.icon) }), el('span', { class: 'nm', text: p.name }));
+      card.onclick = () => settings(p);
+      grid.append(card);
+    });
+    gallery.append(grid);
+  });
+
+  showApplied();
+  const body = el('div', {}, applied, el('div', { class: 'anim-wrap' }, gallery, right));
+  const m = D.modal({ title: 'Animate', sub: 'One click animates your figure. Everything stays editable in the timeline and can be undone.', wide: true, body,
+    foot: [el('button', { class: 'btn ghost', type: 'button', text: 'Open timeline (manual)', onclick: () => { m.close(); RNBX.timeline.show(); } }),
+      el('button', { class: 'btn ghost', type: 'button', text: 'Export video / GIF', onclick: () => { m.close(); RNBX.dialogs.exporter('video'); } })] });
+  const first = (focusId && P().list.find(p => p.id === focusId)) || P().list.find(p => p.id === 'orbit');
+  settings(first);
+};
+
+AN.init = () => { const b = D.$('#btnAnimate'); if (b) b.onclick = () => AN.open(); };
 })();
 
 </script>
@@ -10890,11 +11588,12 @@ const FORMATS = [
   { id: 'pptx', name: 'PowerPoint (.pptx)', desc: 'Vector picture on a slide · Convert to Shape to edit' },
   { id: 'tikz', name: 'TikZ (.tex)', desc: 'LaTeX drawing commands · theses and papers' },
   { id: 'video', name: 'Video (MP4 / WebM)', desc: 'Animation · talks, social media' },
+  { id: 'gif', name: 'Animated GIF', desc: 'Animation · LinkedIn, websites, slides' },
   { id: 'project', name: 'Project (.rnbx.json)', desc: 'Save to edit later or share' },
 ];
 Dl.exporter = (initial = 'svg') => {
   let fmt = initial;
-  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920 };
+  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15 };
   const list = el('div', { class: 'fmt-list' });
   const right = el('div');
   const go = el('button', { class: 'btn primary', type: 'button', text: 'Export' });
@@ -10936,12 +11635,21 @@ Dl.exporter = (initial = 'svg') => {
       const an = S.doc.animation;
       const live = RNBX.anim.isLive(S.doc);
       right.append(el('div', { class: 'grid2' }, el('div', { class: 'field' }, el('label', {}, 'Format'), cont), el('div', { class: 'field' }, el('label', {}, 'Width'), res)),
-        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s at ${an.fps} fps. Recording runs in real time, so keep this tab visible.` : 'Nothing is animated yet. Add keyframes, or tick “Light flow” in the timeline, to make the video move.' }), prog);
+        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s at ${an.fps} fps. Recording runs in real time, so keep this tab visible.` : 'Nothing is animated yet. Press Animate (A) and pick a preset, or add steps in the timeline.' }), prog);
+    }
+    if (fmt === 'gif') {
+      const res = el('select', { onchange: () => { opts.gifWidth = +res.value; } }, [[480, '480 px (small)'], [720, '720 px'], [960, '960 px (LinkedIn)'], [1200, '1200 px (large)']].map(r => el('option', { value: r[0], text: r[1] })));
+      res.value = opts.gifWidth;
+      const fr = el('select', { onchange: () => { opts.gifFps = +fr.value; } }, [[10, '10 fps (smallest)'], [15, '15 fps'], [20, '20 fps'], [25, '25 fps (smoothest)']].map(r => el('option', { value: r[0], text: r[1] })));
+      fr.value = opts.gifFps;
+      const an = S.doc.animation, live = RNBX.anim.isLive(S.doc);
+      right.append(el('div', { class: 'grid2' }, el('div', { class: 'field' }, el('label', {}, 'Width'), res), el('div', { class: 'field' }, el('label', {}, 'Frame rate'), fr)),
+        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s, looping. GIFs have 256 colours: smaller widths and fewer frames give smaller files. For talks, a video looks better.` : 'Nothing is animated yet. Press Animate (A) and pick a preset first.' }), prog);
     }
     if (fmt === 'project') right.append(el('div', { class: 'note', text: 'A small JSON file with everything needed to continue editing: components, labels, styles, 3D camera and animation.' }));
     if (fmt === 'pptx') right.append(el('div', { class: 'note', text: 'One slide the size of the figure, with the figure as a vector picture (and a 300 dpi fallback for old versions). In PowerPoint, right-click the picture ▸ Convert to Shape to edit every line and label.' }));
     if (fmt === 'tikz') right.append(el('div', { class: 'note', text: 'A standalone LaTeX file with TikZ commands for every path and label, coordinates in mm. Compile with LuaLaTeX or XeLaTeX (Unicode letters); \\input the tikzpicture into your document. Gradients become their average colour.' }));
-    if (fmt !== 'video' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
+    if (fmt !== 'video' && fmt !== 'gif' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
       el('button', { class: 'btn small', type: 'button', text: 'Copy as PNG', onclick: () => RNBX.exporter.copyPng(300).then(() => RNBX.toast('Copied: paste into slides or documents'), e => RNBX.toast('Clipboard not available: ' + e.message, 'error')) }),
       el('button', { class: 'btn small', type: 'button', text: 'Copy SVG code', onclick: () => RNBX.exporter.copySvg().then(() => RNBX.toast('SVG copied')) })));
   };
@@ -10959,6 +11667,11 @@ Dl.exporter = (initial = 'svg') => {
       else if (fmt === 'project') RNBX.project.save();
       else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
       else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');
+      else if (fmt === 'gif') {
+        prog.hidden = false;
+        go.textContent = 'Making GIF…';
+        await X.gif({ width: opts.gifWidth, fps: opts.gifFps }, f => { prog.firstChild.style.width = (f * 100).toFixed(1) + '%'; });
+      }
       else if (fmt === 'video') {
         prog.hidden = false;
         go.textContent = 'Recording…';
@@ -11091,8 +11804,8 @@ const KEYS = [
   ['Orient to beam', 'O'], ['Free move (no snapping)', 'hold Alt'], ['Constrain to axis', 'hold Shift'], ['Duplicate', 'Ctrl+D'],
   ['Copy / paste', 'Ctrl+C / Ctrl+V'], ['Delete', 'Del / Backspace'], ['Select all', 'Ctrl+A'], ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
-  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
-  ['Play / pause', 'K'], ['Keyframe selection', 'I'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
+  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Animate (presets)', 'A'], ['Timeline', 'T'], ['Add animation step', 'I'],
+  ['Play / pause', 'K'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
   ['Reset everything (undoable)', '↺ toolbar button'], ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];
 Dl.help = () => {
@@ -11229,6 +11942,7 @@ M.items = {
     { label: (S.doc.style.beamArrows ? '✓ ' : '') + 'Beam direction arrows', action: () => toggleStyle('beamArrows', 'Arrows') },
     { label: (S.doc.style.beamGlow ? '✓ ' : '') + 'Beam glow', action: () => toggleStyle('beamGlow', 'Glow') },
     '-',
+    { label: 'Animate (one-click presets)…', key: 'A', action: () => RNBX.animateUI.open() },
     { label: 'Animation timeline', key: 'T', action: () => RNBX.timeline.toggle() },
     { label: 'Help & shortcuts', icon: 'help', key: '?', action: () => RNBX.dialogs.help() },
   ],
@@ -11300,7 +12014,7 @@ M.init = () => {
   RNBX.on('contextmenu', e => {
     const idEl = e.target.closest && e.target.closest('#figure [data-id]');
     if (idEl && !S.selection.includes(idEl.getAttribute('data-id'))) RNBX.select([idEl.getAttribute('data-id')]);
-    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) }, { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) }, { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add keyframe', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
+    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) }, { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) }, { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add animation step', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
       : [{ label: 'Paste', action: () => RNBX.project.paste() }, { label: 'Fit page', action: () => RNBX.canvas.fit() }, { label: 'Templates…', action: () => RNBX.dialogs.templates() }];
     D.menu(items, e.clientX, e.clientY);
   });
@@ -11383,6 +12097,7 @@ function onKey(e) {
     case 't': case 'T': if (e.shiftKey) RNBX.layout.tidy(); else RNBX.timeline.toggle(); break;
     case 'k': case 'K': RNBX.anim.toggle(); break;
     case 'i': case 'I': if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } break;
+    case 'a': case 'A': if (!e.shiftKey) RNBX.animateUI.open(); break;
     case '1': M.setMode('schematic'); break;
     case '2': M.setMode('shaded'); break;
     case '3': M.setMode('3d'); break;
@@ -11425,6 +12140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.inspector.init();
   RNBX.layers.init();
   RNBX.timeline.init();
+  RNBX.animateUI.init();
   RNBX.menus.init();
 
   RNBX.on('change', kind => { if (kind !== 'selection' && kind !== 'time') RNBX.project.autosave(); });

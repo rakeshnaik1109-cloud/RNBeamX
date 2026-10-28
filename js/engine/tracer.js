@@ -516,7 +516,7 @@ RNBX.trace = function trace(doc) {
 
   while (queue.length && segments.length < MAX_SEGMENTS && guard++ < MAX_SEGMENTS * 3) {
     const ray = queue.shift();
-    if (ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;
+    if (!(ray.P0 > 0) || ray.P < ray.P0 * 1e-4 || ray.depth > MAX_DEPTH) continue;   // a source switched off (power 0) emits nothing
 
     if (ray.vz) {
       /* ---------- vertical travel ---------- */

@@ -274,26 +274,30 @@ R3.scene = (doc, trace, S, opt = {}) => {
     // decals (stripes, bands) sit on a body's surface, so they go after it
     opaque.sort((a, b) => (a.f.decal - b.f.decal) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
     trans.filter(q => q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 1); });
-    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj._group || obj.id}"` : ''}>${svg}</g>` });
+    const op3 = obj.opacity != null && obj.opacity < 1 ? obj.opacity : 1;
+    if (op3 <= 0.001) continue;
+    items.push({ z: c3[2], svg: `<g ${I ? `data-id="${obj._group || obj.id}"` : ''}${op3 < 1 ? ` opacity="${op3}"` : ''}>${svg}</g>` });
     // contact shadow
     if (v3.shadow !== false) {
       const b = def.bbox ? def.bbox(obj.props) : [-2, -2, 2, 2];
       const rr = Math.max(1.2, Math.max(b[2] - b[0], b[3] - b[1]) * 0.55 * (obj.scale || 1));
       const sc = cam.p(obj.x + 0.6, obj.y + 0.9, 0);
-      shadows += `<ellipse cx="${n(sc[0])}" cy="${n(sc[1])}" rx="${n(rr * k)}" ry="${n(rr * k * Math.sin(cam.th) * 0.75)}" fill="#000" fill-opacity="0.28"/>`;
+      shadows += `<ellipse cx="${n(sc[0])}" cy="${n(sc[1])}" rx="${n(rr * k)}" ry="${n(rr * k * Math.sin(cam.th) * 0.75)}" fill="#000" fill-opacity="${n(0.28 * op3)}"/>`;
     }
     // label above the part
-    if (obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
+    // while the camera is animated, labels can follow their parts (offsets fit only one view) or hide
+    const camMoves = opt.time != null && doc.animation && doc.animation.camera && doc.animation.camera.length > 1, lab3 = camMoves ? (doc.animation.labels3d || 'follow') : 'keep';
+    if (lab3 !== 'hide' && obj.label && obj.label.show && doc.style.showLabels && obj.label.text) {
       const lp = cam.p(obj.x, obj.y, zmax + 2.2);
-      const lx = lp[0] + (obj.label.dx3 || 0), ly = lp[1] + (obj.label.dy3 || 0);
-      if (obj.label.leader3 && RNBX.labels) {
+      const lx = lp[0] + (lab3 === 'follow' ? 0 : obj.label.dx3 || 0), ly = lp[1] + (lab3 === 'follow' ? 0 : obj.label.dy3 || 0);
+      if (lab3 !== 'follow' && obj.label.leader3 && RNBX.labels) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         proj.forEach(q => q.sp.forEach(p2 => { x0 = Math.min(x0, p2[0]); y0 = Math.min(y0, p2[1]); x1 = Math.max(x1, p2[0]); y1 = Math.max(y1, p2[1]); }));
         const sz = RNBX.labels.size(obj, doc);
         const rect = [lx - sz.w / 2, ly + sz.fs * 0.32 - sz.h, lx + sz.w / 2, ly + sz.fs * 0.32];
         labels += RNBX.labels.leader([x0, y0, x1, y1], rect, dark3 ? '#d5dbe4' : '#4b5563', 0.14);
       }
-      labels += label3d(obj, doc, lx, ly, I);
+      labels += op3 < 1 ? `<g opacity="${op3}">${label3d(obj, doc, lx, ly, I)}</g>` : label3d(obj, doc, lx, ly, I);
     }
   }
 

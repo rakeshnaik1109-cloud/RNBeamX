@@ -36,7 +36,8 @@ R.label = (obj, doc, x, y, interactive) => {
     const sz = RNBX.labels.size(obj, doc);
     lead = RNBX.labels.leader(lib.worldBox(obj), [x - sz.w / 2, y - sz.h / 2, x + sz.w / 2, y + sz.h / 2], RNBX.isDarkPage(doc.page) ? '#c9d1dc' : '#4b5563', n(Math.max(0.12, U.pt2mm(doc.style.lineWidthPt || 0.5) * 0.7)));
   }
-  return lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>`;
+  const lop = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
+  return (lop ? `<g${lop}>` : '') + lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>` + (lop ? '</g>' : '');
 };
 
 R.object2D = (obj, S, interactive) => {
@@ -86,7 +87,9 @@ R.build = (srcDoc, opt = {}) => {
   const time = opt.time != null ? opt.time : null;
   const doc = time != null && RNBX.anim ? RNBX.anim.evaluate(srcDoc, time) : srcDoc;
   const W = doc.page.width, H = doc.page.height;
-  const trace = RNBX.trace(doc);
+  const full = RNBX.trace(doc);
+  // during a "switch on" animation the beams grow out of the sources
+  const trace = RNBX.anim && doc.animation && doc.animation.reveal ? RNBX.anim.revealTrace(doc, full, time) : full;
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
   S.trace = trace;

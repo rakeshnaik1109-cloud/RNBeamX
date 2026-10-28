@@ -114,6 +114,7 @@ M.items = {
     { label: (S.doc.style.beamArrows ? '✓ ' : '') + 'Beam direction arrows', action: () => toggleStyle('beamArrows', 'Arrows') },
     { label: (S.doc.style.beamGlow ? '✓ ' : '') + 'Beam glow', action: () => toggleStyle('beamGlow', 'Glow') },
     '-',
+    { label: 'Animate (one-click presets)…', key: 'A', action: () => RNBX.animateUI.open() },
     { label: 'Animation timeline', key: 'T', action: () => RNBX.timeline.toggle() },
     { label: 'Help & shortcuts', icon: 'help', key: '?', action: () => RNBX.dialogs.help() },
   ],
@@ -185,7 +186,7 @@ M.init = () => {
   RNBX.on('contextmenu', e => {
     const idEl = e.target.closest && e.target.closest('#figure [data-id]');
     if (idEl && !S.selection.includes(idEl.getAttribute('data-id'))) RNBX.select([idEl.getAttribute('data-id')]);
-    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) }, { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) }, { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add keyframe', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
+    const items = sel() ? M.items.Arrange().slice(0, 9).concat(['-', { label: 'Group', key: mod + 'G', disabled: S.selection.length < 2, action: () => RNBX.groups.group(S.selection.slice()) }, { label: 'Ungroup', key: mod + '⇧G', disabled: !S.selection.some(id => (RNBX.getObj(id) || {}).type === 'group'), action: () => RNBX.groups.ungroup(S.selection.slice()) }, { label: 'Duplicate', key: mod + 'D', action: () => RNBX.project.duplicate() }, { label: 'Add animation step', key: 'I', action: () => { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } }, { label: 'Delete', key: 'Del', action: () => RNBX.removeObjects(S.selection.slice()) }])
       : [{ label: 'Paste', action: () => RNBX.project.paste() }, { label: 'Fit page', action: () => RNBX.canvas.fit() }, { label: 'Templates…', action: () => RNBX.dialogs.templates() }];
     D.menu(items, e.clientX, e.clientY);
   });
@@ -268,6 +269,7 @@ function onKey(e) {
     case 't': case 'T': if (e.shiftKey) RNBX.layout.tidy(); else RNBX.timeline.toggle(); break;
     case 'k': case 'K': RNBX.anim.toggle(); break;
     case 'i': case 'I': if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } break;
+    case 'a': case 'A': if (!e.shiftKey) RNBX.animateUI.open(); break;
     case '1': M.setMode('schematic'); break;
     case '2': M.setMode('shaded'); break;
     case '3': M.setMode('3d'); break;

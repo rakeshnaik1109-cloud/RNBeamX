@@ -351,16 +351,48 @@ and play.
 
 ## 6. Animation
 
-1. Open the timeline (**T**).
-2. Select an object, move the playhead and press **Key selected** (or **I**).
-3. Move the playhead again, change the object (position, rotation or any numeric
-   parameter, such as a wave-plate angle) and add another key.
-4. Tick **Light flow** to animate light along every beam, or **Pulses** for wave
-   packets. In 3D, **Key camera** records orbit/tilt/zoom for camera moves.
-5. **Export video** records MP4 (H.264) or WebM at up to 4K.
+### One click: Animate (A)
 
-The tracer runs on every frame, so moving a mirror sweeps its beam and rotating a
-wave plate changes the light after a PBS.
+Press **Animate** in the top bar (or **A**). Pick a card, check its two or three
+settings and press **Apply and play**. Cards the figure can't use yet are greyed,
+with a hint about which part to add. If a suitable part is selected, the preset
+animates that part; otherwise it picks the obvious one and you can change it in
+the *Animate* list.
+
+| Group | Presets |
+|---|---|
+| Presentation | **3D rotation (turntable)**: the whole setup turns on its table (full 360°, a swing, or turn-and-rise). Labels follow their parts or hide while it turns. · **Zoom to a part** · **Build-up** (parts appear as the light reaches them) · **Spotlight tour** (each part lights up in beam order) · **2D → 3D reveal** |
+| Light | **Light flow** · **Pulse train** · **Switch on** (the beam grows out of the source) · **Wavelength sweep** · **Laser on / off** |
+| Optics | **Rotate wave plate** · **Rotate polariser** · **Mirror / galvo scan** · **Piezo fringes** · **Delay-line scan** · **Focus sweep** · **Shutter open / close** · **AOM frequency sweep** · **Field-angle sweep** (ray bundles) · **Binding / film growth** (SPR analyte index or a coating thickness) |
+
+Presets combine (e.g. 3D rotation + light flow, or a galvo scan + build-up): each
+one only changes what it animates. Applied presets are listed at the top of the
+Animate dialog; **×** removes one, **Remove all animation** clears everything. The
+first preset sets the length; later ones extend it if needed. Ctrl+Z undoes any
+of this.
+
+### By hand: the timeline (T)
+
+1. Open the timeline (**T**). **● Record** is on by default.
+2. Drag the time slider to a later time, then move, rotate or change any part (for
+   example a wave-plate angle). That change is saved as a step, and the part
+   animates from where it was at 0 s.
+3. Repeat at other times for more steps. **Add step** (**I**) saves the selected
+   parts as they are, and in 3D **Add camera step** saves the current view.
+4. Each row says in words what changes ("turns 0 → 45°", "moves", "appears"). Drag
+   a step's diamond to retime it, double-click to delete it, or press the bin to
+   remove a part's whole animation.
+
+Presets write ordinary steps, so you can fine-tune a preset in the timeline. The
+tracer runs on every frame, so moving a mirror sweeps its beam and rotating a wave
+plate changes the light after a PBS.
+
+### Export
+
+*Export ▸ Video* records MP4 (H.264) or WebM at up to 4K. *Export ▸ Animated GIF*
+makes a looping GIF (480–1200 px, 10–25 fps) for LinkedIn, websites and slides.
+GIFs have 256 colours, so a full 3D rotation at 720 px is a few MB; use a smaller
+width or frame rate for smaller files.
 
 ## 7. Export
 

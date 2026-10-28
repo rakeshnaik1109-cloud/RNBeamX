@@ -45,9 +45,12 @@ T.build = () => {
     chk('flow', 'Light flow', 'Animate light travelling along every beam'),
     chk('pulses', 'Pulses', 'Draw all beams as travelling pulses'),
     num('flowSpeed', 'Speed', 1, 500, 1),
-    el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Key selected', disabled: !S.selection.length, onclick: () => RNBX.anim.addKey(S.selection) }),
-    S.doc.style.mode === '3d' ? el('button', { class: 'btn small', type: 'button', html: D.icon('camera', 14) + ' Key camera', onclick: () => RNBX.anim.addCameraKey() }) : null,
-    el('button', { class: 'btn small primary', type: 'button', html: D.icon('download', 14) + ' Export video', onclick: () => RNBX.dialogs.exporter('video') }));
+    el('button', { class: 'btn small primary', type: 'button', text: 'Animate…', title: 'One-click animations (A)', onclick: () => RNBX.animateUI.open() }),
+    el('label', { title: 'Record: with this on, any change you make (move, rotate, edit a setting) is saved as a step at the current time. Change the time, change the part again: it animates between the two.' },
+      el('input', { type: 'checkbox', checked: RNBX.anim.record, onchange: e => { RNBX.anim.record = e.target.checked; U.store.set('rnbx_record', RNBX.anim.record); T.build(); } }), el('span', { class: RNBX.anim.record ? 'rec on' : 'rec', text: '● Record' })),
+    el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Add step', title: 'Save the selected parts as they are now, at this time (I)', disabled: !S.selection.length, onclick: () => RNBX.anim.addKey(S.selection) }),
+    S.doc.style.mode === '3d' ? el('button', { class: 'btn small', type: 'button', html: D.icon('camera', 14) + ' Add camera step', title: 'Save the current 3D view at this time', onclick: () => RNBX.anim.addCameraKey() }) : null,
+    el('button', { class: 'btn small', type: 'button', html: D.icon('download', 14) + ' Video / GIF', onclick: () => RNBX.dialogs.exporter('video') }));
   bodyEl = el('div', { class: 'tl-body' });
   tl.append(bar, bodyEl);
   T.buildRows();
@@ -59,12 +62,12 @@ T.buildRows = () => {
   const an = S.doc.animation, Dur = an.duration || 6;
   bodyEl.innerHTML = '';
   const rows = [];
-  if (an.camera.length) rows.push({ id: '__camera', name: '3D camera', keys: an.camera });
+  if (an.camera.length) rows.push({ id: '__camera', name: '3D camera', keys: an.camera, what: T.describeCam(an.camera) });
   Object.keys(an.tracks).forEach(id => {
     const o = RNBX.getObj(id);
     if (!o || !an.tracks[id].length) return;
     const def = lib.get(o.type);
-    rows.push({ id, name: (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/\n/g, ' ') : '') || o.kindName || def.name, keys: an.tracks[id] });
+    rows.push({ id, name: (o.label && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/\n/g, ' ') : '') || o.kindName || def.name, keys: an.tracks[id], what: T.describe(o, an.tracks[id]) });
   });
   // ruler
   const ruler = el('div', { class: 'tl-row' }, el('div', { class: 'tl-name muted', text: rows.length ? 'Tracks' : '' }), el('div', { class: 'tl-track tl-ruler' }));
@@ -74,7 +77,7 @@ T.buildRows = () => {
   bodyEl.append(ruler);
   headEl = el('div', { class: 'tl-head' });
   if (!rows.length) {
-    bodyEl.append(el('div', { class: 'tl-empty', html: 'No keyframes yet. Select an object, move the playhead, then press <b>Key selected</b> (or <kbd>I</kbd>). Adjust the object at another time and add a second key: RNBeamX interpolates and re-traces the beams on every frame. Tick <b>Light flow</b> or <b>Pulses</b> to animate the light itself.' }));
+    bodyEl.append(el('div', { class: 'tl-empty', html: '<b>Quickest:</b> press <b>Animate…</b> and pick a ready-made animation (3D rotation, switch-on, scans, build-up…).<br><b>By hand</b> (with <b>● Record</b> on): drag the time slider to a later time, then move, rotate or change any part. That change becomes a step, and RNBeamX animates smoothly from the start to it, re-tracing the beams on every frame. Repeat at other times for more steps.' }));
   }
   rows.forEach(r => {
     const track = el('div', { class: 'tl-track' });
@@ -102,11 +105,42 @@ T.buildRows = () => {
       track.append(key);
     });
     track.addEventListener('pointerdown', e => { const rect = track.getBoundingClientRect(); RNBX.anim.setTime((e.clientX - rect.left) / rect.width * Dur); });
-    const name = el('div', { class: 'tl-name', title: r.name }, r.name, D.iconBtn('trash', 'Remove all keys', () => RNBX.anim.clearTrack(r.id)));
+    const name = el('div', { class: 'tl-name', title: r.name + (r.what ? ' · ' + r.what : '') }, el('span', { class: 'tl-nm' }, el('span', { text: r.name }), r.what ? el('small', { text: r.what }) : null), D.iconBtn('trash', 'Remove this part’s animation', () => RNBX.anim.clearTrack(r.id)));
     name.addEventListener('click', e => { if (r.id !== '__camera' && e.target === name) RNBX.select([r.id]); });
     bodyEl.append(el('div', { class: 'tl-row' }, name, track));
   });
   bodyEl.append(headEl);
+};
+
+/* what a track changes, in words: "angle 0 → 45 → 0°", "moves", "fades in" */
+T.describe = (o, keys) => {
+  if (!keys || keys.length < 2) return keys && keys.length ? 'one step (add another at a different time)' : '';
+  const def = lib.get(o.type), out = [];
+  const vals = f => keys.map(f);
+  const varies = a => a.some(v => JSON.stringify(v) !== JSON.stringify(a[0]));
+  const seq = (a, unit = '') => { const c = a.filter((v, i) => i === 0 || v !== a[i - 1]); const f = v => (typeof v === 'number' ? U.fmt(v, 3) : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v)); return (c.length > 4 ? [c[0], '…', c[c.length - 1]] : c).map(v => (v === '…' ? v : f(v))).join(' → ') + unit; };
+  if (varies(vals(k => [k.x, k.y]))) out.push('moves');
+  if (varies(vals(k => k.rot))) out.push('turns ' + seq(vals(k => U.round(k.rot || 0, 2)), '°'));
+  if (varies(vals(k => k.scale))) out.push('size ' + seq(vals(k => U.round(k.scale || 1, 3)), '×'));
+  if (varies(vals(k => (k.opacity == null ? 1 : k.opacity)))) { const a = vals(k => (k.opacity == null ? 1 : k.opacity)); out.push(a[0] < 0.5 && a[a.length - 1] > 0.5 ? 'appears' : 'fades ' + seq(a.map(v => U.round(v * 100, 0)), '%')); }
+  const props = keys[0].props ? Object.keys(keys[0].props) : [];
+  props.forEach(p => {
+    const a = vals(k => (k.props ? k.props[p] : undefined));
+    if (!varies(a) || a.some(v => v && typeof v === 'object')) return;
+    const prm = def && def.params && def.params.find(q => q.key === p);
+    out.push((prm ? prm.label.replace(/\s*\(.*\)$/, '').toLowerCase() : p) + ' ' + seq(a.map(v => (typeof v === 'number' ? U.round(v, 3) : v)), prm && prm.unit ? ' ' + prm.unit : ''));
+  });
+  return out.join(' · ') || 'no change between steps';
+};
+
+T.describeCam = keys => {
+  if (keys.length < 2) return 'one view (add another at a different time)';
+  const out = [], a = f => keys.map(k => k[f] || 0), span = v => Math.max(...v) - Math.min(...v);
+  const yaw = a('yaw'), turn = yaw[yaw.length - 1] - yaw[0];
+  if (Math.abs(turn) >= 1) out.push(`turns ${U.fmt(Math.abs(turn), 3)}° ${turn > 0 ? 'anticlockwise' : 'clockwise'}`); else if (span(yaw) >= 1) out.push(`swings ±${U.fmt(span(yaw) / 2, 3)}°`);
+  if (span(a('pitch')) >= 1) out.push(`tilts ${U.fmt(a('pitch')[0], 3)} → ${U.fmt(a('pitch')[keys.length - 1], 3)}°`);
+  if (span(keys.map(k => k.zoom || 1)) > 0.01) out.push(`zooms to ${U.fmt(Math.max(...keys.map(k => k.zoom || 1)), 3)}×`);
+  return out.join(' · ') || 'no change between views';
 };
 
 T.sync = () => {
@@ -125,6 +159,7 @@ T.sync = () => {
 
 T.init = () => {
   D.$('#btnTimeline').onclick = T.toggle;
+  RNBX.anim.record = U.store.get('rnbx_record', true) !== false;
   RNBX.on('time', T.sync);
   RNBX.on('animation', () => { T.buildRows(); T.sync(); });
   RNBX.on('document', () => T.build());

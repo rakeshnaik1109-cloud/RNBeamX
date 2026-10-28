@@ -32,7 +32,7 @@ computed and editable.
 | Clean line-art schematics (Optics Express, Opt. Lett., APL style) | **Schematic** style: flat fills, true line weights in pt |
 | Polished figures (Nature Photonics, Light: Sci. Appl. style) | **Shaded** style: metal, glass and anodised gradients |
 | Eye-catching 3D figures and graphical abstracts | **3D** style: optical table (black, brushed steel, aluminium, white, wood… or any colour), posts, shadows, glowing beams, any camera angle |
-| Animation for talks and social media | Keyframes on any property, light flow, pulses, camera orbits, MP4 / WebM export |
+| Animation for talks and social media | **Animate**: 20 one-click presets (3D rotation of the whole setup, switch-on, build-up, scans, wave-plate turns…), plus a Record-mode timeline for anything else; MP4 / WebM video and animated GIF export |
 | Files journals accept | SVG and PDF (vector, editable text), TIFF and PNG with DPI written in, JPEG |
 
 ## Physics inside
@@ -116,7 +116,7 @@ js/core/                utils (vectors, colour, complex) · state (document, eve
 js/engine/              optics (Jones, Sellmeier, filters) · tracer (beam tracing)
 js/components/          library (registry, drawing kit) · sources · optics · detectors · vertical · photonics · optomechanics · plot · annotations
 js/render/              text markup · defs (gradients) · beams · renderer (2D/SVG) · renderer3d · labels (auto placement)
-js/anim/                animation (keyframes, easing, playback)
+js/anim/                animation (keyframes, easing, playback) · presets (one-click animations)
 js/io/                  project (save/open/autosave) · export (SVG/PDF/PNG/TIFF/video) · templates · styles
 js/ui/                  dom · canvas · palette · inspector · layers · timeline · dialogs · menus
 js/vendor/              jsPDF + svg2pdf (MIT), loaded only for PDF export

@@ -18,11 +18,12 @@ const FORMATS = [
   { id: 'pptx', name: 'PowerPoint (.pptx)', desc: 'Vector picture on a slide · Convert to Shape to edit' },
   { id: 'tikz', name: 'TikZ (.tex)', desc: 'LaTeX drawing commands · theses and papers' },
   { id: 'video', name: 'Video (MP4 / WebM)', desc: 'Animation · talks, social media' },
+  { id: 'gif', name: 'Animated GIF', desc: 'Animation · LinkedIn, websites, slides' },
   { id: 'project', name: 'Project (.rnbx.json)', desc: 'Save to edit later or share' },
 ];
 Dl.exporter = (initial = 'svg') => {
   let fmt = initial;
-  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920 };
+  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15 };
   const list = el('div', { class: 'fmt-list' });
   const right = el('div');
   const go = el('button', { class: 'btn primary', type: 'button', text: 'Export' });
@@ -64,12 +65,21 @@ Dl.exporter = (initial = 'svg') => {
       const an = S.doc.animation;
       const live = RNBX.anim.isLive(S.doc);
       right.append(el('div', { class: 'grid2' }, el('div', { class: 'field' }, el('label', {}, 'Format'), cont), el('div', { class: 'field' }, el('label', {}, 'Width'), res)),
-        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s at ${an.fps} fps. Recording runs in real time, so keep this tab visible.` : 'Nothing is animated yet. Add keyframes, or tick “Light flow” in the timeline, to make the video move.' }), prog);
+        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s at ${an.fps} fps. Recording runs in real time, so keep this tab visible.` : 'Nothing is animated yet. Press Animate (A) and pick a preset, or add steps in the timeline.' }), prog);
+    }
+    if (fmt === 'gif') {
+      const res = el('select', { onchange: () => { opts.gifWidth = +res.value; } }, [[480, '480 px (small)'], [720, '720 px'], [960, '960 px (LinkedIn)'], [1200, '1200 px (large)']].map(r => el('option', { value: r[0], text: r[1] })));
+      res.value = opts.gifWidth;
+      const fr = el('select', { onchange: () => { opts.gifFps = +fr.value; } }, [[10, '10 fps (smallest)'], [15, '15 fps'], [20, '20 fps'], [25, '25 fps (smoothest)']].map(r => el('option', { value: r[0], text: r[1] })));
+      fr.value = opts.gifFps;
+      const an = S.doc.animation, live = RNBX.anim.isLive(S.doc);
+      right.append(el('div', { class: 'grid2' }, el('div', { class: 'field' }, el('label', {}, 'Width'), res), el('div', { class: 'field' }, el('label', {}, 'Frame rate'), fr)),
+        el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s, looping. GIFs have 256 colours: smaller widths and fewer frames give smaller files. For talks, a video looks better.` : 'Nothing is animated yet. Press Animate (A) and pick a preset first.' }), prog);
     }
     if (fmt === 'project') right.append(el('div', { class: 'note', text: 'A small JSON file with everything needed to continue editing: components, labels, styles, 3D camera and animation.' }));
     if (fmt === 'pptx') right.append(el('div', { class: 'note', text: 'One slide the size of the figure, with the figure as a vector picture (and a 300 dpi fallback for old versions). In PowerPoint, right-click the picture ▸ Convert to Shape to edit every line and label.' }));
     if (fmt === 'tikz') right.append(el('div', { class: 'note', text: 'A standalone LaTeX file with TikZ commands for every path and label, coordinates in mm. Compile with LuaLaTeX or XeLaTeX (Unicode letters); \\input the tikzpicture into your document. Gradients become their average colour.' }));
-    if (fmt !== 'video' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
+    if (fmt !== 'video' && fmt !== 'gif' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
       el('button', { class: 'btn small', type: 'button', text: 'Copy as PNG', onclick: () => RNBX.exporter.copyPng(300).then(() => RNBX.toast('Copied: paste into slides or documents'), e => RNBX.toast('Clipboard not available: ' + e.message, 'error')) }),
       el('button', { class: 'btn small', type: 'button', text: 'Copy SVG code', onclick: () => RNBX.exporter.copySvg().then(() => RNBX.toast('SVG copied')) })));
   };
@@ -87,6 +97,11 @@ Dl.exporter = (initial = 'svg') => {
       else if (fmt === 'project') RNBX.project.save();
       else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
       else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');
+      else if (fmt === 'gif') {
+        prog.hidden = false;
+        go.textContent = 'Making GIF…';
+        await X.gif({ width: opts.gifWidth, fps: opts.gifFps }, f => { prog.firstChild.style.width = (f * 100).toFixed(1) + '%'; });
+      }
       else if (fmt === 'video') {
         prog.hidden = false;
         go.textContent = 'Recording…';
@@ -219,8 +234,8 @@ const KEYS = [
   ['Orient to beam', 'O'], ['Free move (no snapping)', 'hold Alt'], ['Constrain to axis', 'hold Shift'], ['Duplicate', 'Ctrl+D'],
   ['Copy / paste', 'Ctrl+C / Ctrl+V'], ['Delete', 'Del / Backspace'], ['Select all', 'Ctrl+A'], ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
-  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Timeline', 'T'],
-  ['Play / pause', 'K'], ['Keyframe selection', 'I'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
+  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Animate (presets)', 'A'], ['Timeline', 'T'], ['Add animation step', 'I'],
+  ['Play / pause', 'K'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
   ['Reset everything (undoable)', '↺ toolbar button'], ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];
 Dl.help = () => {
