@@ -160,6 +160,23 @@ lib.register({
 });
 
 /* ================= Lenses & objectives ================= */
+/* "tilted" look: a round optic seen at an angle (an ellipse with a rim),
+   as in perspective illustrations; the optics stay those of the part */
+const LOOK = { key: 'look', label: 'Drawn as', type: 'select', options: [['edge', 'Side view'], ['tilted', 'Tilted disc (3D look)']] };
+H.tiltDisc = (S, d, o = {}) => {
+  const ry = d / 2, rx = Math.max(0.35, d * 0.16), id = 'rbx-td-' + (o.id || 'x') + (o.kind || '');
+  const rim = o.rim || (o.kind === 'lens' ? '#9fb3c4' : '#2b2f36'), fill = o.tint || '#e9f2f8';
+  let s = `<defs><radialGradient id="${id}" cx="0.45" cy="0.35" r="0.8"><stop offset="0" stop-color="${U.lighten(fill, 0.55)}"/><stop offset="0.65" stop-color="${fill}"/><stop offset="1" stop-color="${U.darken(fill, 0.35)}"/></radialGradient></defs>`;
+  if (o.kind === 'lens') {
+    s += `<ellipse cx="0" cy="0" rx="${n(rx)}" ry="${n(ry)}" fill="url(#${id})" stroke="${rim}" stroke-width="${n(Math.max(S.lw * 1.6, d * 0.035))}"/>`;
+    s += `<ellipse cx="${n(-rx * 0.25)}" cy="0" rx="${n(rx * 0.55)}" ry="${n(ry * 0.86)}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(Math.max(S.lw, d * 0.025))}"/>`;
+  } else {
+    s += `<ellipse cx="0" cy="0" rx="${n(rx)}" ry="${n(ry)}" fill="${rim}" stroke="${U.darken(rim, 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+    s += `<ellipse cx="0" cy="0" rx="${n(rx * 0.72)}" ry="${n(ry * 0.84)}" fill="url(#${id})" stroke="${U.darken(rim, 0.2)}" stroke-width="${n(S.lw * 0.4)}"/>`;
+  }
+  return s;
+};
+
 /* real lens: surfaces designed for the drawn focal length (see optics.lensDesign) */
 const lensReal = (p, doc) => {
   if (p.model !== 'real' || (p.asph && p.shape !== 'ball')) return null;
@@ -196,7 +213,7 @@ lib.lensReal = lensReal;
 
 lib.register({
   type: 'lens', name: 'Lens', abbr: 'L', category: 'Lenses & objectives', keywords: 'lens convex concave focusing collimating achromat',
-  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false },
+  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false, look: 'edge' },
   params: [P.diameter(),
     { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale', show: p => !(p.model === 'real' && p.shape === 'ball') },
     { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave'], ['doublet', 'Achromatic doublet'], ['cylindrical', 'Cylindrical (plano-convex)'], ['ball', 'Ball lens']] },
@@ -204,7 +221,8 @@ lib.register({
     Object.assign(P.material(), { label: 'Glass', show: p => p.model === 'real' }),
     { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.model === 'real' && p.mat === 'custom' },
     { key: 'asph', label: 'Aspheric (aberration-free on axis)', type: 'bool', show: p => p.model === 'real' && p.shape !== 'ball' },
-    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' }],
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' },
+    Object.assign({}, LOOK, { show: p => p.model !== 'real' })],
   variants: [
     { name: 'Plano-convex lens', props: { shape: 'planoconvex' } },
     { name: 'Concave (diverging) lens', props: { shape: 'biconcave', f: -100 }, keywords: 'negative diverging' },
@@ -221,11 +239,13 @@ lib.register({
   bbox: (p, obj) => {
     const g = lensReal(p, RNBX.state && RNBX.state.doc);
     if (g) { const xs = g.flatMap(q => [q.x, q.xe]); return [Math.min(...xs) - 0.2, -p.d / 2, Math.max(...xs) + 0.2, p.d / 2]; }
+    if (p.look === 'tilted') return [-p.d * 0.18, -p.d / 2, p.d * 0.18, p.d / 2];
     return p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2];
   },
-  draw(p, S) {
+  draw(p, S, obj) {
     const r = p.d / 2, glass = `fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}`;
     const real = lensReal(p, S.doc);
+    if (!real && p.look === 'tilted') return H.tiltDisc(S, p.d, { kind: 'lens', id: obj ? obj.id : 'x' });
     if (real) return lensRealPath(real).map((e, i) => `<path d="${e.d}" ${i === 0 ? glass : `fill="${S.shaded ? '#9fc2dd' : '#cfe0ee'}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S)}`}/>`).join('');
     if (p.shape === 'ball') return `<circle cx="0" cy="0" r="${n(r)}" ${glass}/>` + (S.shaded ? `<circle cx="${n(-r * 0.35)}" cy="${n(-r * 0.35)}" r="${n(r * 0.22)}" fill="#ffffff" opacity="0.7"/>` : '');
     if (p.shape === 'doublet') {
@@ -351,24 +371,26 @@ boxDevice('isolator', 'Optical isolator', 'ISO', 'Polarisation', {
 /* ================= Filters & dispersion ================= */
 lib.register({
   type: 'filter', name: 'Optical filter', abbr: 'F', category: 'Filters & dispersion', keywords: 'filter bandpass longpass notch interference',
-  defaults: { d: 8, t: 1, mode: 'bandpass', center: 532, width: 10, edge: 550, od: 1, T: 0.95 },
+  defaults: { d: 8, t: 1, mode: 'bandpass', center: 532, width: 10, edge: 550, od: 1, T: 0.95, look: 'edge', tintColor: '' },
   params: [P.diameter(), P.thick(1),
     { key: 'mode', label: 'Type', type: 'select', options: [['bandpass', 'Band-pass'], ['longpass', 'Long-pass'], ['shortpass', 'Short-pass'], ['notch', 'Notch'], ['nd', 'Neutral density']] },
     { key: 'center', label: 'Centre wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.mode === 'bandpass' || p.mode === 'notch' },
     { key: 'width', label: 'Bandwidth (FWHM)', type: 'number', unit: 'nm', min: 0.1, max: 2000, step: 0.5, show: p => p.mode === 'bandpass' || p.mode === 'notch' },
     { key: 'edge', label: 'Edge wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.mode === 'longpass' || p.mode === 'shortpass' },
     { key: 'od', label: 'Optical density', type: 'number', min: 0, max: 8, step: 0.1, show: p => p.mode === 'nd' },
-    { key: 'T', label: 'Peak transmission', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode !== 'nd' }],
+    { key: 'T', label: 'Peak transmission', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode !== 'nd' },
+    LOOK, { key: 'tintColor', label: 'Glass colour (drawing only)', type: 'color', allowEmpty: true }],
   variants: [
     { name: 'Neutral density filter', abbr: 'ND', props: { mode: 'nd', od: 1 }, keywords: 'nd attenuator neutral density' },
     { name: 'Long-pass filter', abbr: 'LP', props: { mode: 'longpass', edge: 550 }, keywords: 'long pass edge raman' },
     { name: 'Notch filter', abbr: 'NF', props: { mode: 'notch', center: 532, width: 20 }, keywords: 'notch rayleigh raman' },
   ],
   snap: 'perp', mount: true, labelPos: [0, 7],
-  bbox: p => [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
-  tint: p => p.mode === 'nd' ? '#6f747b' : U.wavelengthColor(p.mode === 'longpass' ? p.edge + 60 : p.mode === 'shortpass' ? p.edge - 60 : p.center),
-  draw(p, S) {
+  bbox: p => (p.look === 'tilted' ? [-p.d * 0.18, -p.d / 2, p.d * 0.18, p.d / 2] : [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2]),
+  tint: p => p.tintColor ? p.tintColor : p.mode === 'nd' ? '#6f747b' : U.wavelengthColor(p.mode === 'longpass' ? p.edge + 60 : p.mode === 'shortpass' ? p.edge - 60 : p.center),
+  draw(p, S, obj) {
     const c = lib.get('filter').tint(p);
+    if (p.look === 'tilted') return H.tiltDisc(S, p.d, { kind: 'filter', tint: c, id: obj ? obj.id : 'x' });
     let s = H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, p.mode === 'nd' ? (S.shaded ? 'url(#rbx-nd)' : '#8c9198') : U.lighten(c, S.shaded ? 0.15 : 0.45));
     return s + H.sheen(S, -p.t / 2, -p.d / 2, p.t, p.d * 0.4);
   },

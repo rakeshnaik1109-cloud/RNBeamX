@@ -250,24 +250,27 @@ const bboxFor = (p, zTop) => {
 block({
   type: 'nslab', name: 'Substrate / film (slab)',
   keywords: 'substrate slab film layer wafer glass silicon polymer pdms block planar building block stack',
-  defaults: { t: 5, color: '#cfe2ee', name: 'Substrate', label: true, mat: 'glass:N-BK7', nm: 100, n: 1.5, k: 0, sheen: false },
+  defaults: { t: 5, color: '#cfe2ee', name: 'Substrate', label: true, mat: 'glass:N-BK7', nm: 100, n: 1.5, k: 0, sheen: false, alpha: 1 },
   params: [
     { key: 'name', label: 'Name', type: 'text' }, { key: 'label', label: 'Name on the front face', type: 'bool' },
     { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.1, max: 200, step: 0.1 },
     { key: 'color', label: 'Colour', type: 'color' }, { key: 'sheen', label: 'Sheen', type: 'bool' },
+    { key: 'alpha', label: 'Opacity (see-through cover)', type: 'range', min: 0.1, max: 1, step: 0.01 },
     MAT(), ...NK, NM, ...VIEW],
   variants: [
     { name: 'Glass substrate', props: { name: 'Glass', color: '#cfe6f2', mat: 'glass:N-BK7' } },
     { name: 'Silicon wafer', props: { name: 'Si', color: '#6b7785', mat: 'Si', t: 3 } },
     { name: 'Polymer substrate', props: { name: 'Polymer', color: '#d9ead3', mat: 'PDMS', t: 6 } },
     { name: 'Thin film (slab)', props: { name: 'Film', color: '#8fc9b9', mat: 'SiO2', t: 1.4, nm: 100 } },
+    { name: 'Transparent cover / superstrate', props: { name: 'Cover', color: '#dfe9f1', mat: 'glass:N-BK7', t: 3, alpha: 0.45, label: false }, keywords: 'cover glass superstrate transparent encapsulation top layer pdms window' },
   ],
   top: p => ({ z: surfMax(baseOf(p)) + p.t, prof: null }),
   bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + p.t); },
   draw(p, S, obj) {
     const c = cam(p), b = baseOf(p), xs = samplesFor(p.W, b.prof), f = surfFn(b), top = surfMax(b) + p.t;
     const lo = xs.map(f), hi = xs.map(() => top);
-    return solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x' }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+    const body = solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x' }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+    return p.alpha != null && p.alpha < 1 ? `<g opacity="${n(p.alpha)}">${body}</g>` : body;
   },
 });
 
@@ -275,7 +278,7 @@ block({
 block({
   type: 'nridges', name: 'Grating ridges',
   keywords: 'grating ridges lines periodic corrugation 1d metasurface lamellar trapezoid sinusoidal blazed sawtooth nanoimprint building block',
-  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS', n: 1.5, k: 0, periodNm: 500, heightNm: 100, residNm: 0 },
+  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS', n: 1.5, k: 0, periodNm: 500, heightNm: 100, residNm: 0, fill: '' },
   params: [
     { key: 'profile', label: 'Profile', type: 'select', options: [['square', 'Rectangular'], ['trapezoid', 'Trapezoid'], ['sine', 'Sinusoidal'], ['triangle', 'Triangular'], ['sawtooth', 'Blazed (sawtooth)']] },
     { key: 'period', label: 'Period (drawn)', type: 'number', unit: 'mm', min: 0.3, max: 100, step: 0.1 },
@@ -283,6 +286,7 @@ block({
     { key: 'amp', label: 'Ridge height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.1, animatable: true },
     { key: 'resid', label: 'Residual layer under the ridges', type: 'number', unit: 'mm', min: 0, max: 60, step: 0.1 },
     { key: 'name', label: 'Name', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
+    { key: 'fill', label: 'Fill the grooves with (drawing only)', type: 'color', allowEmpty: true, hint: 'grooves filled level with the ridge tops' },
     MAT('Ridge material (for Optical response)'), ...NK,
     { key: 'periodNm', label: 'Real period', type: 'number', unit: 'nm', min: 10, max: 1e5, step: 1, animatable: true },
     { key: 'heightNm', label: 'Real ridge height', type: 'number', unit: 'nm', min: 0, max: 1e5, step: 1, animatable: true },
@@ -298,7 +302,10 @@ block({
   draw(p, S) {
     const c = cam(p), b = baseOf(p), pr = this.prof(p), xs = samplesFor(p.W, pr), fb = surfFn(b), z0 = surfMax(b) + p.resid, fp = profileFn(pr);
     const lo = xs.map(fb), hi = xs.map(x => z0 + fp(x));
-    return solid(c, p.W, p.D, xs, lo, hi, p.color, S);
+    let s = solid(c, p.W, p.D, xs, lo, hi, p.color, S);
+    // filled grooves: a block from the ridge profile up to the ridge tops
+    if (p.fill) s += solid(c, p.W, p.D, xs, hi, xs.map(() => z0 + p.amp), p.fill, S, { edgeOpacity: 0.5 });
+    return s;
   },
 });
 
@@ -340,16 +347,18 @@ const rng = seed => { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s 
 block({
   type: 'narray', name: 'Nano-object array',
   keywords: 'nanodisk nanopillar nanoparticle nanorod cone pyramid sphere core shell array lattice metasurface meta-atom plasmonic random building block',
-  defaults: { shape: 'disk', layout: 'square', nx: 6, ny: 4, r: 1.6, h: 1.2, len: 4, count: 18, seed: 7, color: '#d6a83a', shell: '#9fd0e6', name: 'Nanodisks' },
+  defaults: { shape: 'disk', layout: 'square', nx: 6, ny: 4, r: 1.6, h: 1.2, len: 4, count: 18, seed: 7, color: '#d6a83a', shell: '#9fd0e6', name: 'Nanodisks', tilt: 35, alpha: 0.8 },
   params: [
-    { key: 'shape', label: 'Shape', type: 'select', options: [['disk', 'Disk / pillar (cylinder)'], ['box', 'Block (cuboid)'], ['cone', 'Cone'], ['dome', 'Hemisphere'], ['sphere', 'Sphere'], ['coreshell', 'Core–shell sphere'], ['rod', 'Rod (lying)']] },
+    { key: 'shape', label: 'Shape', type: 'select', options: [['disk', 'Disk / pillar (cylinder)'], ['box', 'Block (cuboid)'], ['cone', 'Cone'], ['dome', 'Hemisphere'], ['sphere', 'Sphere'], ['coreshell', 'Core–shell sphere'], ['rod', 'Rod (lying)'], ['flake', 'Tilted flakes / nanosheets (standing)']] },
     { key: 'layout', label: 'Arrangement', type: 'select', options: [['square', 'Square lattice'], ['hex', 'Hexagonal lattice'], ['random', 'Random']] },
     { key: 'nx', label: 'Columns', type: 'number', min: 1, max: 60, step: 1, show: p => p.layout !== 'random' },
     { key: 'ny', label: 'Rows (in depth)', type: 'number', min: 1, max: 40, step: 1, show: p => p.layout !== 'random' },
     { key: 'count', label: 'Number of objects', type: 'number', min: 1, max: 400, step: 1, show: p => p.layout === 'random' },
     { key: 'seed', label: 'Random pattern', type: 'number', min: 1, max: 9999, step: 1, show: p => p.layout === 'random' },
     { key: 'r', label: 'Radius / half-width (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 40, step: 0.05, animatable: true },
-    { key: 'h', label: 'Height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true, show: p => ['disk', 'box', 'cone'].includes(p.shape) },
+    { key: 'h', label: 'Height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true, show: p => ['disk', 'box', 'cone', 'flake'].includes(p.shape) },
+    { key: 'tilt', label: 'Lean', type: 'number', unit: '°', min: -80, max: 80, step: 1, show: p => p.shape === 'flake', hint: 'average lean; each flake varies a little' },
+    { key: 'alpha', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01, show: p => p.shape === 'flake' },
     { key: 'len', label: 'Rod length (drawn)', type: 'number', unit: 'mm', min: 0.2, max: 60, step: 0.1, show: p => p.shape === 'rod' },
     { key: 'color', label: 'Colour', type: 'color' }, { key: 'shell', label: 'Shell colour', type: 'color', show: p => p.shape === 'coreshell' },
     { key: 'name', label: 'Name', type: 'text' }, ...VIEW],
@@ -359,6 +368,7 @@ block({
     { name: 'Core–shell particles', props: { shape: 'coreshell', layout: 'hex', r: 1.5, nx: 6, ny: 4, color: '#d6a83a', name: 'Core–shell' } },
     { name: 'Nanorods', props: { shape: 'rod', layout: 'random', r: 0.6, len: 4, count: 14, color: '#d6a83a', name: 'Nanorods' } },
     { name: 'Nanocone array', props: { shape: 'cone', r: 1.4, h: 3, color: '#7e9cc4', name: 'Nanocones' } },
+    { name: 'Tilted nanoflakes / nanosheets', props: { shape: 'flake', layout: 'random', count: 60, r: 0.7, h: 3.2, tilt: 35, alpha: 0.75, color: '#a9c8e8', name: 'Nanoflakes' }, keywords: 'nanoflakes nanosheets nanowalls flakes needles tilted standing random vertical graphene' },
   ],
   sites(p) {
     const out = [], W = p.W, D = p.D;
@@ -375,7 +385,7 @@ block({
     }
     return out;
   },
-  height: p => ({ disk: p.h, box: p.h, cone: p.h, dome: p.r, sphere: 2 * p.r, coreshell: 2 * p.r, rod: 2 * p.r }[p.shape] || p.h),
+  height: p => ({ disk: p.h, box: p.h, cone: p.h, dome: p.r, sphere: 2 * p.r, coreshell: 2 * p.r, rod: 2 * p.r, flake: p.h * Math.cos(U.rad(Math.min(80, Math.abs(p.tilt || 0)))) }[p.shape] || p.h),
   top(p) { return { z: surfMax(baseOf(p)) + this.height(p), prof: null }; },
   bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + this.height(p) + 0.5); },
   draw(p, S, obj) {
@@ -412,6 +422,15 @@ block({
           const q = P(x, z0 + r, d);
           if (p.shape === 'coreshell') s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r * 0.62)}" fill="url(#${gid}-ball)" ${stroke}/><circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-shell)" stroke="${U.darken(p.shell, 0.4)}" stroke-width="${lw}"/>`;
           else s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-ball)" ${stroke}/>`;
+          break;
+        }
+        case 'flake': {
+          // thin plate standing on the surface: base along a random direction, leaning by about the set angle
+          const R = rng(Math.round(st.x * 997 + st.d * 131) + (p.seed || 1)), half = r * (0.7 + 0.6 * R()), ca = Math.cos(st.a), sa = Math.sin(st.a);
+          const lean = U.rad((p.tilt || 0) * (0.75 + 0.5 * R())), hh = p.h * (0.75 + 0.5 * R()), ux = Math.sin(lean) * hh, uz = Math.cos(lean) * hh;
+          const B1 = P(x - half * ca, z0, d - half * sa), B2 = P(x + half * ca, z0, d + half * sa), T2 = P(x + half * ca + ux, z0 + uz, d + half * sa), T1 = P(x - half * ca + ux, z0 + uz, d - half * sa);
+          const fill = R() < 0.5 ? p.color : U.lighten(p.color, 0.25);
+          s += `<path d="M ${[B1, B2, T2, T1].map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${fill}" fill-opacity="${n(p.alpha == null ? 0.8 : p.alpha)}" stroke="${U.lighten(p.color, 0.5)}" stroke-width="${n(S.lw * 0.5)}" stroke-linejoin="round"/>`;
           break;
         }
         case 'rod': {

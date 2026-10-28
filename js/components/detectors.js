@@ -10,8 +10,9 @@ const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
 lib.register({
   type: 'coupler', name: 'Fibre coupler / collimator', abbr: 'FC', category: 'Fibre optics',
   keywords: 'fiber fibre coupler collimator launch output port',
-  defaults: { L: 6, D: 3.2, beamWidth: 0.7, divergence: 0 },
-  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 },
+  defaults: { L: 6, D: 3.2, beamWidth: 0.7, divergence: 0, look: 'collimator' },
+  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['collimator', 'Coupler / collimator'], ['tip', 'Bare fibre end (ferrule)']] },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 },
     { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 1, max: 15, step: 0.1 },
     { key: 'beamWidth', label: 'Output beam diameter (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05 },
     { key: 'divergence', label: 'Output divergence', type: 'number', unit: '°', min: -30, max: 45, step: 0.1 }],
@@ -20,8 +21,10 @@ lib.register({
   bbox: p => [-p.L / 2 - 1.2, -p.D / 2, p.L / 2 + 0.5, p.D / 2],
   fiberPort: p => [-p.L / 2 - 1.2, 0],
   port: p => ({ o: [p.L / 2 + 0.55, 0], d: [1, 0] }),
+  variants: [{ name: 'Bare fibre end', props: { look: 'tip', L: 3, D: 1.2, beamWidth: 0.1, divergence: 7 }, keywords: 'bare fibre fiber end tip ferrule cleaved output diverging' }],
   draw(p, S) {
     const L = p.L, r = p.D / 2;
+    if (p.look === 'tip') return H.rect(S, -L / 2, -r * 0.55, L, r * 1.1, S.fill('dark'), 'rx="0.2"') + `<circle cx="${n(L / 2)}" cy="0" r="${n(Math.max(0.18, r * 0.35))}" fill="${S.shaded ? '#ffffff' : '#9aa3ad'}" ${H.stroke(S, 0.5)}/>`;
     let s = H.rect(S, -L / 2, -r, L, 2 * r, S.fill('metal'), 'rx="0.35"');
     s += H.sheen(S, -L / 2, -r, L, r * 0.8, 0.35);
     s += H.rect(S, -L / 2 - 1.2, -r * 0.45, 1.2, r * 0.9, S.fill('dark'));
@@ -59,13 +62,27 @@ det('pd', 'Photodiode', 'PD', {
 });
 
 det('camera', 'Camera (CCD / CMOS)', 'CAM', {
+  variants: [{ name: 'Photo camera', props: { look: 'photo', L: 12, H: 9 }, keywords: 'photo camera dslr digital camera lens body' }],
   keywords: 'camera ccd cmos emccd scmos imaging sensor',
-  defaults: { L: 10, H: 8, front: 'plain' },
+  defaults: { L: 10, H: 8, front: 'plain', look: 'science' },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 },
-    { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']] }],
+    { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']], show: p => p.look !== 'photo' },
+    { key: 'look', label: 'Looks like', type: 'select', options: [['science', 'Scientific camera'], ['photo', 'Photo camera (body and lens)']] }],
   labelPos: [0, 7.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
   draw(p, S) {
+    if (p.look === 'photo') {
+      // photo camera seen from the side, lens towards the light (−x)
+      const L = p.L, h = p.H, bl = L * 0.5, lx = -L / 2, ll = L - bl, bx = lx + ll;
+      let q = `<rect x="${n(bx)}" y="${n(-h / 2 + h * 0.18)}" width="${n(bl)}" height="${n(h * 0.82)}" rx="${n(h * 0.06)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`;
+      q += `<rect x="${n(bx)}" y="${n(-h / 2 + h * 0.18)}" width="${n(bl)}" height="${n(h * 0.22)}" fill="${S.shaded ? 'url(#rbx-metal)' : '#e5e7eb'}" ${H.stroke(S, 0.6)}/>`;
+      q += `<rect x="${n(bx + bl * 0.3)}" y="${n(-h / 2)}" width="${n(bl * 0.4)}" height="${n(h * 0.2)}" rx="0.3" fill="${S.shaded ? 'url(#rbx-metal)' : '#e5e7eb'}" ${H.stroke(S, 0.6)}/>`;
+      const r0 = h * 0.3, r1 = h * 0.36;
+      q += `<path d="M ${n(bx)} ${n(-r1)} L ${n(lx + ll * 0.15)} ${n(-r0)} L ${n(lx + ll * 0.15)} ${n(r0)} L ${n(bx)} ${n(r1)} Z" fill="${S.fill('dark')}" ${H.stroke(S)}/>`;
+      for (let k = 1; k < 4; k++) { const x = bx - ll * 0.22 * k; q += H.line(S, x, -r1 + (r1 - r0) * k / 4, x, r1 - (r1 - r0) * k / 4, '', 0.5, S.shaded ? '#9aa3ad' : '#ffffff'); }
+      q += `<rect x="${n(lx)}" y="${n(-r0 * 0.95)}" width="${n(ll * 0.17)}" height="${n(r0 * 1.9)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+      return q;
+    }
     const L = p.L, h = p.H, nose = Math.min(2.2, L * 0.25);
     let s = H.rect(S, -L / 2 + nose, -h / 2, L - nose, h, S.fill('dark'), 'rx="0.7"');
     s += H.sheen(S, -L / 2 + nose, -h / 2, L - nose, h * 0.45, 0.7);
@@ -250,18 +267,39 @@ lib.register({
 lib.register({
   type: 'instrument', name: 'Instrument / electronics box', abbr: '', category: 'Electronics', autoLabel: false,
   keywords: 'lock in amplifier computer pc oscilloscope function generator driver controller daq electronics box',
-  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic' },
-  params: [{ key: 'text', label: 'Text', type: 'text' },
+  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic', look: 'flat', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#ffffff', knob: false },
+  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['flat', 'Flat box (schematic)'], ['box3d', 'Benchtop box (3D look)'], ['pc', 'Computer (monitor and tower)']] },
+    { key: 'text', label: 'Text', type: 'text' },
+    { key: 'color', label: 'Box colour', type: 'color', show: p => p.look !== 'flat' },
+    { key: 'displayColor', label: 'Display colour', type: 'color', show: p => p.look === 'box3d' },
+    { key: 'textColor', label: 'Display text colour', type: 'color', show: p => p.look === 'box3d' },
+    { key: 'knob', label: 'Knob', type: 'bool', show: p => p.look === 'box3d' },
     { key: 'icon', label: 'Icon', type: 'select', options: [['generic', 'None'], ['computer', 'Computer'], ['scope', 'Oscilloscope'], ['fgen', 'Signal generator'], ['meter', 'Meter / controller']] },
     { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 80, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 60, step: 0.5 }],
   variants: [
     { name: 'Computer', props: { text: 'PC', icon: 'computer', w: 12, h: 10 }, keywords: 'computer pc laptop' },
     { name: 'Oscilloscope', props: { text: 'Oscilloscope', icon: 'scope', w: 18, h: 10 }, keywords: 'oscilloscope scope' },
     { name: 'Signal generator', props: { text: 'Function gen.', icon: 'fgen', w: 18, h: 9 }, keywords: 'function signal generator rf awg' },
+    { name: 'Power supply (benchtop box)', props: { look: 'box3d', text: 'Power supply', color: '#3a3f47', displayColor: '#0f1419', textColor: '#ff6b5a', w: 22, h: 10 }, keywords: 'power supply psu dc current source benchtop box 3d' },
+    { name: 'Spectrometer (benchtop box)', props: { look: 'box3d', text: 'Spectrometer', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#7fe0a8', w: 20, h: 8 }, keywords: 'spectrometer box benchtop 3d' },
+    { name: 'Controller (benchtop box)', props: { look: 'box3d', text: '', color: '#7fa7d6', displayColor: '#13202b', textColor: '#7fe0a8', knob: true, w: 18, h: 8 }, keywords: 'controller driver laser driver box benchtop 3d knob' },
+    { name: 'Computer (monitor and tower)', props: { look: 'pc', text: '', color: '#4b5059', w: 22, h: 14 }, keywords: 'computer pc desktop monitor tower workstation' },
   ],
-  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  bbox: p => (p.look === 'box3d' ? [-p.w / 2, -p.h / 2 - H.benchDepth(p.w, p.h) * 0.6, p.w / 2 + H.benchDepth(p.w, p.h) * 0.8, p.h / 2] : [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2]),
   draw(p, S) {
     const w = p.w, h = p.h;
+    if (p.look === 'box3d') return H.bench(S, w, h, { color: p.color, text: p.text, displayColor: p.displayColor, textColor: p.textColor, knob: p.knob });
+    if (p.look === 'pc') {
+      // flat icon: monitor on a stand, tower to its right
+      const c = p.color, mw = w * 0.62, mh = h * 0.68, mx = -w / 2, my = -h / 2, tw = w * 0.26, tx = w / 2 - tw;
+      let q = `<rect x="${n(mx)}" y="${n(my)}" width="${n(mw)}" height="${n(mh)}" rx="${n(mh * 0.08)}" fill="${c}"/><rect x="${n(mx + mw * 0.08)}" y="${n(my + mh * 0.1)}" width="${n(mw * 0.84)}" height="${n(mh * 0.72)}" fill="#ffffff"/>`;
+      q += `<rect x="${n(mx + mw * 0.42)}" y="${n(my + mh)}" width="${n(mw * 0.16)}" height="${n(h * 0.17)}" fill="${c}"/><rect x="${n(mx + mw * 0.22)}" y="${n(h / 2 - h * 0.08)}" width="${n(mw * 0.56)}" height="${n(h * 0.08)}" rx="0.3" fill="${c}"/>`;
+      q += `<rect x="${n(tx)}" y="${n(my)}" width="${n(tw)}" height="${n(h)}" rx="${n(tw * 0.12)}" fill="${c}"/>`;
+      [0.12, 0.27].forEach(f => { q += `<rect x="${n(tx + tw * 0.15)}" y="${n(my + h * f)}" width="${n(tw * 0.7)}" height="${n(h * 0.08)}" rx="0.2" fill="#ffffff"/>`; });
+      q += `<circle cx="${n(tx + tw / 2)}" cy="${n(my + h * 0.75)}" r="${n(tw * 0.17)}" fill="#ffffff"/>`;
+      if (p.text) q += `<text x="${n(mx + mw / 2)}" y="${n(my + mh * 0.46)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(S.fs, mh * 0.25))}" fill="${S.ink}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(p.text)}</text>`;
+      return q;
+    }
     let s = H.rect(S, -w / 2, -h / 2, w, h, S.shaded ? 'url(#rbx-body)' : '#ffffff', 'rx="0.9"');
     s += H.sheen(S, -w / 2, -h / 2, w, h * 0.4, 0.9);
     let ty = 0;

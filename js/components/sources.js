@@ -87,6 +87,64 @@ lib.register({
   ],
 });
 
+/* ---------- benchtop box (isometric front view) ----------
+   used by the benchtop laser and the instrument boxes: a front face
+   with a display, status lights and an optional knob, plus the top
+   and right faces so it reads as a 3D box. */
+H.benchDepth = (w, h) => Math.min(w, h) * 0.32;
+H.bench = (S, w, h, o = {}) => {
+  const c = o.color || '#c9ced6', dx = H.benchDepth(w, h) * 0.8, dy = H.benchDepth(w, h) * 0.6;
+  const x0 = -w / 2, y0 = -h / 2, edge = `stroke="${U.darken(c, 0.45)}" stroke-width="${n(S.lw * 0.8)}" stroke-linejoin="round"`;
+  let s = `<path d="M ${n(x0)} ${n(y0)} L ${n(x0 + dx)} ${n(y0 - dy)} L ${n(-x0 + dx)} ${n(y0 - dy)} L ${n(-x0)} ${n(y0)} Z" fill="${U.lighten(c, 0.28)}" ${edge}/>`;
+  s += `<path d="M ${n(-x0)} ${n(y0)} L ${n(-x0 + dx)} ${n(y0 - dy)} L ${n(-x0 + dx)} ${n(-y0 - dy)} L ${n(-x0)} ${n(-y0)} Z" fill="${U.darken(c, 0.2)}" ${edge}/>`;
+  s += `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" fill="${c}" ${edge}/>`;
+  if (S.shaded) s += `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h * 0.45)}" fill="#ffffff" fill-opacity="0.12"/>`;
+  // display
+  const dw = Math.min(w * 0.62, w - 2), dh = Math.min(h * 0.3, 3.4), dxp = o.knob ? -w * 0.12 : 0, dyp = -h * 0.12;
+  if (o.display !== false) {
+    s += `<rect x="${n(dxp - dw / 2)}" y="${n(dyp - dh / 2)}" width="${n(dw)}" height="${n(dh)}" rx="0.25" fill="${o.displayColor || '#1f2a37'}" stroke="${U.darken(c, 0.5)}" stroke-width="${n(S.lw * 0.5)}"/>`;
+    if (o.text) s += `<text x="${n(dxp)}" y="${n(dyp)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(dh * 0.62, S.fs * 1.1, dw / Math.max(3, String(o.text).length) * 1.7))}" fill="${o.textColor || '#ffffff'}" text-anchor="middle" dominant-baseline="central" font-weight="700">${RNBX.text ? RNBX.text.markup(o.text) : U.esc(o.text)}</text>`;
+  }
+  // status lights and knob
+  const ly = h / 2 - Math.min(1.4, h * 0.18), lr = Math.min(0.42, h * 0.06);
+  (o.leds || ['#e5484d', '#e6c44a', '#30a46c']).forEach((col, i) => { s += `<circle cx="${n(x0 + 1.4 + i * lr * 3)}" cy="${n(ly)}" r="${n(lr)}" fill="${col}" stroke="${U.darken(col, 0.4)}" stroke-width="${n(S.lw * 0.4)}"/>`; });
+  if (o.knob) { const kr = Math.min(h * 0.2, w * 0.1); s += `<circle cx="${n(w / 2 - kr - 1.2)}" cy="${n(dyp)}" r="${n(kr)}" fill="#1d1f23" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/><circle cx="${n(w / 2 - kr - 1.2 - kr * 0.3)}" cy="${n(dyp - kr * 0.3)}" r="${n(kr * 0.25)}" fill="#ffffff" fill-opacity="0.35"/>`; }
+  return s;
+};
+
+/* ---------- benchtop laser (free-space or fibre output) ---------- */
+lib.register({
+  type: 'benchlaser', name: 'Laser source (benchtop, fibre output)', abbr: 'Laser', category: 'Sources', labelTemplate: '{lambda} nm laser',
+  keywords: 'benchtop laser source unit fibre fiber coupled pigtailed diode laser driver box display knob',
+  defaults: { lambda: 650, power: 5, beamWidth: 0.8, divergence: 0, pol: 'unpol', polAngle: 0, color: '', boxColor: '#c9ced6', w: 14, h: 9, text: '', output: 'fiber', bundle: 0, M2: 1 },
+  params: [
+    { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1 },
+    { key: 'output', label: 'Output', type: 'select', options: [['fiber', 'Through a fibre (connect it to a fibre end with the Fibre tool)'], ['free', 'Free-space beam from the side']] },
+    ...polParams, ...beamParams,
+    { key: 'text', label: 'Display text', type: 'text', placeholder: 'e.g. 650 nm (blank = wavelength)' },
+    { key: 'boxColor', label: 'Box colour', type: 'color' },
+    { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 60, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  hint: 'Fibre output: pick Optical fibre in Connections, click this box, then a fibre end (Fibre optics ▸ Bare fibre end, or a collimator). The light leaves there.',
+  labelPos: [0, 8],
+  bbox: p => [-p.w / 2, -p.h / 2 - H.benchDepth(p.w, p.h) * 0.6, p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, p.h / 2],
+  fiberPort: p => [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18],
+  fiberDir: () => [1, 0],
+  fiberOut: true,
+  draw(p, S) {
+    let s = H.bench(S, p.w, p.h, { color: p.boxColor, text: p.text || `${U.fmt(p.lambda, 4)} nm`, knob: true, displayColor: '#13202b', textColor: lib.colorOf(S.doc, p.lambda, p.color) });
+    const port = [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18];
+    s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    return s;
+  },
+  optics: p => H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2),
+  source(p) {
+    const ls = [p.lambda];
+    return rays(p, ls, [p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, 0]);
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.w / 2, p.w / 2], y: [-p.h / 2, p.h / 2], z: [0, p.h * 0.75], mat: { color: p.boxColor } }],
+  noPost: true,
+});
+
 /* ---------- broadband / white-light lamp ---------- */
 lib.register({
   type: 'lamp', name: 'Broadband / white-light source', abbr: 'WL', category: 'Sources', labelTemplate: 'White light',

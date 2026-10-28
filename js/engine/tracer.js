@@ -91,11 +91,23 @@ function buildScene(doc) {
       (def.source(obj.props, obj, doc) || []).forEach(r => {
         sources.push(Object.assign({}, r, {
           o: U.toWorld(obj, r.o), d: V.norm(U.dirToWorld(obj, r.d)), src: obj.id, z,
-          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0, ignore: obj.id,
+          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0, ignore: obj.id, srcType: obj.type, srcProps: obj.props,
         }));
       });
     }
   }
+  // sources whose output goes through a fibre (benchtop lasers): the light leaves at the far fibre end
+  sources.forEach(s => {
+    const def = RNBX.lib.get(s.srcType), link = fibers[s.src];
+    if (!def || !def.fiberOut || !link || (s.srcProps && s.srcProps.output === 'free')) return;
+    const target = (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects).find(o => o.id === link.props.to);
+    const tdef = target && RNBX.lib.get(target.type);
+    if (!tdef || !tdef.port) return;
+    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
+      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1), dw: Math.tan(U.rad(target.props.divergence || 0)), viaFiber: link.id, Pin: s.P, P: s.P * eff,
+      E: s.E && link.props.fiberType === 'pm' ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
+  });
   return { surfaces, vertical, sources, fibers, scale };
 }
 
@@ -146,6 +158,7 @@ RNBX.trace = function trace(doc) {
   const gMag = doc.style.gaussMag || 10;            // drawn width exaggeration
   const ghosts = doc.style.ghosts && doc.style.ghosts !== 'off' ? doc.style.ghosts : null;
   const segments = [], hits = {}, fiberLight = {};
+  sources.forEach(s => { if (s.viaFiber) { const fl = fiberLight[s.viaFiber] = fiberLight[s.viaFiber] || {}; fl[s.lambda] = (fl[s.lambda] || 0) + (s.Pin || s.P); } });
 
   const startQ = (r, lamNm, M2) => O.qWaist(Math.max(1e-4, Math.abs(r.w || 0.35) * scale / gMag), lamNm * 1e-6, M2 || 1);
   const queue = sources.map(r => Object.assign({ s: 0, depth: 0, last: -1, inside: null, P0: r.P, z: 0, vz: 0, opl: 0, phx: 0, nmed: 1 }, r,

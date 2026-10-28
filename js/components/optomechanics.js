@@ -425,6 +425,75 @@ lib.register({
   solid: (p) => { const N = 10, out = []; for (let i = 0; i < N; i++) { const a = Math.PI * i / N, b = Math.PI * (i + 1) / N; out.push({ kind: 'cyl', x: [0.6 + p.r * (1 - Math.cos(a)), 0.6 + p.r * (1 - Math.cos(b))], r: [Math.max(0.05, p.r * Math.sin(a)), Math.max(0.05, p.r * Math.sin(b))], mat: 'body' }); } return out; },
 });
 
+/* ================= Electromagnet ================= */
+/* Front view of a laboratory electromagnet: two coils on a frame with pole
+   pieces facing a central gap where the sample sits (origin = gap centre). */
+lib.register({
+  type: 'emagnet', name: 'Electromagnet (pole pieces)', abbr: 'EM', category: 'Samples & mechanics', autoLabel: false,
+  keywords: 'electromagnet magnet coil pole pieces magnetic field magneto optic faraday kerr zeeman gap yoke helmholtz',
+  defaults: { gap: 3, coilL: 12, coilR: 6, color: '#3b67b8', pole: 'cone', stand: true, field: false, fieldColor: '#d6336c' },
+  params: [{ key: 'gap', label: 'Gap between the poles', type: 'number', unit: 'mm', min: 0.5, max: 60, step: 0.5, animatable: true },
+    { key: 'pole', label: 'Pole pieces', type: 'select', options: [['cone', 'Tapered (cone)'], ['flat', 'Flat'], ['none', 'None (bare coils)']] },
+    { key: 'coilL', label: 'Coil length', type: 'number', unit: 'mm', min: 3, max: 80, step: 0.5 },
+    { key: 'coilR', label: 'Coil radius', type: 'number', unit: 'mm', min: 1.5, max: 40, step: 0.5 },
+    { key: 'color', label: 'Coil colour', type: 'color' },
+    { key: 'stand', label: 'Frame and base plate', type: 'bool' },
+    { key: 'field', label: 'Field lines across the gap', type: 'bool' }, { key: 'fieldColor', label: 'Field-line colour', type: 'color', show: p => p.field }],
+  variants: [{ name: 'Helmholtz coil pair', props: { pole: 'none', gap: 12, coilL: 3, coilR: 9, stand: true, color: '#c7782e' }, keywords: 'helmholtz coils pair uniform field' }],
+  hint: 'Put the sample at the centre of the gap. Connect a power supply with the Electrical connection tool.',
+  labelPos: [0, 13],
+  geo: p => { const lc = p.pole === 'none' ? 0 : p.pole === 'flat' ? 1.2 : Math.max(2, p.coilR * 0.7); const x1 = p.gap / 2 + lc, x2 = x1 + p.coilL; return { lc, x1, x2, xe: x2 + Math.max(1, p.coilR * 0.25), base: p.coilR + Math.max(3, p.coilR * 0.7) }; },
+  bbox(p) { const g = this.geo(p); return [-g.xe - 1.5, -p.coilR - 0.9, g.xe + 1.5, p.stand ? g.base + 1.3 : p.coilR + 0.9]; },
+  draw(p, S, obj) {
+    const g = this.geo(p), R = p.coilR, id = 'rbx-em-' + (obj ? obj.id : 'x');
+    const cyl = (x0, x1, r, fillId, extra = '') => `<rect x="${n(x0)}" y="${n(-r)}" width="${n(x1 - x0)}" height="${n(2 * r)}" fill="url(#${fillId})" ${H.stroke(S, 0.7)} ${extra}/>`;
+    const grad = (gid, c) => `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${U.darken(c, 0.25)}"/><stop offset="0.22" stop-color="${U.lighten(c, 0.35)}"/><stop offset="0.5" stop-color="${c}"/><stop offset="1" stop-color="${U.darken(c, 0.45)}"/></linearGradient>`;
+    let s = `<defs>${grad(id + 'c', p.color)}${grad(id + 'm', '#b9bec6')}${grad(id + 'd', '#8a9099')}</defs>`;
+    // frame and base
+    if (p.stand) {
+      const yb = g.base, tw = 1.3;
+      s += H.rect(S, -g.xe - 1.5, yb, 2 * g.xe + 3, tw, `url(#${id}m)`, 'rx="0.4"');
+      [-1, 1].forEach(k => { const xc = k * (g.x1 + g.x2) / 2; s += H.rect(S, xc - 0.7, R, 1.4, yb - R, `url(#${id}d)`); });
+      s += H.rect(S, -g.x2, R + 0.8, 2 * g.x2, 0.9, `url(#${id}d)`, 'rx="0.3"');
+      s += H.rect(S, -1.1, R + 0.8, 2.2, yb - R - 0.8, `url(#${id}m)`);
+      [-0.45, 0.45].forEach(x => { s += `<circle cx="${n(x)}" cy="${n(yb - 0.9)}" r="0.32" fill="#2b2f36"/>`; });
+    }
+    [-1, 1].forEach(k => {
+      const sx = v => k * v;
+      // back cap, coil with flanges, pole piece
+      const a = Math.min(sx(g.x2), sx(g.xe)), b = Math.max(sx(g.x2), sx(g.xe));
+      s += cyl(a, b, R * 0.42, id + 'm');
+      const c0 = Math.min(sx(g.x1), sx(g.x2)), c1 = Math.max(sx(g.x1), sx(g.x2));
+      s += cyl(c0, c1, R, id + 'c');
+      for (let i = 1; i < 6; i++) { const x = c0 + (c1 - c0) * i / 6; s += H.line(S, x, -R, x, R, '', 0.3, U.darken(p.color, 0.3)); }
+      [c0, c1 - 0.7].forEach(x => { s += `<rect x="${n(x)}" y="${n(-R - 0.6)}" width="0.7" height="${n(2 * R + 1.2)}" rx="0.2" fill="url(#${id}m)" ${H.stroke(S, 0.5)}/>`; });
+      if (p.pole !== 'none') {
+        const tip = p.pole === 'flat' ? R * 0.55 : Math.max(0.35, R * 0.12), base = R * 0.62;
+        s += `<path d="M ${n(sx(g.x1))} ${n(-base)} L ${n(sx(p.gap / 2))} ${n(-tip)} L ${n(sx(p.gap / 2))} ${n(tip)} L ${n(sx(g.x1))} ${n(base)} Z" fill="url(#${id}m)" ${H.stroke(S, 0.6)}/>`;
+      }
+    });
+    if (p.field && p.gap > 0.6) {
+      let d = '';
+      for (let i = -2; i <= 2; i++) { const y = i * Math.min(R * 0.12, p.gap * 0.25); d += `M ${n(-p.gap / 2 + 0.15)} ${n(y)} Q 0 ${n(y * 1.25)} ${n(p.gap / 2 - 0.15)} ${n(y)} `; }
+      s += `<path d="${d}" fill="none" stroke="${p.fieldColor}" stroke-width="${n(S.lw * 0.8)}" stroke-dasharray="${n(S.lw * 2)} ${n(S.lw * 1.4)}"/>` + H.arrowHead(p.gap / 2 - 0.1, 0, 0, Math.min(1, p.gap * 0.3), p.fieldColor);
+    }
+    return s;
+  },
+  optics: () => [],
+  solid(p, bh) {
+    const g = this.geo(p), R = p.coilR, z = R + 1.6, out = [];
+    [-1, 1].forEach(k => {
+      const lo = (a, b) => [Math.min(k * a, k * b), Math.max(k * a, k * b)];
+      out.push({ kind: 'cyl', x: lo(g.x1, g.x2), r: [R, R], mat: { color: p.color }, cz: z });
+      out.push({ kind: 'cyl', x: lo(g.x2, g.xe), r: [R * 0.42, R * 0.42], mat: 'metal', cz: z });
+      if (p.pole !== 'none') { const tip = p.pole === 'flat' ? R * 0.55 : Math.max(0.35, R * 0.12); out.push({ kind: 'cyl', x: lo(p.gap / 2, g.x1), r: k > 0 ? [tip, R * 0.62] : [R * 0.62, tip], mat: 'metal', cz: z }); }
+    });
+    if (p.stand) out.push({ kind: 'box', x: [-g.xe, g.xe], y: [-R * 0.8, R * 0.8], z: [0, 0.9], mat: 'metal' });
+    return out;
+  },
+  noPost: true,
+});
+
 /* ================= Fibre-optic devices ================= */
 const pigtail = (S, x0, y0, x1, y1) => `<path d="M ${n(x0)} ${n(y0)} L ${n(x1)} ${n(y1)}" stroke="${S.shaded ? '#f2b33d' : '#e0a030'}" stroke-width="${n(Math.max(0.35, S.lw * 2.2))}" stroke-linecap="round"/>`;
 lib.register({

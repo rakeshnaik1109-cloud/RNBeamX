@@ -1853,11 +1853,23 @@ function buildScene(doc) {
       (def.source(obj.props, obj, doc) || []).forEach(r => {
         sources.push(Object.assign({}, r, {
           o: U.toWorld(obj, r.o), d: V.norm(U.dirToWorld(obj, r.d)), src: obj.id, z,
-          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0, ignore: obj.id,
+          w: (r.w || 0) * (obj.scale || 1), dw: r.dw || 0, ignore: obj.id, srcType: obj.type, srcProps: obj.props,
         }));
       });
     }
   }
+  // sources whose output goes through a fibre (benchtop lasers): the light leaves at the far fibre end
+  sources.forEach(s => {
+    const def = RNBX.lib.get(s.srcType), link = fibers[s.src];
+    if (!def || !def.fiberOut || !link || (s.srcProps && s.srcProps.output === 'free')) return;
+    const target = (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects).find(o => o.id === link.props.to);
+    const tdef = target && RNBX.lib.get(target.type);
+    if (!tdef || !tdef.port) return;
+    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
+      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1), dw: Math.tan(U.rad(target.props.divergence || 0)), viaFiber: link.id, Pin: s.P, P: s.P * eff,
+      E: s.E && link.props.fiberType === 'pm' ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
+  });
   return { surfaces, vertical, sources, fibers, scale };
 }
 
@@ -1908,6 +1920,7 @@ RNBX.trace = function trace(doc) {
   const gMag = doc.style.gaussMag || 10;            // drawn width exaggeration
   const ghosts = doc.style.ghosts && doc.style.ghosts !== 'off' ? doc.style.ghosts : null;
   const segments = [], hits = {}, fiberLight = {};
+  sources.forEach(s => { if (s.viaFiber) { const fl = fiberLight[s.viaFiber] = fiberLight[s.viaFiber] || {}; fl[s.lambda] = (fl[s.lambda] || 0) + (s.Pin || s.P); } });
 
   const startQ = (r, lamNm, M2) => O.qWaist(Math.max(1e-4, Math.abs(r.w || 0.35) * scale / gMag), lamNm * 1e-6, M2 || 1);
   const queue = sources.map(r => Object.assign({ s: 0, depth: 0, last: -1, inside: null, P0: r.P, z: 0, vz: 0, opl: 0, phx: 0, nmed: 1 }, r,
@@ -2624,6 +2637,64 @@ lib.register({
   ],
 });
 
+/* ---------- benchtop box (isometric front view) ----------
+   used by the benchtop laser and the instrument boxes: a front face
+   with a display, status lights and an optional knob, plus the top
+   and right faces so it reads as a 3D box. */
+H.benchDepth = (w, h) => Math.min(w, h) * 0.32;
+H.bench = (S, w, h, o = {}) => {
+  const c = o.color || '#c9ced6', dx = H.benchDepth(w, h) * 0.8, dy = H.benchDepth(w, h) * 0.6;
+  const x0 = -w / 2, y0 = -h / 2, edge = `stroke="${U.darken(c, 0.45)}" stroke-width="${n(S.lw * 0.8)}" stroke-linejoin="round"`;
+  let s = `<path d="M ${n(x0)} ${n(y0)} L ${n(x0 + dx)} ${n(y0 - dy)} L ${n(-x0 + dx)} ${n(y0 - dy)} L ${n(-x0)} ${n(y0)} Z" fill="${U.lighten(c, 0.28)}" ${edge}/>`;
+  s += `<path d="M ${n(-x0)} ${n(y0)} L ${n(-x0 + dx)} ${n(y0 - dy)} L ${n(-x0 + dx)} ${n(-y0 - dy)} L ${n(-x0)} ${n(-y0)} Z" fill="${U.darken(c, 0.2)}" ${edge}/>`;
+  s += `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" fill="${c}" ${edge}/>`;
+  if (S.shaded) s += `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h * 0.45)}" fill="#ffffff" fill-opacity="0.12"/>`;
+  // display
+  const dw = Math.min(w * 0.62, w - 2), dh = Math.min(h * 0.3, 3.4), dxp = o.knob ? -w * 0.12 : 0, dyp = -h * 0.12;
+  if (o.display !== false) {
+    s += `<rect x="${n(dxp - dw / 2)}" y="${n(dyp - dh / 2)}" width="${n(dw)}" height="${n(dh)}" rx="0.25" fill="${o.displayColor || '#1f2a37'}" stroke="${U.darken(c, 0.5)}" stroke-width="${n(S.lw * 0.5)}"/>`;
+    if (o.text) s += `<text x="${n(dxp)}" y="${n(dyp)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(dh * 0.62, S.fs * 1.1, dw / Math.max(3, String(o.text).length) * 1.7))}" fill="${o.textColor || '#ffffff'}" text-anchor="middle" dominant-baseline="central" font-weight="700">${RNBX.text ? RNBX.text.markup(o.text) : U.esc(o.text)}</text>`;
+  }
+  // status lights and knob
+  const ly = h / 2 - Math.min(1.4, h * 0.18), lr = Math.min(0.42, h * 0.06);
+  (o.leds || ['#e5484d', '#e6c44a', '#30a46c']).forEach((col, i) => { s += `<circle cx="${n(x0 + 1.4 + i * lr * 3)}" cy="${n(ly)}" r="${n(lr)}" fill="${col}" stroke="${U.darken(col, 0.4)}" stroke-width="${n(S.lw * 0.4)}"/>`; });
+  if (o.knob) { const kr = Math.min(h * 0.2, w * 0.1); s += `<circle cx="${n(w / 2 - kr - 1.2)}" cy="${n(dyp)}" r="${n(kr)}" fill="#1d1f23" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/><circle cx="${n(w / 2 - kr - 1.2 - kr * 0.3)}" cy="${n(dyp - kr * 0.3)}" r="${n(kr * 0.25)}" fill="#ffffff" fill-opacity="0.35"/>`; }
+  return s;
+};
+
+/* ---------- benchtop laser (free-space or fibre output) ---------- */
+lib.register({
+  type: 'benchlaser', name: 'Laser source (benchtop, fibre output)', abbr: 'Laser', category: 'Sources', labelTemplate: '{lambda} nm laser',
+  keywords: 'benchtop laser source unit fibre fiber coupled pigtailed diode laser driver box display knob',
+  defaults: { lambda: 650, power: 5, beamWidth: 0.8, divergence: 0, pol: 'unpol', polAngle: 0, color: '', boxColor: '#c9ced6', w: 14, h: 9, text: '', output: 'fiber', bundle: 0, M2: 1 },
+  params: [
+    { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1 },
+    { key: 'output', label: 'Output', type: 'select', options: [['fiber', 'Through a fibre (connect it to a fibre end with the Fibre tool)'], ['free', 'Free-space beam from the side']] },
+    ...polParams, ...beamParams,
+    { key: 'text', label: 'Display text', type: 'text', placeholder: 'e.g. 650 nm (blank = wavelength)' },
+    { key: 'boxColor', label: 'Box colour', type: 'color' },
+    { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 60, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  hint: 'Fibre output: pick Optical fibre in Connections, click this box, then a fibre end (Fibre optics ▸ Bare fibre end, or a collimator). The light leaves there.',
+  labelPos: [0, 8],
+  bbox: p => [-p.w / 2, -p.h / 2 - H.benchDepth(p.w, p.h) * 0.6, p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, p.h / 2],
+  fiberPort: p => [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18],
+  fiberDir: () => [1, 0],
+  fiberOut: true,
+  draw(p, S) {
+    let s = H.bench(S, p.w, p.h, { color: p.boxColor, text: p.text || `${U.fmt(p.lambda, 4)} nm`, knob: true, displayColor: '#13202b', textColor: lib.colorOf(S.doc, p.lambda, p.color) });
+    const port = [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18];
+    s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    return s;
+  },
+  optics: p => H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2),
+  source(p) {
+    const ls = [p.lambda];
+    return rays(p, ls, [p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, 0]);
+  },
+  solid: (p, bh) => [{ kind: 'box', x: [-p.w / 2, p.w / 2], y: [-p.h / 2, p.h / 2], z: [0, p.h * 0.75], mat: { color: p.boxColor } }],
+  noPost: true,
+});
+
 /* ---------- broadband / white-light lamp ---------- */
 lib.register({
   type: 'lamp', name: 'Broadband / white-light source', abbr: 'WL', category: 'Sources', labelTemplate: 'White light',
@@ -2854,6 +2925,23 @@ lib.register({
 });
 
 /* ================= Lenses & objectives ================= */
+/* "tilted" look: a round optic seen at an angle (an ellipse with a rim),
+   as in perspective illustrations; the optics stay those of the part */
+const LOOK = { key: 'look', label: 'Drawn as', type: 'select', options: [['edge', 'Side view'], ['tilted', 'Tilted disc (3D look)']] };
+H.tiltDisc = (S, d, o = {}) => {
+  const ry = d / 2, rx = Math.max(0.35, d * 0.16), id = 'rbx-td-' + (o.id || 'x') + (o.kind || '');
+  const rim = o.rim || (o.kind === 'lens' ? '#9fb3c4' : '#2b2f36'), fill = o.tint || '#e9f2f8';
+  let s = `<defs><radialGradient id="${id}" cx="0.45" cy="0.35" r="0.8"><stop offset="0" stop-color="${U.lighten(fill, 0.55)}"/><stop offset="0.65" stop-color="${fill}"/><stop offset="1" stop-color="${U.darken(fill, 0.35)}"/></radialGradient></defs>`;
+  if (o.kind === 'lens') {
+    s += `<ellipse cx="0" cy="0" rx="${n(rx)}" ry="${n(ry)}" fill="url(#${id})" stroke="${rim}" stroke-width="${n(Math.max(S.lw * 1.6, d * 0.035))}"/>`;
+    s += `<ellipse cx="${n(-rx * 0.25)}" cy="0" rx="${n(rx * 0.55)}" ry="${n(ry * 0.86)}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(Math.max(S.lw, d * 0.025))}"/>`;
+  } else {
+    s += `<ellipse cx="0" cy="0" rx="${n(rx)}" ry="${n(ry)}" fill="${rim}" stroke="${U.darken(rim, 0.4)}" stroke-width="${n(S.lw * 0.6)}"/>`;
+    s += `<ellipse cx="0" cy="0" rx="${n(rx * 0.72)}" ry="${n(ry * 0.84)}" fill="url(#${id})" stroke="${U.darken(rim, 0.2)}" stroke-width="${n(S.lw * 0.4)}"/>`;
+  }
+  return s;
+};
+
 /* real lens: surfaces designed for the drawn focal length (see optics.lensDesign) */
 const lensReal = (p, doc) => {
   if (p.model !== 'real' || (p.asph && p.shape !== 'ball')) return null;
@@ -2890,7 +2978,7 @@ lib.lensReal = lensReal;
 
 lib.register({
   type: 'lens', name: 'Lens', abbr: 'L', category: 'Lenses & objectives', keywords: 'lens convex concave focusing collimating achromat',
-  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false },
+  defaults: { d: 8, f: 100, shape: 'biconvex', t: 1.6, model: 'thin', mat: 'N-BK7', n: 1.5, asph: false, look: 'edge' },
   params: [P.diameter(),
     { key: 'f', label: 'Focal length', type: 'number', unit: 'mm', min: -10000, max: 10000, step: 1, hint: 'Physical mm. Drawn focus = f ÷ figure scale', show: p => !(p.model === 'real' && p.shape === 'ball') },
     { key: 'shape', label: 'Shape', type: 'select', options: [['biconvex', 'Biconvex'], ['planoconvex', 'Plano-convex'], ['biconcave', 'Biconcave'], ['planoconcave', 'Plano-concave'], ['doublet', 'Achromatic doublet'], ['cylindrical', 'Cylindrical (plano-convex)'], ['ball', 'Ball lens']] },
@@ -2898,7 +2986,8 @@ lib.register({
     Object.assign(P.material(), { label: 'Glass', show: p => p.model === 'real' }),
     { key: 'n', label: 'Refractive index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.model === 'real' && p.mat === 'custom' },
     { key: 'asph', label: 'Aspheric (aberration-free on axis)', type: 'bool', show: p => p.model === 'real' && p.shape !== 'ball' },
-    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' }],
+    { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.4, max: 8, step: 0.1, show: p => p.model !== 'real' },
+    Object.assign({}, LOOK, { show: p => p.model !== 'real' })],
   variants: [
     { name: 'Plano-convex lens', props: { shape: 'planoconvex' } },
     { name: 'Concave (diverging) lens', props: { shape: 'biconcave', f: -100 }, keywords: 'negative diverging' },
@@ -2915,11 +3004,13 @@ lib.register({
   bbox: (p, obj) => {
     const g = lensReal(p, RNBX.state && RNBX.state.doc);
     if (g) { const xs = g.flatMap(q => [q.x, q.xe]); return [Math.min(...xs) - 0.2, -p.d / 2, Math.max(...xs) + 0.2, p.d / 2]; }
+    if (p.look === 'tilted') return [-p.d * 0.18, -p.d / 2, p.d * 0.18, p.d / 2];
     return p.shape === 'ball' ? [-p.d / 2, -p.d / 2, p.d / 2, p.d / 2] : [-p.t / 2 - 0.4, -p.d / 2, p.t / 2 + 0.4, p.d / 2];
   },
-  draw(p, S) {
+  draw(p, S, obj) {
     const r = p.d / 2, glass = `fill="${S.fill('glass')}" ${S.shaded ? '' : 'fill-opacity="0.85"'} ${H.stroke(S)}`;
     const real = lensReal(p, S.doc);
+    if (!real && p.look === 'tilted') return H.tiltDisc(S, p.d, { kind: 'lens', id: obj ? obj.id : 'x' });
     if (real) return lensRealPath(real).map((e, i) => `<path d="${e.d}" ${i === 0 ? glass : `fill="${S.shaded ? '#9fc2dd' : '#cfe0ee'}" ${S.shaded ? '' : 'fill-opacity="0.9"'} ${H.stroke(S)}`}/>`).join('');
     if (p.shape === 'ball') return `<circle cx="0" cy="0" r="${n(r)}" ${glass}/>` + (S.shaded ? `<circle cx="${n(-r * 0.35)}" cy="${n(-r * 0.35)}" r="${n(r * 0.22)}" fill="#ffffff" opacity="0.7"/>` : '');
     if (p.shape === 'doublet') {
@@ -3045,24 +3136,26 @@ boxDevice('isolator', 'Optical isolator', 'ISO', 'Polarisation', {
 /* ================= Filters & dispersion ================= */
 lib.register({
   type: 'filter', name: 'Optical filter', abbr: 'F', category: 'Filters & dispersion', keywords: 'filter bandpass longpass notch interference',
-  defaults: { d: 8, t: 1, mode: 'bandpass', center: 532, width: 10, edge: 550, od: 1, T: 0.95 },
+  defaults: { d: 8, t: 1, mode: 'bandpass', center: 532, width: 10, edge: 550, od: 1, T: 0.95, look: 'edge', tintColor: '' },
   params: [P.diameter(), P.thick(1),
     { key: 'mode', label: 'Type', type: 'select', options: [['bandpass', 'Band-pass'], ['longpass', 'Long-pass'], ['shortpass', 'Short-pass'], ['notch', 'Notch'], ['nd', 'Neutral density']] },
     { key: 'center', label: 'Centre wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.mode === 'bandpass' || p.mode === 'notch' },
     { key: 'width', label: 'Bandwidth (FWHM)', type: 'number', unit: 'nm', min: 0.1, max: 2000, step: 0.5, show: p => p.mode === 'bandpass' || p.mode === 'notch' },
     { key: 'edge', label: 'Edge wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 5000, step: 1, show: p => p.mode === 'longpass' || p.mode === 'shortpass' },
     { key: 'od', label: 'Optical density', type: 'number', min: 0, max: 8, step: 0.1, show: p => p.mode === 'nd' },
-    { key: 'T', label: 'Peak transmission', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode !== 'nd' }],
+    { key: 'T', label: 'Peak transmission', type: 'range', min: 0, max: 1, step: 0.01, show: p => p.mode !== 'nd' },
+    LOOK, { key: 'tintColor', label: 'Glass colour (drawing only)', type: 'color', allowEmpty: true }],
   variants: [
     { name: 'Neutral density filter', abbr: 'ND', props: { mode: 'nd', od: 1 }, keywords: 'nd attenuator neutral density' },
     { name: 'Long-pass filter', abbr: 'LP', props: { mode: 'longpass', edge: 550 }, keywords: 'long pass edge raman' },
     { name: 'Notch filter', abbr: 'NF', props: { mode: 'notch', center: 532, width: 20 }, keywords: 'notch rayleigh raman' },
   ],
   snap: 'perp', mount: true, labelPos: [0, 7],
-  bbox: p => [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
-  tint: p => p.mode === 'nd' ? '#6f747b' : U.wavelengthColor(p.mode === 'longpass' ? p.edge + 60 : p.mode === 'shortpass' ? p.edge - 60 : p.center),
-  draw(p, S) {
+  bbox: p => (p.look === 'tilted' ? [-p.d * 0.18, -p.d / 2, p.d * 0.18, p.d / 2] : [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2]),
+  tint: p => p.tintColor ? p.tintColor : p.mode === 'nd' ? '#6f747b' : U.wavelengthColor(p.mode === 'longpass' ? p.edge + 60 : p.mode === 'shortpass' ? p.edge - 60 : p.center),
+  draw(p, S, obj) {
     const c = lib.get('filter').tint(p);
+    if (p.look === 'tilted') return H.tiltDisc(S, p.d, { kind: 'filter', tint: c, id: obj ? obj.id : 'x' });
     let s = H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, p.mode === 'nd' ? (S.shaded ? 'url(#rbx-nd)' : '#8c9198') : U.lighten(c, S.shaded ? 0.15 : 0.45));
     return s + H.sheen(S, -p.t / 2, -p.d / 2, p.t, p.d * 0.4);
   },
@@ -3293,8 +3386,9 @@ const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
 lib.register({
   type: 'coupler', name: 'Fibre coupler / collimator', abbr: 'FC', category: 'Fibre optics',
   keywords: 'fiber fibre coupler collimator launch output port',
-  defaults: { L: 6, D: 3.2, beamWidth: 0.7, divergence: 0 },
-  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 },
+  defaults: { L: 6, D: 3.2, beamWidth: 0.7, divergence: 0, look: 'collimator' },
+  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['collimator', 'Coupler / collimator'], ['tip', 'Bare fibre end (ferrule)']] },
+    { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 },
     { key: 'D', label: 'Diameter', type: 'number', unit: 'mm', min: 1, max: 15, step: 0.1 },
     { key: 'beamWidth', label: 'Output beam diameter (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 10, step: 0.05 },
     { key: 'divergence', label: 'Output divergence', type: 'number', unit: '°', min: -30, max: 45, step: 0.1 }],
@@ -3303,8 +3397,10 @@ lib.register({
   bbox: p => [-p.L / 2 - 1.2, -p.D / 2, p.L / 2 + 0.5, p.D / 2],
   fiberPort: p => [-p.L / 2 - 1.2, 0],
   port: p => ({ o: [p.L / 2 + 0.55, 0], d: [1, 0] }),
+  variants: [{ name: 'Bare fibre end', props: { look: 'tip', L: 3, D: 1.2, beamWidth: 0.1, divergence: 7 }, keywords: 'bare fibre fiber end tip ferrule cleaved output diverging' }],
   draw(p, S) {
     const L = p.L, r = p.D / 2;
+    if (p.look === 'tip') return H.rect(S, -L / 2, -r * 0.55, L, r * 1.1, S.fill('dark'), 'rx="0.2"') + `<circle cx="${n(L / 2)}" cy="0" r="${n(Math.max(0.18, r * 0.35))}" fill="${S.shaded ? '#ffffff' : '#9aa3ad'}" ${H.stroke(S, 0.5)}/>`;
     let s = H.rect(S, -L / 2, -r, L, 2 * r, S.fill('metal'), 'rx="0.35"');
     s += H.sheen(S, -L / 2, -r, L, r * 0.8, 0.35);
     s += H.rect(S, -L / 2 - 1.2, -r * 0.45, 1.2, r * 0.9, S.fill('dark'));
@@ -3342,13 +3438,27 @@ det('pd', 'Photodiode', 'PD', {
 });
 
 det('camera', 'Camera (CCD / CMOS)', 'CAM', {
+  variants: [{ name: 'Photo camera', props: { look: 'photo', L: 12, H: 9 }, keywords: 'photo camera dslr digital camera lens body' }],
   keywords: 'camera ccd cmos emccd scmos imaging sensor',
-  defaults: { L: 10, H: 8, front: 'plain' },
+  defaults: { L: 10, H: 8, front: 'plain', look: 'science' },
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 },
-    { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']] }],
+    { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']], show: p => p.look !== 'photo' },
+    { key: 'look', label: 'Looks like', type: 'select', options: [['science', 'Scientific camera'], ['photo', 'Photo camera (body and lens)']] }],
   labelPos: [0, 7.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
   draw(p, S) {
+    if (p.look === 'photo') {
+      // photo camera seen from the side, lens towards the light (−x)
+      const L = p.L, h = p.H, bl = L * 0.5, lx = -L / 2, ll = L - bl, bx = lx + ll;
+      let q = `<rect x="${n(bx)}" y="${n(-h / 2 + h * 0.18)}" width="${n(bl)}" height="${n(h * 0.82)}" rx="${n(h * 0.06)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`;
+      q += `<rect x="${n(bx)}" y="${n(-h / 2 + h * 0.18)}" width="${n(bl)}" height="${n(h * 0.22)}" fill="${S.shaded ? 'url(#rbx-metal)' : '#e5e7eb'}" ${H.stroke(S, 0.6)}/>`;
+      q += `<rect x="${n(bx + bl * 0.3)}" y="${n(-h / 2)}" width="${n(bl * 0.4)}" height="${n(h * 0.2)}" rx="0.3" fill="${S.shaded ? 'url(#rbx-metal)' : '#e5e7eb'}" ${H.stroke(S, 0.6)}/>`;
+      const r0 = h * 0.3, r1 = h * 0.36;
+      q += `<path d="M ${n(bx)} ${n(-r1)} L ${n(lx + ll * 0.15)} ${n(-r0)} L ${n(lx + ll * 0.15)} ${n(r0)} L ${n(bx)} ${n(r1)} Z" fill="${S.fill('dark')}" ${H.stroke(S)}/>`;
+      for (let k = 1; k < 4; k++) { const x = bx - ll * 0.22 * k; q += H.line(S, x, -r1 + (r1 - r0) * k / 4, x, r1 - (r1 - r0) * k / 4, '', 0.5, S.shaded ? '#9aa3ad' : '#ffffff'); }
+      q += `<rect x="${n(lx)}" y="${n(-r0 * 0.95)}" width="${n(ll * 0.17)}" height="${n(r0 * 1.9)}" fill="${S.fill('glass')}" ${H.stroke(S, 0.6)}/>`;
+      return q;
+    }
     const L = p.L, h = p.H, nose = Math.min(2.2, L * 0.25);
     let s = H.rect(S, -L / 2 + nose, -h / 2, L - nose, h, S.fill('dark'), 'rx="0.7"');
     s += H.sheen(S, -L / 2 + nose, -h / 2, L - nose, h * 0.45, 0.7);
@@ -3533,18 +3643,39 @@ lib.register({
 lib.register({
   type: 'instrument', name: 'Instrument / electronics box', abbr: '', category: 'Electronics', autoLabel: false,
   keywords: 'lock in amplifier computer pc oscilloscope function generator driver controller daq electronics box',
-  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic' },
-  params: [{ key: 'text', label: 'Text', type: 'text' },
+  defaults: { w: 16, h: 8, text: 'Lock-in', icon: 'generic', look: 'flat', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#ffffff', knob: false },
+  params: [{ key: 'look', label: 'Looks like', type: 'select', options: [['flat', 'Flat box (schematic)'], ['box3d', 'Benchtop box (3D look)'], ['pc', 'Computer (monitor and tower)']] },
+    { key: 'text', label: 'Text', type: 'text' },
+    { key: 'color', label: 'Box colour', type: 'color', show: p => p.look !== 'flat' },
+    { key: 'displayColor', label: 'Display colour', type: 'color', show: p => p.look === 'box3d' },
+    { key: 'textColor', label: 'Display text colour', type: 'color', show: p => p.look === 'box3d' },
+    { key: 'knob', label: 'Knob', type: 'bool', show: p => p.look === 'box3d' },
     { key: 'icon', label: 'Icon', type: 'select', options: [['generic', 'None'], ['computer', 'Computer'], ['scope', 'Oscilloscope'], ['fgen', 'Signal generator'], ['meter', 'Meter / controller']] },
     { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 4, max: 80, step: 0.5 }, { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 60, step: 0.5 }],
   variants: [
     { name: 'Computer', props: { text: 'PC', icon: 'computer', w: 12, h: 10 }, keywords: 'computer pc laptop' },
     { name: 'Oscilloscope', props: { text: 'Oscilloscope', icon: 'scope', w: 18, h: 10 }, keywords: 'oscilloscope scope' },
     { name: 'Signal generator', props: { text: 'Function gen.', icon: 'fgen', w: 18, h: 9 }, keywords: 'function signal generator rf awg' },
+    { name: 'Power supply (benchtop box)', props: { look: 'box3d', text: 'Power supply', color: '#3a3f47', displayColor: '#0f1419', textColor: '#ff6b5a', w: 22, h: 10 }, keywords: 'power supply psu dc current source benchtop box 3d' },
+    { name: 'Spectrometer (benchtop box)', props: { look: 'box3d', text: 'Spectrometer', color: '#c9ced6', displayColor: '#1f2a37', textColor: '#7fe0a8', w: 20, h: 8 }, keywords: 'spectrometer box benchtop 3d' },
+    { name: 'Controller (benchtop box)', props: { look: 'box3d', text: '', color: '#7fa7d6', displayColor: '#13202b', textColor: '#7fe0a8', knob: true, w: 18, h: 8 }, keywords: 'controller driver laser driver box benchtop 3d knob' },
+    { name: 'Computer (monitor and tower)', props: { look: 'pc', text: '', color: '#4b5059', w: 22, h: 14 }, keywords: 'computer pc desktop monitor tower workstation' },
   ],
-  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
+  bbox: p => (p.look === 'box3d' ? [-p.w / 2, -p.h / 2 - H.benchDepth(p.w, p.h) * 0.6, p.w / 2 + H.benchDepth(p.w, p.h) * 0.8, p.h / 2] : [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2]),
   draw(p, S) {
     const w = p.w, h = p.h;
+    if (p.look === 'box3d') return H.bench(S, w, h, { color: p.color, text: p.text, displayColor: p.displayColor, textColor: p.textColor, knob: p.knob });
+    if (p.look === 'pc') {
+      // flat icon: monitor on a stand, tower to its right
+      const c = p.color, mw = w * 0.62, mh = h * 0.68, mx = -w / 2, my = -h / 2, tw = w * 0.26, tx = w / 2 - tw;
+      let q = `<rect x="${n(mx)}" y="${n(my)}" width="${n(mw)}" height="${n(mh)}" rx="${n(mh * 0.08)}" fill="${c}"/><rect x="${n(mx + mw * 0.08)}" y="${n(my + mh * 0.1)}" width="${n(mw * 0.84)}" height="${n(mh * 0.72)}" fill="#ffffff"/>`;
+      q += `<rect x="${n(mx + mw * 0.42)}" y="${n(my + mh)}" width="${n(mw * 0.16)}" height="${n(h * 0.17)}" fill="${c}"/><rect x="${n(mx + mw * 0.22)}" y="${n(h / 2 - h * 0.08)}" width="${n(mw * 0.56)}" height="${n(h * 0.08)}" rx="0.3" fill="${c}"/>`;
+      q += `<rect x="${n(tx)}" y="${n(my)}" width="${n(tw)}" height="${n(h)}" rx="${n(tw * 0.12)}" fill="${c}"/>`;
+      [0.12, 0.27].forEach(f => { q += `<rect x="${n(tx + tw * 0.15)}" y="${n(my + h * f)}" width="${n(tw * 0.7)}" height="${n(h * 0.08)}" rx="0.2" fill="#ffffff"/>`; });
+      q += `<circle cx="${n(tx + tw / 2)}" cy="${n(my + h * 0.75)}" r="${n(tw * 0.17)}" fill="#ffffff"/>`;
+      if (p.text) q += `<text x="${n(mx + mw / 2)}" y="${n(my + mh * 0.46)}" font-family="${U.esc(S.font)}" font-size="${n(Math.min(S.fs, mh * 0.25))}" fill="${S.ink}" text-anchor="middle" dominant-baseline="central">${RNBX.text.markup(p.text)}</text>`;
+      return q;
+    }
     let s = H.rect(S, -w / 2, -h / 2, w, h, S.shaded ? 'url(#rbx-body)' : '#ffffff', 'rx="0.9"');
     s += H.sheen(S, -w / 2, -h / 2, w, h * 0.4, 0.9);
     let ty = 0;
@@ -3795,23 +3926,42 @@ const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['
 lib.register({
   type: 'module', name: 'Optical module (beam passes through)', abbr: 'MOD', category: 'Samples & mechanics', autoLabel: false,
   keywords: 'module box instrument black box michelson interferometer ftir monochromator spectrometer unit pass through',
-  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none' },
+  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830 },
   params: [{ key: 'title', label: 'Text in the box', type: 'textarea' },
-    { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator']] },
+    { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator'], ['probe', 'Fibre probe (excitation and collection paths)']] },
+    { key: 'ex', label: 'Excitation colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'em', label: 'Collection colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'snout', label: 'Focusing nose at the exit', type: 'bool' },
+    { key: 'f', label: 'Focus distance below the nose (drawn)', type: 'number', unit: 'mm', min: 0, max: 200, step: 0.5, show: p => p.snout, hint: '0 = the beam passes straight' },
     { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 200, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
     { key: 'color', label: 'Box colour', type: 'color' }],
-  variants: [{ name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
+  variants: [{ name: 'Fibre-optic probe head', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic filter handheld', props: { title: '', inside: 'probe', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
+    { name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
   snap: 'perp', mount: false,
-  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
+  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
   draw(p, S) {
     const L = p.L, Hh = p.H;
-    let s = `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
+    let s = '';
+    if (p.snout) { const sl = Math.min(Hh * 0.35, 5), sw = Hh * 0.3; s += `<rect x="${n(L / 2 - 0.2)}" y="${n(-sw / 2)}" width="${n(sl + 0.2)}" height="${n(sw)}" rx="${n(sw * 0.12)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`; }
+    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
     if (p.inside === 'michelson') {
       const k = Math.min(L, Hh) * 0.2, cx = -L * 0.1, cy = Hh * 0.2;
       s += `<line x1="${n(cx - k * 0.45)}" y1="${n(cy + k * 0.45)}" x2="${n(cx + k * 0.45)}" y2="${n(cy - k * 0.45)}" ${H.stroke(S, 1.6, '#4a7fb5')}/>`;
       s += `<rect x="${n(cx - k * 0.5)}" y="${n(cy - k * 1.45)}" width="${n(k)}" height="${n(k * 0.16)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
       s += `<rect x="${n(cx + k * 1.3)}" y="${n(cy - k * 0.5)}" width="${n(k * 0.16)}" height="${n(k)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
       s += H.arrowGlyph(S, cx + k * 1.38, cy + k * 0.75, k * 0.6, S.ink);
+    }
+    if (p.inside === 'probe') {
+      // two parallel paths along the axis: excitation (y < 0) and collection (y > 0), joined by a dichroic and a mirror near the exit
+      const k = Hh * 0.17, y1 = -Hh * 0.2, y2 = Hh * 0.2, xa = -L / 2 + L * 0.12, xb = L / 2 - L * 0.22, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
+      const band = (y, x0, x1, c, fat) => `<path d="M ${n(x0)} ${n(y - k * fat)} L ${n(x1)} ${n(y - k * fat)} L ${n(x1)} ${n(y + k * fat)} L ${n(x0)} ${n(y + k * fat)} Z" fill="${c}" fill-opacity="0.75"/>`;
+      s += `<path d="M ${n(xa - L * 0.07)} ${n(y1)} L ${n(xa)} ${n(y1 - k)} L ${n(xa)} ${n(y1 + k)} Z" fill="${ce}" fill-opacity="0.75"/>` + band(y1, xa, L / 2, ce, 1);
+      s += `<path d="M ${n(xa - L * 0.07)} ${n(y2)} L ${n(xa)} ${n(y2 - k)} L ${n(xa)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>` + band(y2, xa, xb, cm, 1);
+      s += `<path d="M ${n(xb - k)} ${n(y1)} L ${n(xb + k)} ${n(y1)} L ${n(xb + k)} ${n(y2 + k)} L ${n(xb - k)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>`;
+      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.35)}" ry="${n(k * 1.15)}" fill="${S.shaded ? '#e9f4fb' : '#ffffff'}" ${H.stroke(S, 0.5)}/>`;
+      s += lens(xa + L * 0.02, y1) + lens(xa + L * 0.02, y2);
+      s += H.line(S, xa + L * 0.2, y1 - k, xa + L * 0.2, y1 + k, '', 1.4, U.darken(ce, 0.2)) + H.line(S, xa + L * 0.2, y2 - k, xa + L * 0.2, y2 + k, '', 1.4, '#1d1f23');
+      s += H.line(S, xb - k * 1.2, y1 + k * 1.2, xb + k * 1.2, y1 - k * 1.2, '', 1.3, '#d9dde3') + H.line(S, xb - k * 1.2, y2 + k * 1.2, xb + k * 1.2, y2 - k * 1.2, '', 1.3, '#b05cc8');
     }
     if (p.inside === 'grating') {
       const k = Math.min(L, Hh) * 0.22;
@@ -3824,7 +3974,11 @@ lib.register({
     }
     return s;
   },
-  optics: p => [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }],
+  optics: (p, obj, doc) => {
+    const out = [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }];
+    if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * ((doc && doc.style.scale) || 10) }); }
+    return out;
+  },
   solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [0, bh + Math.min(p.H, p.L) * 0.35], mat: { color: p.color, spec: 0.2 } }],
 });
 
@@ -4320,6 +4474,75 @@ lib.register({
   optics: () => [{ kind: 'absorb', a: [0, -1], b: [0, 1] }],
   // a sphere built from cone slices along the axis
   solid: (p) => { const N = 10, out = []; for (let i = 0; i < N; i++) { const a = Math.PI * i / N, b = Math.PI * (i + 1) / N; out.push({ kind: 'cyl', x: [0.6 + p.r * (1 - Math.cos(a)), 0.6 + p.r * (1 - Math.cos(b))], r: [Math.max(0.05, p.r * Math.sin(a)), Math.max(0.05, p.r * Math.sin(b))], mat: 'body' }); } return out; },
+});
+
+/* ================= Electromagnet ================= */
+/* Front view of a laboratory electromagnet: two coils on a frame with pole
+   pieces facing a central gap where the sample sits (origin = gap centre). */
+lib.register({
+  type: 'emagnet', name: 'Electromagnet (pole pieces)', abbr: 'EM', category: 'Samples & mechanics', autoLabel: false,
+  keywords: 'electromagnet magnet coil pole pieces magnetic field magneto optic faraday kerr zeeman gap yoke helmholtz',
+  defaults: { gap: 3, coilL: 12, coilR: 6, color: '#3b67b8', pole: 'cone', stand: true, field: false, fieldColor: '#d6336c' },
+  params: [{ key: 'gap', label: 'Gap between the poles', type: 'number', unit: 'mm', min: 0.5, max: 60, step: 0.5, animatable: true },
+    { key: 'pole', label: 'Pole pieces', type: 'select', options: [['cone', 'Tapered (cone)'], ['flat', 'Flat'], ['none', 'None (bare coils)']] },
+    { key: 'coilL', label: 'Coil length', type: 'number', unit: 'mm', min: 3, max: 80, step: 0.5 },
+    { key: 'coilR', label: 'Coil radius', type: 'number', unit: 'mm', min: 1.5, max: 40, step: 0.5 },
+    { key: 'color', label: 'Coil colour', type: 'color' },
+    { key: 'stand', label: 'Frame and base plate', type: 'bool' },
+    { key: 'field', label: 'Field lines across the gap', type: 'bool' }, { key: 'fieldColor', label: 'Field-line colour', type: 'color', show: p => p.field }],
+  variants: [{ name: 'Helmholtz coil pair', props: { pole: 'none', gap: 12, coilL: 3, coilR: 9, stand: true, color: '#c7782e' }, keywords: 'helmholtz coils pair uniform field' }],
+  hint: 'Put the sample at the centre of the gap. Connect a power supply with the Electrical connection tool.',
+  labelPos: [0, 13],
+  geo: p => { const lc = p.pole === 'none' ? 0 : p.pole === 'flat' ? 1.2 : Math.max(2, p.coilR * 0.7); const x1 = p.gap / 2 + lc, x2 = x1 + p.coilL; return { lc, x1, x2, xe: x2 + Math.max(1, p.coilR * 0.25), base: p.coilR + Math.max(3, p.coilR * 0.7) }; },
+  bbox(p) { const g = this.geo(p); return [-g.xe - 1.5, -p.coilR - 0.9, g.xe + 1.5, p.stand ? g.base + 1.3 : p.coilR + 0.9]; },
+  draw(p, S, obj) {
+    const g = this.geo(p), R = p.coilR, id = 'rbx-em-' + (obj ? obj.id : 'x');
+    const cyl = (x0, x1, r, fillId, extra = '') => `<rect x="${n(x0)}" y="${n(-r)}" width="${n(x1 - x0)}" height="${n(2 * r)}" fill="url(#${fillId})" ${H.stroke(S, 0.7)} ${extra}/>`;
+    const grad = (gid, c) => `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${U.darken(c, 0.25)}"/><stop offset="0.22" stop-color="${U.lighten(c, 0.35)}"/><stop offset="0.5" stop-color="${c}"/><stop offset="1" stop-color="${U.darken(c, 0.45)}"/></linearGradient>`;
+    let s = `<defs>${grad(id + 'c', p.color)}${grad(id + 'm', '#b9bec6')}${grad(id + 'd', '#8a9099')}</defs>`;
+    // frame and base
+    if (p.stand) {
+      const yb = g.base, tw = 1.3;
+      s += H.rect(S, -g.xe - 1.5, yb, 2 * g.xe + 3, tw, `url(#${id}m)`, 'rx="0.4"');
+      [-1, 1].forEach(k => { const xc = k * (g.x1 + g.x2) / 2; s += H.rect(S, xc - 0.7, R, 1.4, yb - R, `url(#${id}d)`); });
+      s += H.rect(S, -g.x2, R + 0.8, 2 * g.x2, 0.9, `url(#${id}d)`, 'rx="0.3"');
+      s += H.rect(S, -1.1, R + 0.8, 2.2, yb - R - 0.8, `url(#${id}m)`);
+      [-0.45, 0.45].forEach(x => { s += `<circle cx="${n(x)}" cy="${n(yb - 0.9)}" r="0.32" fill="#2b2f36"/>`; });
+    }
+    [-1, 1].forEach(k => {
+      const sx = v => k * v;
+      // back cap, coil with flanges, pole piece
+      const a = Math.min(sx(g.x2), sx(g.xe)), b = Math.max(sx(g.x2), sx(g.xe));
+      s += cyl(a, b, R * 0.42, id + 'm');
+      const c0 = Math.min(sx(g.x1), sx(g.x2)), c1 = Math.max(sx(g.x1), sx(g.x2));
+      s += cyl(c0, c1, R, id + 'c');
+      for (let i = 1; i < 6; i++) { const x = c0 + (c1 - c0) * i / 6; s += H.line(S, x, -R, x, R, '', 0.3, U.darken(p.color, 0.3)); }
+      [c0, c1 - 0.7].forEach(x => { s += `<rect x="${n(x)}" y="${n(-R - 0.6)}" width="0.7" height="${n(2 * R + 1.2)}" rx="0.2" fill="url(#${id}m)" ${H.stroke(S, 0.5)}/>`; });
+      if (p.pole !== 'none') {
+        const tip = p.pole === 'flat' ? R * 0.55 : Math.max(0.35, R * 0.12), base = R * 0.62;
+        s += `<path d="M ${n(sx(g.x1))} ${n(-base)} L ${n(sx(p.gap / 2))} ${n(-tip)} L ${n(sx(p.gap / 2))} ${n(tip)} L ${n(sx(g.x1))} ${n(base)} Z" fill="url(#${id}m)" ${H.stroke(S, 0.6)}/>`;
+      }
+    });
+    if (p.field && p.gap > 0.6) {
+      let d = '';
+      for (let i = -2; i <= 2; i++) { const y = i * Math.min(R * 0.12, p.gap * 0.25); d += `M ${n(-p.gap / 2 + 0.15)} ${n(y)} Q 0 ${n(y * 1.25)} ${n(p.gap / 2 - 0.15)} ${n(y)} `; }
+      s += `<path d="${d}" fill="none" stroke="${p.fieldColor}" stroke-width="${n(S.lw * 0.8)}" stroke-dasharray="${n(S.lw * 2)} ${n(S.lw * 1.4)}"/>` + H.arrowHead(p.gap / 2 - 0.1, 0, 0, Math.min(1, p.gap * 0.3), p.fieldColor);
+    }
+    return s;
+  },
+  optics: () => [],
+  solid(p, bh) {
+    const g = this.geo(p), R = p.coilR, z = R + 1.6, out = [];
+    [-1, 1].forEach(k => {
+      const lo = (a, b) => [Math.min(k * a, k * b), Math.max(k * a, k * b)];
+      out.push({ kind: 'cyl', x: lo(g.x1, g.x2), r: [R, R], mat: { color: p.color }, cz: z });
+      out.push({ kind: 'cyl', x: lo(g.x2, g.xe), r: [R * 0.42, R * 0.42], mat: 'metal', cz: z });
+      if (p.pole !== 'none') { const tip = p.pole === 'flat' ? R * 0.55 : Math.max(0.35, R * 0.12); out.push({ kind: 'cyl', x: lo(p.gap / 2, g.x1), r: k > 0 ? [tip, R * 0.62] : [R * 0.62, tip], mat: 'metal', cz: z }); }
+    });
+    if (p.stand) out.push({ kind: 'box', x: [-g.xe, g.xe], y: [-R * 0.8, R * 0.8], z: [0, 0.9], mat: 'metal' });
+    return out;
+  },
+  noPost: true,
 });
 
 /* ================= Fibre-optic devices ================= */
@@ -5218,24 +5441,27 @@ const bboxFor = (p, zTop) => {
 block({
   type: 'nslab', name: 'Substrate / film (slab)',
   keywords: 'substrate slab film layer wafer glass silicon polymer pdms block planar building block stack',
-  defaults: { t: 5, color: '#cfe2ee', name: 'Substrate', label: true, mat: 'glass:N-BK7', nm: 100, n: 1.5, k: 0, sheen: false },
+  defaults: { t: 5, color: '#cfe2ee', name: 'Substrate', label: true, mat: 'glass:N-BK7', nm: 100, n: 1.5, k: 0, sheen: false, alpha: 1 },
   params: [
     { key: 'name', label: 'Name', type: 'text' }, { key: 'label', label: 'Name on the front face', type: 'bool' },
     { key: 't', label: 'Drawn thickness', type: 'number', unit: 'mm', min: 0.1, max: 200, step: 0.1 },
     { key: 'color', label: 'Colour', type: 'color' }, { key: 'sheen', label: 'Sheen', type: 'bool' },
+    { key: 'alpha', label: 'Opacity (see-through cover)', type: 'range', min: 0.1, max: 1, step: 0.01 },
     MAT(), ...NK, NM, ...VIEW],
   variants: [
     { name: 'Glass substrate', props: { name: 'Glass', color: '#cfe6f2', mat: 'glass:N-BK7' } },
     { name: 'Silicon wafer', props: { name: 'Si', color: '#6b7785', mat: 'Si', t: 3 } },
     { name: 'Polymer substrate', props: { name: 'Polymer', color: '#d9ead3', mat: 'PDMS', t: 6 } },
     { name: 'Thin film (slab)', props: { name: 'Film', color: '#8fc9b9', mat: 'SiO2', t: 1.4, nm: 100 } },
+    { name: 'Transparent cover / superstrate', props: { name: 'Cover', color: '#dfe9f1', mat: 'glass:N-BK7', t: 3, alpha: 0.45, label: false }, keywords: 'cover glass superstrate transparent encapsulation top layer pdms window' },
   ],
   top: p => ({ z: surfMax(baseOf(p)) + p.t, prof: null }),
   bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + p.t); },
   draw(p, S, obj) {
     const c = cam(p), b = baseOf(p), xs = samplesFor(p.W, b.prof), f = surfFn(b), top = surfMax(b) + p.t;
     const lo = xs.map(f), hi = xs.map(() => top);
-    return solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x' }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+    const body = solid(c, p.W, p.D, xs, lo, hi, p.color, S, { sheen: p.sheen, id: obj ? obj.id : 'x' }) + (p.label ? frontText(c, p.W, xs, lo, hi, p.name, S, p.color) : '');
+    return p.alpha != null && p.alpha < 1 ? `<g opacity="${n(p.alpha)}">${body}</g>` : body;
   },
 });
 
@@ -5243,7 +5469,7 @@ block({
 block({
   type: 'nridges', name: 'Grating ridges',
   keywords: 'grating ridges lines periodic corrugation 1d metasurface lamellar trapezoid sinusoidal blazed sawtooth nanoimprint building block',
-  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS', n: 1.5, k: 0, periodNm: 500, heightNm: 100, residNm: 0 },
+  defaults: { profile: 'square', period: 6, duty: 0.5, amp: 2.4, resid: 0, color: '#a3b6d9', name: 'Grating', mat: 'PDMS', n: 1.5, k: 0, periodNm: 500, heightNm: 100, residNm: 0, fill: '' },
   params: [
     { key: 'profile', label: 'Profile', type: 'select', options: [['square', 'Rectangular'], ['trapezoid', 'Trapezoid'], ['sine', 'Sinusoidal'], ['triangle', 'Triangular'], ['sawtooth', 'Blazed (sawtooth)']] },
     { key: 'period', label: 'Period (drawn)', type: 'number', unit: 'mm', min: 0.3, max: 100, step: 0.1 },
@@ -5251,6 +5477,7 @@ block({
     { key: 'amp', label: 'Ridge height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.1, animatable: true },
     { key: 'resid', label: 'Residual layer under the ridges', type: 'number', unit: 'mm', min: 0, max: 60, step: 0.1 },
     { key: 'name', label: 'Name', type: 'text' }, { key: 'color', label: 'Colour', type: 'color' },
+    { key: 'fill', label: 'Fill the grooves with (drawing only)', type: 'color', allowEmpty: true, hint: 'grooves filled level with the ridge tops' },
     MAT('Ridge material (for Optical response)'), ...NK,
     { key: 'periodNm', label: 'Real period', type: 'number', unit: 'nm', min: 10, max: 1e5, step: 1, animatable: true },
     { key: 'heightNm', label: 'Real ridge height', type: 'number', unit: 'nm', min: 0, max: 1e5, step: 1, animatable: true },
@@ -5266,7 +5493,10 @@ block({
   draw(p, S) {
     const c = cam(p), b = baseOf(p), pr = this.prof(p), xs = samplesFor(p.W, pr), fb = surfFn(b), z0 = surfMax(b) + p.resid, fp = profileFn(pr);
     const lo = xs.map(fb), hi = xs.map(x => z0 + fp(x));
-    return solid(c, p.W, p.D, xs, lo, hi, p.color, S);
+    let s = solid(c, p.W, p.D, xs, lo, hi, p.color, S);
+    // filled grooves: a block from the ridge profile up to the ridge tops
+    if (p.fill) s += solid(c, p.W, p.D, xs, hi, xs.map(() => z0 + p.amp), p.fill, S, { edgeOpacity: 0.5 });
+    return s;
   },
 });
 
@@ -5308,16 +5538,18 @@ const rng = seed => { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s 
 block({
   type: 'narray', name: 'Nano-object array',
   keywords: 'nanodisk nanopillar nanoparticle nanorod cone pyramid sphere core shell array lattice metasurface meta-atom plasmonic random building block',
-  defaults: { shape: 'disk', layout: 'square', nx: 6, ny: 4, r: 1.6, h: 1.2, len: 4, count: 18, seed: 7, color: '#d6a83a', shell: '#9fd0e6', name: 'Nanodisks' },
+  defaults: { shape: 'disk', layout: 'square', nx: 6, ny: 4, r: 1.6, h: 1.2, len: 4, count: 18, seed: 7, color: '#d6a83a', shell: '#9fd0e6', name: 'Nanodisks', tilt: 35, alpha: 0.8 },
   params: [
-    { key: 'shape', label: 'Shape', type: 'select', options: [['disk', 'Disk / pillar (cylinder)'], ['box', 'Block (cuboid)'], ['cone', 'Cone'], ['dome', 'Hemisphere'], ['sphere', 'Sphere'], ['coreshell', 'Core–shell sphere'], ['rod', 'Rod (lying)']] },
+    { key: 'shape', label: 'Shape', type: 'select', options: [['disk', 'Disk / pillar (cylinder)'], ['box', 'Block (cuboid)'], ['cone', 'Cone'], ['dome', 'Hemisphere'], ['sphere', 'Sphere'], ['coreshell', 'Core–shell sphere'], ['rod', 'Rod (lying)'], ['flake', 'Tilted flakes / nanosheets (standing)']] },
     { key: 'layout', label: 'Arrangement', type: 'select', options: [['square', 'Square lattice'], ['hex', 'Hexagonal lattice'], ['random', 'Random']] },
     { key: 'nx', label: 'Columns', type: 'number', min: 1, max: 60, step: 1, show: p => p.layout !== 'random' },
     { key: 'ny', label: 'Rows (in depth)', type: 'number', min: 1, max: 40, step: 1, show: p => p.layout !== 'random' },
     { key: 'count', label: 'Number of objects', type: 'number', min: 1, max: 400, step: 1, show: p => p.layout === 'random' },
     { key: 'seed', label: 'Random pattern', type: 'number', min: 1, max: 9999, step: 1, show: p => p.layout === 'random' },
     { key: 'r', label: 'Radius / half-width (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 40, step: 0.05, animatable: true },
-    { key: 'h', label: 'Height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true, show: p => ['disk', 'box', 'cone'].includes(p.shape) },
+    { key: 'h', label: 'Height (drawn)', type: 'number', unit: 'mm', min: 0.05, max: 60, step: 0.05, animatable: true, show: p => ['disk', 'box', 'cone', 'flake'].includes(p.shape) },
+    { key: 'tilt', label: 'Lean', type: 'number', unit: '°', min: -80, max: 80, step: 1, show: p => p.shape === 'flake', hint: 'average lean; each flake varies a little' },
+    { key: 'alpha', label: 'Opacity', type: 'range', min: 0.1, max: 1, step: 0.01, show: p => p.shape === 'flake' },
     { key: 'len', label: 'Rod length (drawn)', type: 'number', unit: 'mm', min: 0.2, max: 60, step: 0.1, show: p => p.shape === 'rod' },
     { key: 'color', label: 'Colour', type: 'color' }, { key: 'shell', label: 'Shell colour', type: 'color', show: p => p.shape === 'coreshell' },
     { key: 'name', label: 'Name', type: 'text' }, ...VIEW],
@@ -5327,6 +5559,7 @@ block({
     { name: 'Core–shell particles', props: { shape: 'coreshell', layout: 'hex', r: 1.5, nx: 6, ny: 4, color: '#d6a83a', name: 'Core–shell' } },
     { name: 'Nanorods', props: { shape: 'rod', layout: 'random', r: 0.6, len: 4, count: 14, color: '#d6a83a', name: 'Nanorods' } },
     { name: 'Nanocone array', props: { shape: 'cone', r: 1.4, h: 3, color: '#7e9cc4', name: 'Nanocones' } },
+    { name: 'Tilted nanoflakes / nanosheets', props: { shape: 'flake', layout: 'random', count: 60, r: 0.7, h: 3.2, tilt: 35, alpha: 0.75, color: '#a9c8e8', name: 'Nanoflakes' }, keywords: 'nanoflakes nanosheets nanowalls flakes needles tilted standing random vertical graphene' },
   ],
   sites(p) {
     const out = [], W = p.W, D = p.D;
@@ -5343,7 +5576,7 @@ block({
     }
     return out;
   },
-  height: p => ({ disk: p.h, box: p.h, cone: p.h, dome: p.r, sphere: 2 * p.r, coreshell: 2 * p.r, rod: 2 * p.r }[p.shape] || p.h),
+  height: p => ({ disk: p.h, box: p.h, cone: p.h, dome: p.r, sphere: 2 * p.r, coreshell: 2 * p.r, rod: 2 * p.r, flake: p.h * Math.cos(U.rad(Math.min(80, Math.abs(p.tilt || 0)))) }[p.shape] || p.h),
   top(p) { return { z: surfMax(baseOf(p)) + this.height(p), prof: null }; },
   bbox(p) { return bboxFor(p, surfMax(baseOf(p)) + this.height(p) + 0.5); },
   draw(p, S, obj) {
@@ -5380,6 +5613,15 @@ block({
           const q = P(x, z0 + r, d);
           if (p.shape === 'coreshell') s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r * 0.62)}" fill="url(#${gid}-ball)" ${stroke}/><circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-shell)" stroke="${U.darken(p.shell, 0.4)}" stroke-width="${lw}"/>`;
           else s += `<circle cx="${n(q[0])}" cy="${n(q[1])}" r="${n(r)}" fill="url(#${gid}-ball)" ${stroke}/>`;
+          break;
+        }
+        case 'flake': {
+          // thin plate standing on the surface: base along a random direction, leaning by about the set angle
+          const R = rng(Math.round(st.x * 997 + st.d * 131) + (p.seed || 1)), half = r * (0.7 + 0.6 * R()), ca = Math.cos(st.a), sa = Math.sin(st.a);
+          const lean = U.rad((p.tilt || 0) * (0.75 + 0.5 * R())), hh = p.h * (0.75 + 0.5 * R()), ux = Math.sin(lean) * hh, uz = Math.cos(lean) * hh;
+          const B1 = P(x - half * ca, z0, d - half * sa), B2 = P(x + half * ca, z0, d + half * sa), T2 = P(x + half * ca + ux, z0 + uz, d + half * sa), T1 = P(x - half * ca + ux, z0 + uz, d - half * sa);
+          const fill = R() < 0.5 ? p.color : U.lighten(p.color, 0.25);
+          s += `<path d="M ${[B1, B2, T2, T1].map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${fill}" fill-opacity="${n(p.alpha == null ? 0.8 : p.alpha)}" stroke="${U.lighten(p.color, 0.5)}" stroke-width="${n(S.lw * 0.5)}" stroke-linejoin="round"/>`;
           break;
         }
         case 'rod': {
@@ -5927,7 +6169,7 @@ lib.register({
     const end = o => {
       const d = lib.get(o.type);
       const lp = d && d.fiberPort ? d.fiberPort(o.props) : [0, 0];
-      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, [-1, 0]) };
+      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props) : [-1, 0]) };
     };
     const a = end(A), b = end(B);
     const D = Math.max(6, V.dist(a.p, b.p)) * obj.props.bend;
@@ -6058,8 +6300,10 @@ ann({
 
 ann({
   type: 'arrow', name: 'Arrow / line', keywords: 'arrow line pointer callout curve',
-  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false, label: '', labelSize: 7, labelSide: 1 },
+  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false, label: '', labelSize: 7, labelSide: 1, style: 'line', shaft: 2.4 },
   params: [{ key: 'dx', label: 'Length x', type: 'number', unit: 'mm', step: 0.5 }, { key: 'dy', label: 'Length y', type: 'number', unit: 'mm', step: 0.5 },
+    { key: 'style', label: 'Style', type: 'select', options: [['line', 'Line with arrowhead'], ['block', 'Block arrow (wide, filled)']] },
+    { key: 'shaft', label: 'Block width', type: 'number', unit: 'mm', min: 0.3, max: 40, step: 0.1, show: p => p.style === 'block' },
     { key: 'bend', label: 'Curvature', type: 'number', unit: 'mm', min: -100, max: 100, step: 0.5 },
     { key: 'head', label: 'Arrowheads', type: 'select', options: [['end', 'End'], ['start', 'Start'], ['both', 'Both'], ['none', 'None (line)']] },
     { key: 'headSize', label: 'Head size', type: 'number', unit: 'mm', min: 0.3, max: 10, step: 0.1 },
@@ -6069,11 +6313,21 @@ ann({
     { key: 'labelSize', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5, show: p => !!p.label },
     { key: 'labelSide', label: 'Text side', type: 'select', options: [[1, 'Above / left'], [-1, 'Below / right']], show: p => !!p.label }],
   variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' },
+    { name: 'Block arrow', props: { style: 'block', dx: 0, dy: 12, shaft: 2.4, headSize: 4, color: '#d9704a' }, category: 'Graphical abstract', keywords: 'block arrow fat thick wide filled light in out direction' },
     { name: 'Process arrow with text', category: 'Graphical abstract', keywords: 'process step fabrication flow arrow text', props: { label: 'Step', width: 1.2, headSize: 2.2 } }],
   bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; const m = 0.8 + (p.label ? U.pt2mm(p.labelSize || 7) * 1.5 : 0); return [Math.min(0, p.dx, c[0]) - m, Math.min(0, p.dy, c[1]) - m, Math.max(0, p.dx, c[0]) + m, Math.max(0, p.dy, c[1]) + m]; },
   handles: p => [{ key: 'end', x: p.dx, y: p.dy }],
   draw(p, S) {
     const L = Math.hypot(p.dx, p.dy) || 1, w = U.pt2mm(p.width);
+    if (p.style === 'block') {
+      // straight filled arrow: shaft of width "shaft", head twice as wide
+      const ux = p.dx / L, uy = p.dy / L, nx = -uy, ny = ux, sw = p.shaft / 2, hw = Math.max(sw * 1.9, sw + 0.4), hl = Math.min(L * 0.6, p.headSize * 1.2);
+      const pt = (a, b) => [a * ux + b * nx, a * uy + b * ny], hs = p.head === 'start' || p.head === 'both', he = p.head === 'end' || p.head === 'both', q = [];
+      if (hs) q.push(pt(0, 0), pt(hl, -hw), pt(hl, -sw)); else q.push(pt(0, -sw));
+      if (he) q.push(pt(L - hl, -sw), pt(L - hl, -hw), pt(L, 0), pt(L - hl, hw), pt(L - hl, sw)); else q.push(pt(L, -sw), pt(L, sw));
+      if (hs) q.push(pt(hl, sw), pt(hl, hw)); else q.push(pt(0, sw));
+      return `<path d="M ${q.map(v => n(v[0]) + ' ' + n(v[1])).join(' L ')} Z" fill="${p.color}" ${p.dash ? `fill-opacity="0.6"` : ''}/>`;
+    }
     const c = [p.dx / 2 - p.dy / L * p.bend, p.dy / 2 + p.dx / L * p.bend];
     const hs = p.headSize;
     // shorten the shaft under the heads so the tips stay sharp
@@ -10055,7 +10309,8 @@ C.setTool = tool => {
 function connectClick(id) {
   const tool = S.ui.tool, o = RNBX.getObj(id);
   if (!o) return;
-  if (tool === 'fiber' && o.type !== 'coupler') { RNBX.toast('Fibres connect fibre couplers. Add couplers from Fibre optics.'); return; }
+  const od = RNBX.lib.get(o.type);
+  if (tool === 'fiber' && !(od && od.fiberPort)) { RNBX.toast('Fibres connect fibre couplers, fibre ends and fibre-output lasers. Add them from Fibre optics or Sources.'); return; }
   if (!S.ui.connectFrom) {
     S.ui.connectFrom = id;
     D.$('#connectHint').textContent = tool === 'fiber' ? 'Now click the output coupler' : 'Now click the second object';

@@ -477,7 +477,8 @@ C.setTool = tool => {
 function connectClick(id) {
   const tool = S.ui.tool, o = RNBX.getObj(id);
   if (!o) return;
-  if (tool === 'fiber' && o.type !== 'coupler') { RNBX.toast('Fibres connect fibre couplers. Add couplers from Fibre optics.'); return; }
+  const od = RNBX.lib.get(o.type);
+  if (tool === 'fiber' && !(od && od.fiberPort)) { RNBX.toast('Fibres connect fibre couplers, fibre ends and fibre-output lasers. Add them from Fibre optics or Sources.'); return; }
   if (!S.ui.connectFrom) {
     S.ui.connectFrom = id;
     D.$('#connectHint').textContent = tool === 'fiber' ? 'Now click the output coupler' : 'Now click the second object';

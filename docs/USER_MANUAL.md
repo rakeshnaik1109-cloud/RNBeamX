@@ -71,6 +71,20 @@ photodiodes, a wavefront sensor and a scientific camera; and lab electronics
 (lock-in amplifier, laser-diode driver, temperature controller, photodiode
 amplifier, motion controller, power supply, DAQ). Search the library by name.
 
+### Parts for lab-setup illustrations
+
+| Part | Where | What it does |
+|---|---|---|
+| **Laser source (benchtop, fibre output)** | Sources | A benchtop box with display and knob. With *Output ▸ Through a fibre*, connect it with the Fibre tool to a fibre end or collimator: the light leaves there (diverging as set on the fibre end), and the fibre is drawn in the colour of the light. Without a fibre, or with *Free-space*, it shines from its side. |
+| **Bare fibre end** | Fibre optics | A ferrule with a glowing tip; set the output divergence (fibre NA). |
+| **Benchtop boxes** | Electronics | *Instrument ▸ Looks like ▸ Benchtop box (3D look)*: power supply, spectrometer, controller, with box, display and text colours and an optional knob. *Computer (monitor and tower)* draws a desktop PC. |
+| **Photo camera** | Detectors | *Camera ▸ Looks like ▸ Photo camera*. |
+| **Electromagnet (pole pieces)** | Samples & mechanics | Two coils on a frame with tapered or flat pole pieces; the gap is at the part's position, so a sample placed there sits between the poles. Optional field lines; a Helmholtz coil pair variant. |
+| **Fibre-optic probe head** | Samples & mechanics | An *Optical module* with the excitation and collection paths drawn inside and a focusing nose: the beam focuses the set distance below it. |
+| **Tilted disc look** | Lens, filter | *Drawn as ▸ Tilted disc (3D look)* draws round optics as seen at an angle, for perspective illustrations; filters take any glass colour. The optics are unchanged. |
+| **Block arrow** | Graphical abstract | Wide filled arrows (light in / out). |
+| **Groove fill, see-through cover, nanoflakes** | Nanostructures & films | *Grating ridges ▸ Fill the grooves with*; *Transparent cover / superstrate* (slab opacity); *Tilted nanoflakes / nanosheets* (random standing plates with a lean angle). |
+
 ### Ray bundles and real glass lenses
 
 For imaging figures, light can be drawn as individual rays instead of one beam:

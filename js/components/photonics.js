@@ -123,23 +123,42 @@ const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['
 lib.register({
   type: 'module', name: 'Optical module (beam passes through)', abbr: 'MOD', category: 'Samples & mechanics', autoLabel: false,
   keywords: 'module box instrument black box michelson interferometer ftir monochromator spectrometer unit pass through',
-  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none' },
+  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830 },
   params: [{ key: 'title', label: 'Text in the box', type: 'textarea' },
-    { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator']] },
+    { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator'], ['probe', 'Fibre probe (excitation and collection paths)']] },
+    { key: 'ex', label: 'Excitation colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'em', label: 'Collection colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'snout', label: 'Focusing nose at the exit', type: 'bool' },
+    { key: 'f', label: 'Focus distance below the nose (drawn)', type: 'number', unit: 'mm', min: 0, max: 200, step: 0.5, show: p => p.snout, hint: '0 = the beam passes straight' },
     { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 200, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
     { key: 'color', label: 'Box colour', type: 'color' }],
-  variants: [{ name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
+  variants: [{ name: 'Fibre-optic probe head', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic filter handheld', props: { title: '', inside: 'probe', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
+    { name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
   snap: 'perp', mount: false,
-  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
+  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
   draw(p, S) {
     const L = p.L, Hh = p.H;
-    let s = `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
+    let s = '';
+    if (p.snout) { const sl = Math.min(Hh * 0.35, 5), sw = Hh * 0.3; s += `<rect x="${n(L / 2 - 0.2)}" y="${n(-sw / 2)}" width="${n(sl + 0.2)}" height="${n(sw)}" rx="${n(sw * 0.12)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`; }
+    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
     if (p.inside === 'michelson') {
       const k = Math.min(L, Hh) * 0.2, cx = -L * 0.1, cy = Hh * 0.2;
       s += `<line x1="${n(cx - k * 0.45)}" y1="${n(cy + k * 0.45)}" x2="${n(cx + k * 0.45)}" y2="${n(cy - k * 0.45)}" ${H.stroke(S, 1.6, '#4a7fb5')}/>`;
       s += `<rect x="${n(cx - k * 0.5)}" y="${n(cy - k * 1.45)}" width="${n(k)}" height="${n(k * 0.16)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
       s += `<rect x="${n(cx + k * 1.3)}" y="${n(cy - k * 0.5)}" width="${n(k * 0.16)}" height="${n(k)}" fill="${S.fill('mirror')}" ${H.stroke(S, 0.6)}/>`;
       s += H.arrowGlyph(S, cx + k * 1.38, cy + k * 0.75, k * 0.6, S.ink);
+    }
+    if (p.inside === 'probe') {
+      // two parallel paths along the axis: excitation (y < 0) and collection (y > 0), joined by a dichroic and a mirror near the exit
+      const k = Hh * 0.17, y1 = -Hh * 0.2, y2 = Hh * 0.2, xa = -L / 2 + L * 0.12, xb = L / 2 - L * 0.22, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
+      const band = (y, x0, x1, c, fat) => `<path d="M ${n(x0)} ${n(y - k * fat)} L ${n(x1)} ${n(y - k * fat)} L ${n(x1)} ${n(y + k * fat)} L ${n(x0)} ${n(y + k * fat)} Z" fill="${c}" fill-opacity="0.75"/>`;
+      s += `<path d="M ${n(xa - L * 0.07)} ${n(y1)} L ${n(xa)} ${n(y1 - k)} L ${n(xa)} ${n(y1 + k)} Z" fill="${ce}" fill-opacity="0.75"/>` + band(y1, xa, L / 2, ce, 1);
+      s += `<path d="M ${n(xa - L * 0.07)} ${n(y2)} L ${n(xa)} ${n(y2 - k)} L ${n(xa)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>` + band(y2, xa, xb, cm, 1);
+      s += `<path d="M ${n(xb - k)} ${n(y1)} L ${n(xb + k)} ${n(y1)} L ${n(xb + k)} ${n(y2 + k)} L ${n(xb - k)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>`;
+      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.35)}" ry="${n(k * 1.15)}" fill="${S.shaded ? '#e9f4fb' : '#ffffff'}" ${H.stroke(S, 0.5)}/>`;
+      s += lens(xa + L * 0.02, y1) + lens(xa + L * 0.02, y2);
+      s += H.line(S, xa + L * 0.2, y1 - k, xa + L * 0.2, y1 + k, '', 1.4, U.darken(ce, 0.2)) + H.line(S, xa + L * 0.2, y2 - k, xa + L * 0.2, y2 + k, '', 1.4, '#1d1f23');
+      s += H.line(S, xb - k * 1.2, y1 + k * 1.2, xb + k * 1.2, y1 - k * 1.2, '', 1.3, '#d9dde3') + H.line(S, xb - k * 1.2, y2 + k * 1.2, xb + k * 1.2, y2 - k * 1.2, '', 1.3, '#b05cc8');
     }
     if (p.inside === 'grating') {
       const k = Math.min(L, Hh) * 0.22;
@@ -152,7 +171,11 @@ lib.register({
     }
     return s;
   },
-  optics: p => [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }],
+  optics: (p, obj, doc) => {
+    const out = [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }];
+    if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * ((doc && doc.style.scale) || 10) }); }
+    return out;
+  },
   solid: (p, bh) => [{ kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [0, bh + Math.min(p.H, p.L) * 0.35], mat: { color: p.color, spec: 0.2 } }],
 });
 

@@ -57,7 +57,7 @@ lib.register({
     const end = o => {
       const d = lib.get(o.type);
       const lp = d && d.fiberPort ? d.fiberPort(o.props) : [0, 0];
-      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, [-1, 0]) };
+      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props) : [-1, 0]) };
     };
     const a = end(A), b = end(B);
     const D = Math.max(6, V.dist(a.p, b.p)) * obj.props.bend;
@@ -188,8 +188,10 @@ ann({
 
 ann({
   type: 'arrow', name: 'Arrow / line', keywords: 'arrow line pointer callout curve',
-  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false, label: '', labelSize: 7, labelSide: 1 },
+  defaults: { dx: 18, dy: 0, color: '#222222', width: 0.6, head: 'end', headSize: 1.6, bend: 0, dash: false, label: '', labelSize: 7, labelSide: 1, style: 'line', shaft: 2.4 },
   params: [{ key: 'dx', label: 'Length x', type: 'number', unit: 'mm', step: 0.5 }, { key: 'dy', label: 'Length y', type: 'number', unit: 'mm', step: 0.5 },
+    { key: 'style', label: 'Style', type: 'select', options: [['line', 'Line with arrowhead'], ['block', 'Block arrow (wide, filled)']] },
+    { key: 'shaft', label: 'Block width', type: 'number', unit: 'mm', min: 0.3, max: 40, step: 0.1, show: p => p.style === 'block' },
     { key: 'bend', label: 'Curvature', type: 'number', unit: 'mm', min: -100, max: 100, step: 0.5 },
     { key: 'head', label: 'Arrowheads', type: 'select', options: [['end', 'End'], ['start', 'Start'], ['both', 'Both'], ['none', 'None (line)']] },
     { key: 'headSize', label: 'Head size', type: 'number', unit: 'mm', min: 0.3, max: 10, step: 0.1 },
@@ -199,11 +201,21 @@ ann({
     { key: 'labelSize', label: 'Text size', type: 'number', unit: 'pt', min: 3, max: 40, step: 0.5, show: p => !!p.label },
     { key: 'labelSide', label: 'Text side', type: 'select', options: [[1, 'Above / left'], [-1, 'Below / right']], show: p => !!p.label }],
   variants: [{ name: 'Line', props: { head: 'none' } }, { name: 'Curved arrow', props: { bend: -6 }, category: 'Graphical abstract' },
+    { name: 'Block arrow', props: { style: 'block', dx: 0, dy: 12, shaft: 2.4, headSize: 4, color: '#d9704a' }, category: 'Graphical abstract', keywords: 'block arrow fat thick wide filled light in out direction' },
     { name: 'Process arrow with text', category: 'Graphical abstract', keywords: 'process step fabrication flow arrow text', props: { label: 'Step', width: 1.2, headSize: 2.2 } }],
   bbox: p => { const c = [p.dx / 2 - p.dy / (Math.hypot(p.dx, p.dy) || 1) * p.bend, p.dy / 2 + p.dx / (Math.hypot(p.dx, p.dy) || 1) * p.bend]; const m = 0.8 + (p.label ? U.pt2mm(p.labelSize || 7) * 1.5 : 0); return [Math.min(0, p.dx, c[0]) - m, Math.min(0, p.dy, c[1]) - m, Math.max(0, p.dx, c[0]) + m, Math.max(0, p.dy, c[1]) + m]; },
   handles: p => [{ key: 'end', x: p.dx, y: p.dy }],
   draw(p, S) {
     const L = Math.hypot(p.dx, p.dy) || 1, w = U.pt2mm(p.width);
+    if (p.style === 'block') {
+      // straight filled arrow: shaft of width "shaft", head twice as wide
+      const ux = p.dx / L, uy = p.dy / L, nx = -uy, ny = ux, sw = p.shaft / 2, hw = Math.max(sw * 1.9, sw + 0.4), hl = Math.min(L * 0.6, p.headSize * 1.2);
+      const pt = (a, b) => [a * ux + b * nx, a * uy + b * ny], hs = p.head === 'start' || p.head === 'both', he = p.head === 'end' || p.head === 'both', q = [];
+      if (hs) q.push(pt(0, 0), pt(hl, -hw), pt(hl, -sw)); else q.push(pt(0, -sw));
+      if (he) q.push(pt(L - hl, -sw), pt(L - hl, -hw), pt(L, 0), pt(L - hl, hw), pt(L - hl, sw)); else q.push(pt(L, -sw), pt(L, sw));
+      if (hs) q.push(pt(hl, sw), pt(hl, hw)); else q.push(pt(0, sw));
+      return `<path d="M ${q.map(v => n(v[0]) + ' ' + n(v[1])).join(' L ')} Z" fill="${p.color}" ${p.dash ? `fill-opacity="0.6"` : ''}/>`;
+    }
     const c = [p.dx / 2 - p.dy / L * p.bend, p.dy / 2 + p.dx / L * p.bend];
     const hs = p.headSize;
     // shorten the shaft under the heads so the tips stay sharp
