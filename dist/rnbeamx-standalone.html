@@ -268,10 +268,6 @@ a.icon-btn { text-decoration: none; }
 .hud-group label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 0 6px; }
 .hud-group input[type=range] { width: 96px; }
 
-.empty-state { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 22px 24px; text-align: center; }
-.empty-state h2 { margin: 0 0 8px; font-size: 18px; }
-.empty-state p { margin: 0 0 16px; color: var(--muted); line-height: 1.55; }
-.empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .connect-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #fff; padding: 6px 12px; border-radius: 99px; font-weight: 600; font-size: 12.5px; box-shadow: var(--shadow-lg); }
 
 /* ---------- timeline ---------- */
@@ -449,14 +445,6 @@ a.icon-btn { text-decoration: none; }
       <div class="hud-group" id="view3dHud" hidden>
         <label>Yaw <input type="range" id="hudYaw" min="-180" max="180" step="1"/></label>
         <label>Tilt <input type="range" id="hudPitch" min="8" max="90" step="1"/></label>
-      </div>
-    </div>
-    <div class="empty-state" id="emptyState">
-      <h2>Design your optical setup</h2>
-      <p>Drag a <b>laser</b> from the library, then drop mirrors, lenses and splitters onto its beam. They snap to the beam and turn to the right angle, and the light is traced automatically.</p>
-      <div class="empty-actions">
-        <button class="btn primary" data-empty="template">Start from a template</button>
-        <button class="btn" data-empty="laser">Add a laser</button>
       </div>
     </div>
     <div class="connect-hint" id="connectHint" hidden></div>
@@ -10103,7 +10091,6 @@ C.render = () => {
   major.setAttribute('width', g * 4); major.setAttribute('height', g * 4);
   major.querySelector('rect').setAttribute('width', g * 4); major.querySelector('rect').setAttribute('height', g * 4);
   major.querySelector('path').setAttribute('d', `M ${g * 4} 0 L 0 0 0 ${g * 4}`);
-  D.$('#emptyState').hidden = doc.objects.length > 0;
   const nb = C.trace.segments.length;
   D.$('#stBeams').textContent = nb ? `${nb} beam segment${nb === 1 ? '' : 's'}${C.trace.truncated ? ' (limit reached)' : ''}` : '';
   drawOverlay();
@@ -12452,10 +12439,6 @@ M.init = () => {
   };
   const hudSet = (k, inp) => inp.addEventListener('input', () => { RNBX.history.checkpoint('hud' + k); S.doc.view3d[k] = +inp.value; RNBX.anim.touch([]); RNBX.changed(); RNBX.inspector.sync(); });
   hudSet('yaw', D.$('#hudYaw')); hudSet('pitch', D.$('#hudPitch'));
-  document.querySelectorAll('[data-empty]').forEach(b => b.onclick = () => {
-    if (b.dataset.empty === 'template') RNBX.dialogs.templates();
-    else RNBX.canvas.placeNew({ type: 'laser' }, [S.doc.page.width * 0.18, S.doc.page.height * 0.5], false);
-  });
   RNBX.on('history', M.syncTools);
   RNBX.on('document', M.syncTools);
   RNBX.on('contextmenu', e => {

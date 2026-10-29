@@ -79,7 +79,6 @@ C.render = () => {
   major.setAttribute('width', g * 4); major.setAttribute('height', g * 4);
   major.querySelector('rect').setAttribute('width', g * 4); major.querySelector('rect').setAttribute('height', g * 4);
   major.querySelector('path').setAttribute('d', `M ${g * 4} 0 L 0 0 0 ${g * 4}`);
-  D.$('#emptyState').hidden = doc.objects.length > 0;
   const nb = C.trace.segments.length;
   D.$('#stBeams').textContent = nb ? `${nb} beam segment${nb === 1 ? '' : 's'}${C.trace.truncated ? ' (limit reached)' : ''}` : '';
   drawOverlay();

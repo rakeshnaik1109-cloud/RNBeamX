@@ -177,10 +177,6 @@ M.init = () => {
   };
   const hudSet = (k, inp) => inp.addEventListener('input', () => { RNBX.history.checkpoint('hud' + k); S.doc.view3d[k] = +inp.value; RNBX.anim.touch([]); RNBX.changed(); RNBX.inspector.sync(); });
   hudSet('yaw', D.$('#hudYaw')); hudSet('pitch', D.$('#hudPitch'));
-  document.querySelectorAll('[data-empty]').forEach(b => b.onclick = () => {
-    if (b.dataset.empty === 'template') RNBX.dialogs.templates();
-    else RNBX.canvas.placeNew({ type: 'laser' }, [S.doc.page.width * 0.18, S.doc.page.height * 0.5], false);
-  });
   RNBX.on('history', M.syncTools);
   RNBX.on('document', M.syncTools);
   RNBX.on('contextmenu', e => {

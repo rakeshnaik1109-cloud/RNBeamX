@@ -33,7 +33,8 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('every optical template traces beams to at least one detector', optical.every(t => t.hits > 0), optical.filter(t => !t.hits).map(t => t.id).join(','));
   // building a setup by clicking library tiles
   await page.evaluate(() => RNBX.setDocument(RNBX.newDocument('nature-2')));
-  await page.click('[data-empty="laser"]');
+  H.check('a new figure starts plain: no card in the middle of the canvas', await page.evaluate(() => !document.querySelector('#emptyState, .empty-state')));
+  await page.evaluate(() => RNBX.canvas.placeNew({ type: 'laser' }, [RNBX.state.doc.page.width * 0.18, RNBX.state.doc.page.height * 0.5], false));
   for (const name of ['Mirror', 'Lens', 'Photodiode']) { await page.locator('.tile', { hasText: new RegExp('^' + name) }).first().click(); await page.waitForTimeout(60); }
   const built = await page.evaluate(() => ({ types: RNBX.state.doc.objects.map(o => o.type), hit: Object.keys(RNBX.canvas.trace.hits).map(k => RNBX.getObj(k).type) }));
   H.check('clicking Laser, Mirror, Lens, Photodiode builds a working setup', built.hit.includes('pd'), JSON.stringify(built));
