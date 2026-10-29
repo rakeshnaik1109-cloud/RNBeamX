@@ -25,6 +25,15 @@ const MATS = {
   post: { color: '#c8ccd2', spec: 0.7 },
 };
 const mat = m => typeof m === 'object' && m ? Object.assign({ spec: 0.4 }, m) : (MATS[m] || MATS.body);
+/* materials that a part's "Body colour" replaces (housings and mounts, not glass or mirrors) */
+const BODY_MATS = new Set(['body', 'dark', 'anod', 'black', 'laser', 'laserhead']);
+/* how mounted parts stand on the table in 3D */
+R3.MOUNT_STYLES = {
+  lab: 'Post holder, post and slotted base',
+  simple: 'Simple post and round foot',
+  pedestal: 'Pedestal (solid pillar)',
+  none: 'No post (floating)',
+};
 
 const LIGHT = (() => { const l = [-0.45, 0.35, 0.82], k = Math.hypot(...l); return l.map(v => v / k); })();
 
@@ -98,6 +107,54 @@ function extrude(pts, z0, z1) {
 }
 const boxFaces = (x, y, z) => extrude([[x[0], y[0]], [x[1], y[0]], [x[1], y[1]], [x[0], y[1]]], z[0], z[1]);
 
+/* faces of a closed convex mesh with outward normals */
+function orient(faces, m, out, extra) {
+  const all = faces.flat(), cen = [0, 1, 2].map(i => all.reduce((a, q) => a + q[i], 0) / all.length);
+  faces.forEach(f => {
+    let nrm = newell(f);
+    const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
+    if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
+    out.push(Object.assign({ pts: f, n: nrm, m, mount: true }, extra || {}));
+  });
+}
+
+/* the mount under a part: post holder + post + slotted base (like lab
+   optomechanics), a simple post on a round foot, or a solid pedestal.
+   c = foot point on the table, top = height the post reaches, ang = part rotation */
+function mountFaces(style, c, top, ang, pr, mcol, out) {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const L = (lx, ly, z) => [c[0] + lx * ca - ly * sa, c[1] + lx * sa + ly * ca, z];
+  const box = (x, y, z) => extrude([[x[0], y[0]], [x[1], y[0]], [x[1], y[1]], [x[0], y[1]]], 0, 1).map(f => f.map(q => L(q[0], q[1], q[2] ? z[1] : z[0])));
+  const anod = { color: mcol, spec: 0.35 }, steel = MATS.post, slot = { color: U.darken(mcol, 0.55), spec: 0.1 };
+  if (style === 'pedestal') {
+    if (top > 0.3) orient(vcyl(c[0], c[1], pr * 1.35, 0.5, top, 18), mat(anod), out);
+    orient(vcyl(c[0], c[1], pr * 2.4, 0, 0.5, 20), mat(anod), out);
+    return;
+  }
+  if (style !== 'lab' || top < pr * 4) {
+    if (top > 0.3) orient(vcyl(c[0], c[1], pr, 0.6, top, 12), mat('post'), out);
+    orient(vcyl(c[0], c[1], pr * 2.1, 0, 0.6, 14), mat(anod), out);
+    return;
+  }
+  // slotted base plate, long across the beam, with a cap screw in each slot
+  const bt = Math.max(0.35, pr * 0.45);
+  orient(box([-pr * 1.8, pr * 1.8], [-pr * 3.6, pr * 3.6], [0, bt]), mat(anod), out);
+  [-1, 1].forEach(sg => {
+    orient(box([-pr * 0.38, pr * 0.38], sg > 0 ? [pr * 1.9, pr * 3.1] : [-pr * 3.1, -pr * 1.9], [bt, bt + 0.02]), mat(slot), out, { decal: true });
+    const sc = L(0, sg * pr * 2.6, 0);
+    orient(vcyl(sc[0], sc[1], pr * 0.32, bt, bt + pr * 0.3, 10), mat(anod), out);
+  });
+  // post holder: a wide dark tube with a thumbscrew; the steel post comes out of it
+  const hz = Math.max(bt + pr * 2, Math.min(top * 0.55, top - pr * 1.6));
+  orient(vcyl(c[0], c[1], pr * 1.45, bt, hz, 20), mat(anod), out);
+  orient(vcyl(c[0], c[1], pr * 1.6, hz - pr * 0.35, hz, 20), mat(anod), out);
+  const ks = L(0, pr * 1.45 + pr * 0.45, hz - pr * 1.1);
+  orient(diskAxis(ks, [-sa, ca, 0], pr * 0.5, pr * 0.9, 12), mat({ color: U.darken(mcol, 0.2), spec: 0.5 }), out);
+  orient(vcyl(c[0], c[1], pr, hz, top, 16), mat(steel), out);
+  // a collar near the top of the post
+  if (top - hz > pr * 2.5) orient(vcyl(c[0], c[1], pr * 1.12, top - pr * 1.1, top - pr * 0.75, 16), mat(steel), out);
+}
+
 function newell(pts) {
   let nx = 0, ny = 0, nz = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -117,7 +174,19 @@ function fallbackSolid(def, p, bh) {
 /* world-space faces for one object */
 R3.objectFaces = (obj, doc) => {
   const def = lib.get(obj.type), bh = doc.view3d.beamHeight || 6, s = obj.scale || 1;
-  const parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
+  let parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
+  // lab mounts: plate mounts become kinematic mounts with two adjuster knobs at the back
+  const mstyle = obj.post && obj.post !== 'auto' ? obj.post : (doc.view3d.mountStyle || 'lab');
+  if (mstyle === 'lab' && parts.some(q => q.kin)) {
+    parts = parts.slice();
+    parts.filter(q => q.kin).forEach(q => {
+      const ym = (q.y[1] - q.y[0]) / 2, zm = (q.z[1] - q.z[0]) / 2, zc0 = (q.z[0] + q.z[1]) / 2, kr = Math.max(0.35, ym * 0.13);
+      [[ym * 0.62, zm * 0.62], [-ym * 0.62, -zm * 0.62]].forEach(([y, z]) => {
+        parts.push({ kind: 'cyl', x: [q.x[1], q.x[1] + ym * 0.35], r: [kr * 0.55, kr * 0.55], cy: y, cz: zc0 + z, mat: 'metal' });
+        parts.push({ kind: 'cyl', x: [q.x[1] + ym * 0.35, q.x[1] + ym * 0.6], r: [kr, kr], cy: y, cz: zc0 + z, mat: 'black' });
+      });
+    });
+  }
   const out = [];
   const zc = bh + (obj.z || 0);
   const vert = RNBX.isVertical(obj), dir = obj.axis === 'down' ? -1 : 1;
@@ -126,6 +195,13 @@ R3.objectFaces = (obj, doc) => {
   const W = vert
     ? (p) => { const w = U.toWorld(obj, [p[2] - bh, p[1]]); return [w[0], w[1], zc + p[0] * s * dir]; }
     : (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
+  // "Body colour": two-tone housings keep a darker trim in the same colour
+  const light = obj.tint && parts.some(q => q.mat === 'body' || q.mat === 'laserhead');
+  const tinted = part => {
+    const m0 = mat(part.mat);
+    if (!obj.tint || !BODY_MATS.has(part.mat)) return m0;
+    return Object.assign({}, m0, { color: light && !['body', 'laserhead'].includes(part.mat) ? U.darken(obj.tint, 0.45) : obj.tint });
+  };
   let r0max = 0;
   for (const part of parts) {
     let faces;
@@ -136,34 +212,29 @@ R3.objectFaces = (obj, doc) => {
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }
+    // a decal is a skin on the body: drop its cut ends, which lie inside the body
+    if (part.decal && part.kind === 'cyl') faces = faces.slice(2);
+    else if (part.decal && (!part.kind || part.kind === 'box')) faces = faces.filter((f, i) => i !== 0 && i !== 3 && i !== 5);
     const wf = faces.map(f => f.map(W));
     const cen = [0, 1, 2].map(i => wf.reduce((a, f) => a + f.reduce((b, q) => b + q[i], 0) / f.length, 0) / wf.length);
     for (const f of wf) {
       let nrm = newell(f);
       const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
       if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
-      out.push({ pts: f, n: nrm, m: mat(part.mat), part, decal: !!part.decal });
+      out.push({ pts: f, n: nrm, m: tinted(part), part, decal: !!part.decal });
     }
   }
   void r0max;
-  // post + base for mounted optics (a side rod for optics lying flat in a tower)
-  if (def.mount && !def.noPost && doc.view3d.posts !== false) {
+  // post + base: mounted optics follow the figure's mount style; any part can choose its own
+  const v3 = doc.view3d, choice = obj.post && obj.post !== 'auto' ? obj.post : null;
+  const style = choice || (def.mount && !def.noPost && v3.posts !== false ? (v3.mountStyle || 'lab') : 'none');
+  if (style !== 'none' && !(def.noPost && !choice)) {
     let zmin = Infinity, rad = 0;
     out.forEach(f => f.pts.forEach(q => { zmin = Math.min(zmin, q[2]); rad = Math.max(rad, Math.hypot(q[0] - obj.x, q[1] - obj.y)); }));
-    const pr = (def.postR || 0.6) * s;
+    const pr = (def.postR || 0.8) * s;
     const c = vert ? U.toWorld(obj, [0, rad + pr + 0.3]) : U.toWorld(obj, [0, 0]);
     const top = vert ? zc + 0.5 : Math.max(0, zmin - 0.1);
-    const add = (faces, m) => {
-      const cen = [c[0], c[1], top / 2];
-      faces.forEach(f => {
-        let nrm = newell(f);
-        const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
-        if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
-        out.push({ pts: f, n: nrm, m: mat(m) });
-      });
-    };
-    if (top > 0.3) add(vcyl(c[0], c[1], pr, 0.6, top, 12), 'post');
-    add(vcyl(c[0], c[1], pr * 2.1, 0, 0.6, 14), 'anod');
+    mountFaces(vert && style === 'lab' ? 'simple' : style, c, top, U.rad(obj.rot || 0), pr, obj.mountColor || v3.mountColor || '#2a2e34', out);
   }
   return out;
 };
@@ -272,7 +343,9 @@ R3.scene = (doc, trace, S, opt = {}) => {
     let svg = '';
     trans.filter(q => !q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 0.55); });
     // decals (stripes, bands) sit on a body's surface, so they go after it
-    opaque.sort((a, b) => (a.f.decal - b.f.decal) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
+    // mounts stand under their part, so they are painted first
+    const rank = f => (f.mount ? 0 : 2) + (f.decal ? 1 : 0);
+    opaque.sort((a, b) => (rank(a.f) - rank(b.f)) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
     trans.filter(q => q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 1); });
     const op3 = obj.opacity != null && obj.opacity < 1 ? obj.opacity : 1;
     if (op3 <= 0.001) continue;

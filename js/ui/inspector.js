@@ -215,6 +215,21 @@ const fieldSetter = (objs, path) => (key, v, rebuild) => {
   if (rebuild) setTimeout(Ins.build, 0);
 };
 
+/* ---------- colour & mount: body colour (2D and 3D), mount colour and post (3D) ---------- */
+const lookSection = objs => {
+  const o = objs[0], set = fieldSetter(objs, '');
+  return sec('Colour & mount',
+    el('div', { class: 'grid2' },
+      control({ key: 'tint', label: 'Body colour', type: 'color', allowEmpty: true }, k => o[k] || '', set),
+      control({ key: 'mountColor', label: 'Mount colour (3D)', type: 'color', allowEmpty: true }, k => o[k] || '', set)),
+    control({ key: 'post', label: 'Post in 3D', type: 'select', options: [['auto', 'Automatic (figure setting)']].concat(Object.entries(RNBX.render3d.MOUNT_STYLES)) }, k => o[k] || 'auto', set),
+    el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px', marginBottom: '10px' } },
+      ...COLOUR_PRESETS.map(([name, c]) => el('button', { class: 'swatch-btn', type: 'button', title: name, style: { background: c }, onclick: () => set('tint', c, true) })),
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Default', onclick: () => set('tint', '', true) })));
+};
+const COLOUR_PRESETS = [['Black anodised', '#26292e'], ['Graphite', '#4a5058'], ['Silver', '#c4c9cf'], ['White', '#f2f3f5'], ['Blue anodised', '#2f5f9e'],
+  ['Red anodised', '#b8343a'], ['Gold', '#c9a443'], ['Green', '#2f8a5b'], ['Orange', '#e07b2e'], ['Purple', '#6b4fa8']];
+
 /* ---------- lens focus (drawn mm, along the lens's own +x axis) ----------
    real lenses: paraxial y–nu trace through the designed surfaces at 587.6 nm */
 function lensFocus(obj, lam = 587.56) {
@@ -495,6 +510,7 @@ function objectPanel(obj) {
       control({ key: 'z', label: 'Height z', type: 'number', unit: 'mm', step: 0.5, hint: 'above the beam plane' }, k => obj[k] || 0, tset),
       lib.canVertical(obj.type) ? control({ key: 'axis', label: 'Optical axis', type: 'select', options: [['h', 'In table plane'], ['up', 'Vertical, facing up'], ['down', 'Vertical, facing down']] }, k => obj[k] || 'h', (k, v) => tset(k, v, true)) : el('span'))]),
     control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset)));
+    if (!def.annotation && !def.special) root.push(lookSection([obj]));
   }
   const keys = (S.doc.animation.tracks[obj.id] || []).length;
   root.push(sec('Animation',
@@ -525,6 +541,8 @@ function multiPanel(objs) {
     const params = def.params.filter(p => (!p.show || p.show(objs[0].props)) && p.type !== 'image');
     if (params.length) root.push(sec('Shared parameters (' + def.name + ')', ...params.map(p => control(p, k => objs[0].props[k], set))));
   }
+  const parts = objs.filter(o => { const d = lib.get(o.type); return d && !d.connection && !d.annotation && !d.special; });
+  if (parts.length > 1) root.push(lookSection(parts));
   root.push(el('div', { class: 'sec' }, el('div', { class: 'row', style: { marginBottom: '12px' } },
     el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Keyframe', onclick: () => { RNBX.anim.addKey(objs.map(o => o.id)); RNBX.timeline.show(); } }),
     el('button', { class: 'btn small', type: 'button', html: D.icon('copy', 14) + ' Duplicate', onclick: () => RNBX.project.duplicate() }),
@@ -636,6 +654,9 @@ function docPanel() {
         control({ key: 'table', label: 'Optical table', type: 'bool' }, k => v3[k], vset),
         control({ key: 'holes', label: 'Tapped holes', type: 'bool' }, k => v3[k], vset)),
       el('div', { class: 'grid2' },
+        control({ key: 'mountStyle', label: 'Mount style', type: 'select', options: Object.entries(RNBX.render3d.MOUNT_STYLES).filter(([id]) => id !== 'none') }, k => v3[k] || 'lab', vset),
+        control({ key: 'mountColor', label: 'Mount colour', type: 'color' }, k => v3[k] || '#2a2e34', vset)),
+      el('div', { class: 'grid2' },
         control({ key: 'posts', label: 'Posts & bases', type: 'bool' }, k => v3[k], vset),
         control({ key: 'shadow', label: 'Shadows', type: 'bool' }, k => v3[k], vset)),
       el('div', { class: 'grid2' },
@@ -644,11 +665,27 @@ function docPanel() {
         control({ key: 'tableColor', label: 'Table colour', type: 'color' }, k => v3[k],
           (k, v) => { const f = RNBX.render3d.TABLE_FINISHES[v3.tableFinish]; RNBX.history.checkpoint('v3tableColor'); v3.tableColor = v; if (!f || f.color.toLowerCase() !== String(v).toLowerCase()) { if (!(f && f.brushed)) v3.tableFinish = 'custom'; } RNBX.changed(); }))));
   }
+  if (st.mode === '3d') root.push(sec('Photo look', el('div', { class: 'note', text: 'One click: a black optical table, a higher beam on post holders and slotted bases, a dark studio background and soft shadows, like a product photo.' }),
+    el('div', { class: 'row', style: { marginBottom: '12px' } }, el('button', { class: 'btn small', type: 'button', text: 'Apply photo look', onclick: () => Ins.photoLook() }))));
   root.push(sec('Publishing tools', el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '12px' } },
     el('button', { class: 'btn small', type: 'button', text: 'Caption helper', onclick: () => RNBX.dialogs.caption() }),
     el('button', { class: 'btn small', type: 'button', text: 'Journal check', onclick: () => RNBX.dialogs.check() }))));
   return root;
 }
+
+/* the look of a lab product photo: dark gradient backdrop, black table, lab mounts */
+Ins.photoLook = () => {
+  const doc = S.doc;
+  RNBX.history.checkpoint();
+  Object.assign(doc.page, { background: 'gradient', bg: '#5b5f66', bg2: '#0e0f11' });
+  Object.assign(doc.view3d, { table: true, holes: true, posts: true, shadow: true, tableFinish: 'black', tableColor: '#1f2226', mountStyle: 'lab', mountColor: '#1f2226' });
+  doc.view3d.beamHeight = Math.max(doc.view3d.beamHeight || 6, 12);
+  if (doc.view3d.pitch > 45 || doc.view3d.pitch < 20) doc.view3d.pitch = 32;
+  doc.style.beamGlow = true;
+  RNBX.changed();
+  setTimeout(Ins.build, 0);
+  RNBX.toast('Photo look applied. Ctrl+Z to undo.');
+};
 
 Ins.build = () => {
   const host = D.$('#inspector');

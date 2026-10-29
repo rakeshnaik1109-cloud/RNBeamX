@@ -118,6 +118,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .color-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 6px; align-items: center; }
 input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); border-radius: 7px; padding: 2px; background: var(--panel); cursor: pointer; }
 .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); display: inline-block; flex: none; }
+.swatch-btn { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(0,0,0,.2); padding: 0; cursor: pointer; }
+.swatch-btn:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- menus ---------- */
 .menu { position: fixed; z-index: 60; min-width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 5px; }
@@ -750,8 +752,9 @@ RNBX.defaultStyle = () => ({
 
 RNBX.defaultView3d = () => ({
   yaw: -28, pitch: 34, zoom: 1, panX: 0, panY: 0,
-  beamHeight: 6, table: true, holes: true, posts: true,
+  beamHeight: 10, table: true, holes: true, posts: true,
   tableColor: '#2c3036', tableFinish: 'black', shadow: true,
+  mountStyle: 'lab', mountColor: '#2a2e34',
 });
 
 RNBX.newDocument = (presetId = 'nature-2') => {
@@ -2580,11 +2583,123 @@ function rays(p, lambdas, o = [0, 0]) {
   });
 }
 
-/* ---------- laser ---------- */
+/* ---------- laser ----------
+   One part, several bodies: a lab laser head, a He–Ne tube on
+   cradles, a diode module in a finned heat sink, an ultrafast
+   oscillator enclosure, a fibre laser, a QCL on a heat sink and a
+   tunable laser with a tuning knob. "Automatic" picks one from the
+   wavelength, text and size, so older figures get a fitting body. */
+const LASER_BODIES = [['auto', 'Automatic (from wavelength and text)'], ['head', 'Laser head (box)'], ['tube', 'He–Ne tube on cradles'], ['diode', 'Diode module with heat sink'],
+  ['ultrafast', 'Ultrafast oscillator enclosure'], ['fibre', 'Fibre laser (box + collimator)'], ['qcl', 'QCL on a finned heat sink'], ['tunable', 'Tunable laser (with knob)']];
+const laserBody = p => {
+  if (p.body && p.body !== 'auto') return p.body;
+  const t = String(p.text || '');
+  if (/he.?ne/i.test(t) || Math.abs(p.lambda - 632.8) < 0.5 || Math.abs(p.lambda - 543.5) < 0.5) return 'tube';
+  if (/qcl/i.test(t) || p.lambda >= 3000) return 'qcl';
+  if (/ti:?sa|^fs$|^ps$|femto|ultrafast/i.test(t) || p.pulsed) return 'ultrafast';
+  if (/fib/i.test(t)) return 'fibre';
+  if (/tun/i.test(t)) return 'tunable';
+  if (p.L <= 9) return 'diode';
+  return 'head';
+};
+lib.laserBody = laserBody;
+function laserSolid(p, bh) {
+  const L = p.L, h = p.H, x0 = -L / 2, x1 = L / 2, col = { color: lib.colorOf(null, p.lambda, p.color) };
+  const stripe = (xa, w, y, z) => ({ kind: 'box', x: [xa, xa + w], y: [-y - 0.02, y + 0.02], z: [0.01, z + 0.02], mat: col, decal: true });
+  const aperture = (x, r = 1.1) => ({ kind: 'cyl', x: [x, x1 + 0.9], r: [r, r], mat: 'metal' });
+  // with a high beam the body sits on a riser block and a base plate, as on a real table
+  const riser = (zb, w) => zb < 1 ? [] : [
+    { kind: 'box', x: [x0 + L * 0.15, x1 - L * 0.15], y: [-w * 0.7, w * 0.7], z: [0.45, zb], mat: 'anod' },
+    { kind: 'box', x: [x0 - 0.3, x1 + 0.3], y: [-w - 0.8, w + 0.8], z: [0, 0.45], mat: 'anod' }];
+  switch (laserBody(p)) {
+    case 'tube': {   // cylindrical tube held in two V-cradles
+      const R = h / 2;
+      return [
+        { kind: 'cyl', x: [x0, x1 - 0.5], r: [R, R], mat: 'laserhead' },
+        { kind: 'cyl', x: [x0 - 0.5, x0], r: [R * 0.9, R * 0.9], mat: 'black' },
+        { kind: 'cyl', x: [x1 - 0.5, x1], r: [R * 0.92, R * 0.75], mat: 'black' },
+        { kind: 'cyl', x: [x1 - 3.4, x1 - 2.6], r: [R + 0.03, R + 0.03], mat: col, decal: true },
+        { kind: 'cyl', x: [x0 - 1.8, x0 - 0.5], r: [0.35, 0.35], mat: 'black' },
+        ...[-0.3, 0.3].map(f => ({ kind: 'box', x: [L * f - 0.7, L * f + 0.7], y: [-R * 0.95, R * 0.95], z: [0, Math.max(0.4, bh - R * 0.55)], mat: 'anod' })),
+        aperture(x1, 0.7),
+      ];
+    }
+    case 'diode': {  // barrel in a finned heat-sink block on a pillar
+      const bx = x1 - L * 0.3, hb = h * 0.75, out = [
+        { kind: 'box', x: [x0, bx], y: [-hb, hb], z: [bh - hb, bh + hb], mat: 'dark' },
+        { kind: 'box', x: [x0 + 0.4, bx - 0.4], y: [-hb * 0.55, hb * 0.55], z: [0, bh - hb], mat: 'anod' },
+        { kind: 'box', x: [x0 - 0.3, bx + 0.3], y: [-hb * 1.3, hb * 1.3], z: [0, 0.4], mat: 'anod' },
+        { kind: 'cyl', x: [bx, x1], r: [h * 0.36, h * 0.36], mat: 'metal' },
+        { kind: 'cyl', x: [x1 - 0.6, x1], r: [h * 0.4, h * 0.4], mat: 'black' },
+        { kind: 'cyl', x: [x0 - 1.4, x0], r: [0.3, 0.3], mat: 'black' },
+      ];
+      for (let i = 0; i < 5; i++) { const y = -hb + 0.15 + i * (2 * hb - 0.3) / 4; out.push({ kind: 'box', x: [x0, bx], y: [y - 0.13, y + 0.13], z: [bh + hb, bh + hb + h * 0.4], mat: 'dark' }); }
+      out.push({ kind: 'box', x: [bx - 1, bx - 0.4], y: [-hb - 0.02, hb + 0.02], z: [bh - hb, bh + hb + 0.02], mat: col, decal: true });
+      return out;
+    }
+    case 'ultrafast': {   // wide, low enclosure with a lid and handles
+      const w = Math.max(h / 2, L * 0.32), top = bh + h * 0.4, zb = Math.max(0, bh - h);
+      return [...riser(zb, w),
+        { kind: 'box', x: [x0, x1], y: [-w, w], z: [zb, top], mat: 'laserhead' },
+        { kind: 'box', x: [x0 - 0.15, x1 + 0.15], y: [-w - 0.15, w + 0.15], z: [zb, zb + 0.9], mat: 'laser' },
+        { kind: 'box', x: [x0 + 0.5, x1 - 0.5], y: [-w + 0.5, w - 0.5], z: [top, top + 0.35], mat: 'body' },
+        ...[-1, 1].map(sg => ({ kind: 'box', x: [x0 + L * 0.2, x1 - L * 0.2], y: [sg * w * 0.55 - 0.25, sg * w * 0.55 + 0.25], z: [top + 0.35, top + 0.95], mat: 'laser' })),
+        stripe(x1 - Math.min(4, L * 0.2), Math.min(1.2, L * 0.06), w, top),
+        { kind: 'box', x: [x1 - 0.3, x1], y: [-1.4, 1.4], z: [bh - 1.4, bh + 1.4], mat: 'black' },
+        aperture(x1, 0.9),
+      ];
+    }
+    case 'fibre': {   // flat box, armoured fibre to a collimator at the output
+      const top = bh + h * 0.2, w = h * 0.75, zb = Math.max(0, bh - h * 0.9);
+      return [...riser(zb, w),
+        { kind: 'box', x: [x0, x1 - 3], y: [-w, w], z: [zb, top], mat: 'laserhead' },
+        { kind: 'box', x: [x0 + 0.6, x1 - 3.6], y: [-w * 0.5, w * 0.5], z: [top, top + 0.06], mat: 'laser', decal: true },
+        stripe(x1 - 4.4, 0.8, w, top),
+        { kind: 'cyl', x: [x1 - 3, x1 - 1.2], r: [0.35, 0.35], mat: { color: '#e8b739', spec: 0.5 } },
+        { kind: 'box', x: [x1 - 1.6, x1 - 0.4], y: [-0.9, 0.9], z: [0, bh - 0.9], mat: 'anod' },
+        { kind: 'cyl', x: [x1 - 1.4, x1], r: [0.9, 0.9], mat: 'metal' },
+        aperture(x1, 0.6),
+      ];
+    }
+    case 'qcl': {   // small dark housing with a window, on a finned heat sink
+      const w = h * 0.6, fz = bh - h * 0.5, zf = Math.max(0, fz - 0.4 - 2), out = [...riser(zf, w),
+        { kind: 'box', x: [x0, x1], y: [-w, w], z: [fz, bh + h * 0.45], mat: 'laser' },
+        { kind: 'box', x: [x0 - 0.3, x1 + 0.1], y: [-w - 0.3, w + 0.3], z: [fz - 0.4, fz], mat: 'metal' },
+        { kind: 'cyl', x: [x1, x1 + 0.5], r: [1.2, 1.2], mat: 'gold' },
+        stripe(x1 - Math.min(2.6, L * 0.25), 0.8, w, bh + h * 0.45),
+      ];
+      for (let i = 0; i < 6; i++) { const x = x0 + 0.2 + i * (L - 0.4) / 5; out.push({ kind: 'box', x: [x - 0.18, x + 0.18], y: [-w - 0.3, w + 0.3], z: [zf, fz - 0.4], mat: 'metal' }); }
+      out.push(aperture(x1 + 0.5, 0.8));
+      return out;
+    }
+    case 'tunable': {   // laser head with a display and a tuning knob on top
+      const top = bh + h * 0.55, w = h / 2, zb = Math.max(0, bh - h * 0.9);
+      return [...riser(zb, w),
+        { kind: 'box', x: [x0, x1], y: [-w, w], z: [zb, top], mat: 'laserhead' },
+        { kind: 'box', x: [x0 + 0.8, x0 + L * 0.5], y: [-w * 0.6, w * 0.6], z: [top, top + 0.05], mat: { color: '#1f2a37', spec: 0.9 }, decal: true },
+        { kind: 'vcyl', cx: x0 + L * 0.7, cy: 0, r: Math.min(1.5, w * 0.62), z: [top, top + 1.8], mat: 'black' },
+        stripe(x1 - Math.min(3.2, L * 0.22), Math.min(1.1, L * 0.08), w, top),
+        aperture(x1),
+      ];
+    }
+    default: {   // lab laser head: body on a darker foot, front bezel, output aperture
+      const top = bh + h * 0.55, w = h / 2, zb = Math.max(0, bh - h * 0.9);
+      return [...riser(zb, w),
+        { kind: 'box', x: [x0, x1 - 0.4], y: [-w, w], z: [zb + 0.5, top], mat: 'laserhead' },
+        { kind: 'box', x: [x0 - 0.3, x1 + 0.1], y: [-w - 0.3, w + 0.3], z: [zb, zb + 0.5], mat: 'laser' },
+        { kind: 'box', x: [x1 - 0.4, x1], y: [-w, w], z: [zb + 0.5, top], mat: 'laser' },
+        { kind: 'box', x: [x0 + 0.6, x0 + Math.min(4, L * 0.3)], y: [-w * 0.5, w * 0.5], z: [top, top + 0.04], mat: 'laser', decal: true },
+        stripe(x1 - Math.min(3.2, L * 0.22), Math.min(1.1, L * 0.08), w, top),
+        aperture(x1),
+      ];
+    }
+  }
+}
+
 lib.register({
   type: 'laser', name: 'Laser (CW)', abbr: 'Laser', category: 'Sources', labelTemplate: 'Laser {lambda} nm',
   keywords: 'laser source cw diode helium neon nd yag',
-  defaults: { lambda: 532, extra: '', power: 10, beamWidth: 0.7, divergence: 0, pol: 'H', polAngle: 0, pulsed: false, color: '', L: 16, H: 6, text: '' },
+  defaults: { lambda: 532, extra: '', power: 10, beamWidth: 0.7, divergence: 0, pol: 'H', polAngle: 0, pulsed: false, color: '', L: 16, H: 6, text: '', body: 'auto' },
   params: [
     { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1 },
     { key: 'extra', label: 'Extra lines (nm, comma-separated)', type: 'text', placeholder: 'e.g. 1064' },
@@ -2593,18 +2708,42 @@ lib.register({
     { key: 'L', label: 'Body length', type: 'number', unit: 'mm', min: 4, max: 60, step: 0.5 },
     { key: 'H', label: 'Body height', type: 'number', unit: 'mm', min: 2, max: 30, step: 0.5 },
     { key: 'text', label: 'Text on body', type: 'text' },
+    { key: 'body', label: 'Body (look)', type: 'select', options: LASER_BODIES },
   ],
   variants: [
-    { name: 'Pulsed / ultrafast laser', props: { pulsed: true, lambda: 800, text: 'fs', L: 18 }, keywords: 'femtosecond ti sapphire pulsed ultrafast' },
-    { name: 'Diode laser', props: { L: 8, H: 4.5, lambda: 785, power: 100 }, keywords: 'diode 785 raman' },
-    { name: 'He–Ne laser', props: { L: 22, H: 5, lambda: 632.8, power: 2 }, keywords: 'hene helium neon' },
+    { name: 'Pulsed / ultrafast laser', props: { pulsed: true, lambda: 800, text: 'fs', L: 18, body: 'ultrafast' }, keywords: 'femtosecond ti sapphire pulsed ultrafast' },
+    { name: 'Diode laser', props: { L: 8, H: 4.5, lambda: 785, power: 100, body: 'diode' }, keywords: 'diode 785 raman' },
+    { name: 'He–Ne laser', props: { L: 22, H: 5, lambda: 632.8, power: 2, body: 'tube' }, keywords: 'hene helium neon' },
   ],
   labelPos: [0, 6.2],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2 + 0.9, p.H / 2],
   draw(p, S) {
-    const L = p.L, h = p.H, c = lib.colorOf(S.doc, p.lambda, p.color);
-    const r = Math.min(1, h * 0.18);
-    let s = H.rect(S, -L / 2, -h / 2, L, h, S.shaded ? S.fill('dark') : S.flat('body'), `rx="${n(r)}"`);
+    const L = p.L, h = p.H, c = lib.colorOf(S.doc, p.lambda, p.color), body = laserBody(p);
+    const r = body === 'tube' ? h / 2 : Math.min(1, h * 0.18);
+    let s = '';
+    if (body === 'diode') {
+      // finned heat-sink block with the barrel sticking out
+      const bx = L / 2 - L * 0.3;
+      s += H.rect(S, -L / 2, -h / 2, bx + L / 2, h, S.fill('dark'), `rx="${n(r)}"`);
+      for (let i = 1; i < 5; i++) s += H.line(S, -L / 2 + i * (bx + L / 2) / 5, -h / 2, -L / 2 + i * (bx + L / 2) / 5, h / 2, '', 0.5, S.shaded ? '#7d848e' : S.ink);
+      s += H.rect(S, bx, -h * 0.36, L / 2 - bx, h * 0.72, S.fill('metal'));
+      s += `<rect x="${n(bx - 0.9)}" y="${n(-h / 2)}" width="0.6" height="${n(h)}" fill="${c}" opacity="0.9" stroke="none"/>`;
+      s += H.rect(S, L / 2, -Math.min(1.1, h * 0.22), 0.9, Math.min(2.2, h * 0.44), S.fill('metal'));
+      return s;
+    }
+    if (body === 'qcl') {
+      s += H.rect(S, -L / 2, h * 0.3, L, h * 0.2, S.fill('metal'));
+      for (let i = 0; i <= 5; i++) s += H.line(S, -L / 2 + 0.3 + i * (L - 0.6) / 5, h * 0.3, -L / 2 + 0.3 + i * (L - 0.6) / 5, h / 2, '', 0.5);
+      s += H.rect(S, -L / 2, -h / 2, L, h * 0.8, S.fill('dark'), `rx="${n(r)}"`);
+      s += H.rect(S, L / 2, -h * 0.25, 0.5, h * 0.5, S.fill('gold'));
+      s += `<rect x="${n(L / 2 - Math.min(2.6, L * 0.25))}" y="${n(-h / 2)}" width="0.8" height="${n(h * 0.8)}" fill="${c}" opacity="0.9" stroke="none"/>`;
+      if (p.text) s += H.text(S, -1.2, -h * 0.1, p.text, { color: S.shaded ? '#f2f4f7' : S.ink, size: Math.min(h * 0.4, S.fs * 0.95), bold: true });
+      return s;
+    }
+    s += H.rect(S, -L / 2, -h / 2, L, h, S.shaded ? S.fill('dark') : S.flat('body'), `rx="${n(r)}"`);
+    if (body === 'tube') s += H.rect(S, -L / 2, -h / 2, 1, h, S.fill('black'), `rx="${n(Math.min(0.5, h / 2))}"`) + H.rect(S, L / 2 - 1, -h / 2, 1, h, S.fill('black'), `rx="${n(Math.min(0.5, h / 2))}"`);
+    if (body === 'ultrafast' || body === 'head') s += `<rect x="${n(-L / 2)}" y="${n(h / 2 - Math.min(0.8, h * 0.14))}" width="${n(L)}" height="${n(Math.min(0.8, h * 0.14))}" fill="${S.shaded ? '#1d2025' : S.ink}" stroke="none"/>`;
+    if (body === 'tunable') s += H.circle(S, L * 0.2, -h * 0.05, Math.min(h * 0.24, 1.4), S.fill('black'));
     s += H.sheen(S, -L / 2, -h / 2, L, h * 0.45, r);
     // wavelength stripe and output aperture
     s += `<rect x="${n(L / 2 - Math.min(3.2, L * 0.22))}" y="${n(-h / 2)}" width="${n(Math.min(1.1, L * 0.08))}" height="${n(h)}" fill="${c}" opacity="0.9" stroke="none"/>`;
@@ -2618,11 +2757,7 @@ lib.register({
     const ls = [p.lambda].concat(String(p.extra || '').split(/[,;\s]+/).map(Number).filter(v => v > 0));
     return rays(p, ls, [p.L / 2 + 0.95, 0]);
   },
-  solid: (p, bh) => [
-    { kind: 'box', x: [-p.L / 2, p.L / 2], y: [-p.H / 2, p.H / 2], z: [0, bh + p.H * 0.55], mat: 'laserhead' },
-    { kind: 'box', x: [p.L / 2 - Math.min(3.2, p.L * 0.22), p.L / 2 - Math.min(3.2, p.L * 0.22) + Math.min(1.1, p.L * 0.08)], y: [-p.H / 2 - 0.02, p.H / 2 + 0.02], z: [0.01, bh + p.H * 0.55 + 0.02], mat: { color: lib.colorOf(null, p.lambda, p.color) }, decal: true },
-    { kind: 'cyl', x: [p.L / 2, p.L / 2 + 0.9], r: [1.1, 1.1], mat: 'metal' },
-  ],
+  solid: laserSolid,
 });
 
 /* ---------- benchtop box (isometric front view) ----------
@@ -2767,7 +2902,7 @@ const roundOptic = (x0, x1, r, mat, bh, ring = true) => {
   if (ring) parts.push({ kind: 'cyl', x: [x1, x1 + 0.9], r: [r + 0.7, r + 0.7], mat: 'anod' });
   return parts;
 };
-const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0.9, d / 2 + 0.9], z: [bh - d / 2 - 0.9, bh + d / 2 + 0.9], mat: 'anod' });
+const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0.9, d / 2 + 0.9], z: [bh - d / 2 - 0.9, bh + d / 2 + 0.9], mat: 'anod', kin: true });
 
 /* ================= Mirrors & splitters ================= */
 lib.register({
@@ -4794,11 +4929,11 @@ lib.register({
 /* ================= more types of existing parts (variants) ================= */
 const addVariants = (type, list) => { const d = lib.get(type); if (d) d.variants = (d.variants || []).concat(list); };
 addVariants('laser', [
-  { name: 'Tunable laser', props: { lambda: 1550, text: 'tunable', L: 18, H: 7 }, keywords: 'tunable laser external cavity telecom swept' },
-  { name: 'Fibre laser', props: { lambda: 1064, text: 'fibre', L: 16, H: 5 }, keywords: 'fiber fibre laser ytterbium erbium' },
-  { name: 'Ti:sapphire laser', props: { lambda: 800, pulsed: true, text: 'Ti:Sa', L: 24, H: 8 }, keywords: 'ti sapphire titanium femtosecond oscillator' },
-  { name: 'Quantum cascade laser (mid-IR)', props: { lambda: 4500, text: 'QCL', L: 12, H: 6 }, keywords: 'qcl quantum cascade mid infrared' },
-  { name: 'Laser diode module', props: { lambda: 405, L: 7, H: 4, power: 50 }, keywords: 'laser diode module pointer violet blue' },
+  { name: 'Tunable laser', props: { lambda: 1550, text: 'tunable', L: 18, H: 7, body: 'tunable' }, keywords: 'tunable laser external cavity telecom swept' },
+  { name: 'Fibre laser', props: { lambda: 1064, text: 'fibre', L: 16, H: 5, body: 'fibre' }, keywords: 'fiber fibre laser ytterbium erbium' },
+  { name: 'Ti:sapphire laser', props: { lambda: 800, pulsed: true, text: 'Ti:Sa', L: 24, H: 8, body: 'ultrafast' }, keywords: 'ti sapphire titanium femtosecond oscillator' },
+  { name: 'Quantum cascade laser (mid-IR)', props: { lambda: 4500, text: 'QCL', L: 12, H: 6, body: 'qcl' }, keywords: 'qcl quantum cascade mid infrared' },
+  { name: 'Laser diode module', props: { lambda: 405, L: 7, H: 4, power: 50, body: 'diode' }, keywords: 'laser diode module pointer violet blue' },
 ]);
 addVariants('lamp', [
   { name: 'Xenon arc lamp', props: { lmin: 380, lmax: 750, count: 9, L: 14, H: 10 }, keywords: 'xenon arc lamp solar simulator' },
@@ -7230,11 +7365,32 @@ R.label = (obj, doc, x, y, interactive) => {
   return (lop ? `<g${lop}>` : '') + lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>` + (lop ? '</g>' : '');
 };
 
+/* "Body colour": housings and mounts drawn with the body, dark,
+   anodised or black fills take the part's own colour (glass, mirrors
+   and coatings keep theirs). Shaded mode gets a matching gradient. */
+const TINTED = { body: 0, dark: 1, anod: 1, black: 1 };
+R.tintStyle = (S, obj) => {
+  const c = obj.tint, ids = {};
+  const T = Object.assign({}, S, { tintDefs: '' });
+  const col = name => TINTED[name] ? U.darken(c, 0.12) : c;
+  T.flat = name => name in TINTED ? col(name) : S.flat(name);
+  T.fill = name => {
+    if (!(name in TINTED)) return S.fill(name);
+    if (!S.shaded) return col(name);
+    const id = `rbx-tint-${obj.id}-${name}`;
+    if (!ids[id]) { const b = col(name); ids[id] = 1; T.tintDefs += `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${U.lighten(b, 0.3)}"/><stop offset="0.5" stop-color="${b}"/><stop offset="1" stop-color="${U.darken(b, 0.25)}"/></linearGradient>`; }
+    return `url(#${id})`;
+  };
+  return T;
+};
+
 R.object2D = (obj, S, interactive) => {
   const def = lib.get(obj.type);
   if (!def || !def.draw) return '';
   let inner = '';
+  if (obj.tint) S = R.tintStyle(S, obj);
   try { inner = RNBX.isVertical(obj) ? lib.topView(obj, S) : def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
+  if (obj.tint && S.tintDefs) inner = `<defs>${S.tintDefs}</defs>` + inner;
   const op = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
   return `<g ${interactive ? `data-id="${obj.id}"` : ''} transform="${R.transform(obj)}"${op}>${inner}</g>`;
 };
@@ -7369,6 +7525,15 @@ const MATS = {
   post: { color: '#c8ccd2', spec: 0.7 },
 };
 const mat = m => typeof m === 'object' && m ? Object.assign({ spec: 0.4 }, m) : (MATS[m] || MATS.body);
+/* materials that a part's "Body colour" replaces (housings and mounts, not glass or mirrors) */
+const BODY_MATS = new Set(['body', 'dark', 'anod', 'black', 'laser', 'laserhead']);
+/* how mounted parts stand on the table in 3D */
+R3.MOUNT_STYLES = {
+  lab: 'Post holder, post and slotted base',
+  simple: 'Simple post and round foot',
+  pedestal: 'Pedestal (solid pillar)',
+  none: 'No post (floating)',
+};
 
 const LIGHT = (() => { const l = [-0.45, 0.35, 0.82], k = Math.hypot(...l); return l.map(v => v / k); })();
 
@@ -7442,6 +7607,54 @@ function extrude(pts, z0, z1) {
 }
 const boxFaces = (x, y, z) => extrude([[x[0], y[0]], [x[1], y[0]], [x[1], y[1]], [x[0], y[1]]], z[0], z[1]);
 
+/* faces of a closed convex mesh with outward normals */
+function orient(faces, m, out, extra) {
+  const all = faces.flat(), cen = [0, 1, 2].map(i => all.reduce((a, q) => a + q[i], 0) / all.length);
+  faces.forEach(f => {
+    let nrm = newell(f);
+    const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
+    if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
+    out.push(Object.assign({ pts: f, n: nrm, m, mount: true }, extra || {}));
+  });
+}
+
+/* the mount under a part: post holder + post + slotted base (like lab
+   optomechanics), a simple post on a round foot, or a solid pedestal.
+   c = foot point on the table, top = height the post reaches, ang = part rotation */
+function mountFaces(style, c, top, ang, pr, mcol, out) {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const L = (lx, ly, z) => [c[0] + lx * ca - ly * sa, c[1] + lx * sa + ly * ca, z];
+  const box = (x, y, z) => extrude([[x[0], y[0]], [x[1], y[0]], [x[1], y[1]], [x[0], y[1]]], 0, 1).map(f => f.map(q => L(q[0], q[1], q[2] ? z[1] : z[0])));
+  const anod = { color: mcol, spec: 0.35 }, steel = MATS.post, slot = { color: U.darken(mcol, 0.55), spec: 0.1 };
+  if (style === 'pedestal') {
+    if (top > 0.3) orient(vcyl(c[0], c[1], pr * 1.35, 0.5, top, 18), mat(anod), out);
+    orient(vcyl(c[0], c[1], pr * 2.4, 0, 0.5, 20), mat(anod), out);
+    return;
+  }
+  if (style !== 'lab' || top < pr * 4) {
+    if (top > 0.3) orient(vcyl(c[0], c[1], pr, 0.6, top, 12), mat('post'), out);
+    orient(vcyl(c[0], c[1], pr * 2.1, 0, 0.6, 14), mat(anod), out);
+    return;
+  }
+  // slotted base plate, long across the beam, with a cap screw in each slot
+  const bt = Math.max(0.35, pr * 0.45);
+  orient(box([-pr * 1.8, pr * 1.8], [-pr * 3.6, pr * 3.6], [0, bt]), mat(anod), out);
+  [-1, 1].forEach(sg => {
+    orient(box([-pr * 0.38, pr * 0.38], sg > 0 ? [pr * 1.9, pr * 3.1] : [-pr * 3.1, -pr * 1.9], [bt, bt + 0.02]), mat(slot), out, { decal: true });
+    const sc = L(0, sg * pr * 2.6, 0);
+    orient(vcyl(sc[0], sc[1], pr * 0.32, bt, bt + pr * 0.3, 10), mat(anod), out);
+  });
+  // post holder: a wide dark tube with a thumbscrew; the steel post comes out of it
+  const hz = Math.max(bt + pr * 2, Math.min(top * 0.55, top - pr * 1.6));
+  orient(vcyl(c[0], c[1], pr * 1.45, bt, hz, 20), mat(anod), out);
+  orient(vcyl(c[0], c[1], pr * 1.6, hz - pr * 0.35, hz, 20), mat(anod), out);
+  const ks = L(0, pr * 1.45 + pr * 0.45, hz - pr * 1.1);
+  orient(diskAxis(ks, [-sa, ca, 0], pr * 0.5, pr * 0.9, 12), mat({ color: U.darken(mcol, 0.2), spec: 0.5 }), out);
+  orient(vcyl(c[0], c[1], pr, hz, top, 16), mat(steel), out);
+  // a collar near the top of the post
+  if (top - hz > pr * 2.5) orient(vcyl(c[0], c[1], pr * 1.12, top - pr * 1.1, top - pr * 0.75, 16), mat(steel), out);
+}
+
 function newell(pts) {
   let nx = 0, ny = 0, nz = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -7461,7 +7674,19 @@ function fallbackSolid(def, p, bh) {
 /* world-space faces for one object */
 R3.objectFaces = (obj, doc) => {
   const def = lib.get(obj.type), bh = doc.view3d.beamHeight || 6, s = obj.scale || 1;
-  const parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
+  let parts = (def.solid ? def.solid(obj.props, bh) : fallbackSolid(def, obj.props, bh)) || [];
+  // lab mounts: plate mounts become kinematic mounts with two adjuster knobs at the back
+  const mstyle = obj.post && obj.post !== 'auto' ? obj.post : (doc.view3d.mountStyle || 'lab');
+  if (mstyle === 'lab' && parts.some(q => q.kin)) {
+    parts = parts.slice();
+    parts.filter(q => q.kin).forEach(q => {
+      const ym = (q.y[1] - q.y[0]) / 2, zm = (q.z[1] - q.z[0]) / 2, zc0 = (q.z[0] + q.z[1]) / 2, kr = Math.max(0.35, ym * 0.13);
+      [[ym * 0.62, zm * 0.62], [-ym * 0.62, -zm * 0.62]].forEach(([y, z]) => {
+        parts.push({ kind: 'cyl', x: [q.x[1], q.x[1] + ym * 0.35], r: [kr * 0.55, kr * 0.55], cy: y, cz: zc0 + z, mat: 'metal' });
+        parts.push({ kind: 'cyl', x: [q.x[1] + ym * 0.35, q.x[1] + ym * 0.6], r: [kr, kr], cy: y, cz: zc0 + z, mat: 'black' });
+      });
+    });
+  }
   const out = [];
   const zc = bh + (obj.z || 0);
   const vert = RNBX.isVertical(obj), dir = obj.axis === 'down' ? -1 : 1;
@@ -7470,6 +7695,13 @@ R3.objectFaces = (obj, doc) => {
   const W = vert
     ? (p) => { const w = U.toWorld(obj, [p[2] - bh, p[1]]); return [w[0], w[1], zc + p[0] * s * dir]; }
     : (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
+  // "Body colour": two-tone housings keep a darker trim in the same colour
+  const light = obj.tint && parts.some(q => q.mat === 'body' || q.mat === 'laserhead');
+  const tinted = part => {
+    const m0 = mat(part.mat);
+    if (!obj.tint || !BODY_MATS.has(part.mat)) return m0;
+    return Object.assign({}, m0, { color: light && !['body', 'laserhead'].includes(part.mat) ? U.darken(obj.tint, 0.45) : obj.tint });
+  };
   let r0max = 0;
   for (const part of parts) {
     let faces;
@@ -7480,34 +7712,29 @@ R3.objectFaces = (obj, doc) => {
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }
+    // a decal is a skin on the body: drop its cut ends, which lie inside the body
+    if (part.decal && part.kind === 'cyl') faces = faces.slice(2);
+    else if (part.decal && (!part.kind || part.kind === 'box')) faces = faces.filter((f, i) => i !== 0 && i !== 3 && i !== 5);
     const wf = faces.map(f => f.map(W));
     const cen = [0, 1, 2].map(i => wf.reduce((a, f) => a + f.reduce((b, q) => b + q[i], 0) / f.length, 0) / wf.length);
     for (const f of wf) {
       let nrm = newell(f);
       const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
       if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
-      out.push({ pts: f, n: nrm, m: mat(part.mat), part, decal: !!part.decal });
+      out.push({ pts: f, n: nrm, m: tinted(part), part, decal: !!part.decal });
     }
   }
   void r0max;
-  // post + base for mounted optics (a side rod for optics lying flat in a tower)
-  if (def.mount && !def.noPost && doc.view3d.posts !== false) {
+  // post + base: mounted optics follow the figure's mount style; any part can choose its own
+  const v3 = doc.view3d, choice = obj.post && obj.post !== 'auto' ? obj.post : null;
+  const style = choice || (def.mount && !def.noPost && v3.posts !== false ? (v3.mountStyle || 'lab') : 'none');
+  if (style !== 'none' && !(def.noPost && !choice)) {
     let zmin = Infinity, rad = 0;
     out.forEach(f => f.pts.forEach(q => { zmin = Math.min(zmin, q[2]); rad = Math.max(rad, Math.hypot(q[0] - obj.x, q[1] - obj.y)); }));
-    const pr = (def.postR || 0.6) * s;
+    const pr = (def.postR || 0.8) * s;
     const c = vert ? U.toWorld(obj, [0, rad + pr + 0.3]) : U.toWorld(obj, [0, 0]);
     const top = vert ? zc + 0.5 : Math.max(0, zmin - 0.1);
-    const add = (faces, m) => {
-      const cen = [c[0], c[1], top / 2];
-      faces.forEach(f => {
-        let nrm = newell(f);
-        const fc = [0, 1, 2].map(i => f.reduce((a, q) => a + q[i], 0) / f.length);
-        if ((fc[0] - cen[0]) * nrm[0] + (fc[1] - cen[1]) * nrm[1] + (fc[2] - cen[2]) * nrm[2] < 0) nrm = nrm.map(v => -v);
-        out.push({ pts: f, n: nrm, m: mat(m) });
-      });
-    };
-    if (top > 0.3) add(vcyl(c[0], c[1], pr, 0.6, top, 12), 'post');
-    add(vcyl(c[0], c[1], pr * 2.1, 0, 0.6, 14), 'anod');
+    mountFaces(vert && style === 'lab' ? 'simple' : style, c, top, U.rad(obj.rot || 0), pr, obj.mountColor || v3.mountColor || '#2a2e34', out);
   }
   return out;
 };
@@ -7616,7 +7843,9 @@ R3.scene = (doc, trace, S, opt = {}) => {
     let svg = '';
     trans.filter(q => !q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 0.55); });
     // decals (stripes, bands) sit on a body's surface, so they go after it
-    opaque.sort((a, b) => (a.f.decal - b.f.decal) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
+    // mounts stand under their part, so they are painted first
+    const rank = f => (f.mount ? 0 : 2) + (f.decal ? 1 : 0);
+    opaque.sort((a, b) => (rank(a.f) - rank(b.f)) || (a.depth - b.depth)).forEach(q => { svg += facePath(q, cam, 1); });
     trans.filter(q => q.vis).sort((a, b) => a.depth - b.depth).forEach(q => { svg += facePath(q, cam, 1); });
     const op3 = obj.opacity != null && obj.opacity < 1 ? obj.opacity : 1;
     if (op3 <= 0.001) continue;
@@ -10932,6 +11161,21 @@ const fieldSetter = (objs, path) => (key, v, rebuild) => {
   if (rebuild) setTimeout(Ins.build, 0);
 };
 
+/* ---------- colour & mount: body colour (2D and 3D), mount colour and post (3D) ---------- */
+const lookSection = objs => {
+  const o = objs[0], set = fieldSetter(objs, '');
+  return sec('Colour & mount',
+    el('div', { class: 'grid2' },
+      control({ key: 'tint', label: 'Body colour', type: 'color', allowEmpty: true }, k => o[k] || '', set),
+      control({ key: 'mountColor', label: 'Mount colour (3D)', type: 'color', allowEmpty: true }, k => o[k] || '', set)),
+    control({ key: 'post', label: 'Post in 3D', type: 'select', options: [['auto', 'Automatic (figure setting)']].concat(Object.entries(RNBX.render3d.MOUNT_STYLES)) }, k => o[k] || 'auto', set),
+    el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px', marginBottom: '10px' } },
+      ...COLOUR_PRESETS.map(([name, c]) => el('button', { class: 'swatch-btn', type: 'button', title: name, style: { background: c }, onclick: () => set('tint', c, true) })),
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Default', onclick: () => set('tint', '', true) })));
+};
+const COLOUR_PRESETS = [['Black anodised', '#26292e'], ['Graphite', '#4a5058'], ['Silver', '#c4c9cf'], ['White', '#f2f3f5'], ['Blue anodised', '#2f5f9e'],
+  ['Red anodised', '#b8343a'], ['Gold', '#c9a443'], ['Green', '#2f8a5b'], ['Orange', '#e07b2e'], ['Purple', '#6b4fa8']];
+
 /* ---------- lens focus (drawn mm, along the lens's own +x axis) ----------
    real lenses: paraxial y–nu trace through the designed surfaces at 587.6 nm */
 function lensFocus(obj, lam = 587.56) {
@@ -11212,6 +11456,7 @@ function objectPanel(obj) {
       control({ key: 'z', label: 'Height z', type: 'number', unit: 'mm', step: 0.5, hint: 'above the beam plane' }, k => obj[k] || 0, tset),
       lib.canVertical(obj.type) ? control({ key: 'axis', label: 'Optical axis', type: 'select', options: [['h', 'In table plane'], ['up', 'Vertical, facing up'], ['down', 'Vertical, facing down']] }, k => obj[k] || 'h', (k, v) => tset(k, v, true)) : el('span'))]),
     control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset)));
+    if (!def.annotation && !def.special) root.push(lookSection([obj]));
   }
   const keys = (S.doc.animation.tracks[obj.id] || []).length;
   root.push(sec('Animation',
@@ -11242,6 +11487,8 @@ function multiPanel(objs) {
     const params = def.params.filter(p => (!p.show || p.show(objs[0].props)) && p.type !== 'image');
     if (params.length) root.push(sec('Shared parameters (' + def.name + ')', ...params.map(p => control(p, k => objs[0].props[k], set))));
   }
+  const parts = objs.filter(o => { const d = lib.get(o.type); return d && !d.connection && !d.annotation && !d.special; });
+  if (parts.length > 1) root.push(lookSection(parts));
   root.push(el('div', { class: 'sec' }, el('div', { class: 'row', style: { marginBottom: '12px' } },
     el('button', { class: 'btn small', type: 'button', html: D.icon('key', 14) + ' Keyframe', onclick: () => { RNBX.anim.addKey(objs.map(o => o.id)); RNBX.timeline.show(); } }),
     el('button', { class: 'btn small', type: 'button', html: D.icon('copy', 14) + ' Duplicate', onclick: () => RNBX.project.duplicate() }),
@@ -11353,6 +11600,9 @@ function docPanel() {
         control({ key: 'table', label: 'Optical table', type: 'bool' }, k => v3[k], vset),
         control({ key: 'holes', label: 'Tapped holes', type: 'bool' }, k => v3[k], vset)),
       el('div', { class: 'grid2' },
+        control({ key: 'mountStyle', label: 'Mount style', type: 'select', options: Object.entries(RNBX.render3d.MOUNT_STYLES).filter(([id]) => id !== 'none') }, k => v3[k] || 'lab', vset),
+        control({ key: 'mountColor', label: 'Mount colour', type: 'color' }, k => v3[k] || '#2a2e34', vset)),
+      el('div', { class: 'grid2' },
         control({ key: 'posts', label: 'Posts & bases', type: 'bool' }, k => v3[k], vset),
         control({ key: 'shadow', label: 'Shadows', type: 'bool' }, k => v3[k], vset)),
       el('div', { class: 'grid2' },
@@ -11361,11 +11611,27 @@ function docPanel() {
         control({ key: 'tableColor', label: 'Table colour', type: 'color' }, k => v3[k],
           (k, v) => { const f = RNBX.render3d.TABLE_FINISHES[v3.tableFinish]; RNBX.history.checkpoint('v3tableColor'); v3.tableColor = v; if (!f || f.color.toLowerCase() !== String(v).toLowerCase()) { if (!(f && f.brushed)) v3.tableFinish = 'custom'; } RNBX.changed(); }))));
   }
+  if (st.mode === '3d') root.push(sec('Photo look', el('div', { class: 'note', text: 'One click: a black optical table, a higher beam on post holders and slotted bases, a dark studio background and soft shadows, like a product photo.' }),
+    el('div', { class: 'row', style: { marginBottom: '12px' } }, el('button', { class: 'btn small', type: 'button', text: 'Apply photo look', onclick: () => Ins.photoLook() }))));
   root.push(sec('Publishing tools', el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '12px' } },
     el('button', { class: 'btn small', type: 'button', text: 'Caption helper', onclick: () => RNBX.dialogs.caption() }),
     el('button', { class: 'btn small', type: 'button', text: 'Journal check', onclick: () => RNBX.dialogs.check() }))));
   return root;
 }
+
+/* the look of a lab product photo: dark gradient backdrop, black table, lab mounts */
+Ins.photoLook = () => {
+  const doc = S.doc;
+  RNBX.history.checkpoint();
+  Object.assign(doc.page, { background: 'gradient', bg: '#5b5f66', bg2: '#0e0f11' });
+  Object.assign(doc.view3d, { table: true, holes: true, posts: true, shadow: true, tableFinish: 'black', tableColor: '#1f2226', mountStyle: 'lab', mountColor: '#1f2226' });
+  doc.view3d.beamHeight = Math.max(doc.view3d.beamHeight || 6, 12);
+  if (doc.view3d.pitch > 45 || doc.view3d.pitch < 20) doc.view3d.pitch = 32;
+  doc.style.beamGlow = true;
+  RNBX.changed();
+  setTimeout(Ins.build, 0);
+  RNBX.toast('Photo look applied. Ctrl+Z to undo.');
+};
 
 Ins.build = () => {
   const host = D.$('#inspector');

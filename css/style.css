@@ -99,6 +99,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .color-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 6px; align-items: center; }
 input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); border-radius: 7px; padding: 2px; background: var(--panel); cursor: pointer; }
 .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); display: inline-block; flex: none; }
+.swatch-btn { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(0,0,0,.2); padding: 0; cursor: pointer; }
+.swatch-btn:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- menus ---------- */
 .menu { position: fixed; z-index: 60; min-width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 5px; }

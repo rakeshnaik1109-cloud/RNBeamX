@@ -77,8 +77,9 @@ RNBX.defaultStyle = () => ({
 
 RNBX.defaultView3d = () => ({
   yaw: -28, pitch: 34, zoom: 1, panX: 0, panY: 0,
-  beamHeight: 6, table: true, holes: true, posts: true,
+  beamHeight: 10, table: true, holes: true, posts: true,
   tableColor: '#2c3036', tableFinish: 'black', shadow: true,
+  mountStyle: 'lab', mountColor: '#2a2e34',
 });
 
 RNBX.newDocument = (presetId = 'nature-2') => {

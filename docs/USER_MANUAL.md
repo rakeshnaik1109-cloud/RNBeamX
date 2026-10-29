@@ -173,6 +173,23 @@ have their own positions, so tidying the 3D view never disturbs the 2D layout. L
   aluminium breadboard, grey, anodised blue, white (for light slides) or a wood
   bench (no holes). *Table colour* tints it to any colour; brushed finishes keep
   their texture when tinted.
+  **Mount style** sets how mounted optics stand: a post holder with a steel post
+  on a slotted base (the default, like lab optomechanics), a simple post on a
+  round foot, or a solid pedestal; *Mount colour* recolours holders and bases.
+  Mirrors get kinematic mounts with two adjuster knobs. **Apply photo look**
+  (Properties, with nothing selected) sets a dark studio backdrop, a black
+  table, a higher beam so the post holders show, and glow, like a product photo.
+- **Lasers** have their own bodies in 3D (and in the side view): laser head,
+  He–Ne tube on cradles, diode module with a finned heat sink, ultrafast
+  oscillator enclosure, fibre laser with collimator, QCL on a heat sink and a
+  tunable laser with a knob. *Body (look)* chooses one; *Automatic* picks it from
+  the wavelength, the text on the body and the size. With a high beam the body
+  sits on a riser block.
+- **Colour & mount** (Properties of any part, or of several selected parts):
+  *Body colour* recolours the housing and mount in 2D and 3D (glass, mirrors and
+  coatings keep their own colour); ten swatches give common anodised colours.
+  *Mount colour (3D)* and *Post in 3D* override the figure's mount settings for
+  that part, and any part can stand on a post.
 
 Beams can be drawn at true width (with foci and divergence) or as uniform lines,
 with optional glow, direction arrows, power fading, polarisation marks and a

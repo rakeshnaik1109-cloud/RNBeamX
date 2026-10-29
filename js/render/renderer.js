@@ -40,11 +40,32 @@ R.label = (obj, doc, x, y, interactive) => {
   return (lop ? `<g${lop}>` : '') + lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>` + (lop ? '</g>' : '');
 };
 
+/* "Body colour": housings and mounts drawn with the body, dark,
+   anodised or black fills take the part's own colour (glass, mirrors
+   and coatings keep theirs). Shaded mode gets a matching gradient. */
+const TINTED = { body: 0, dark: 1, anod: 1, black: 1 };
+R.tintStyle = (S, obj) => {
+  const c = obj.tint, ids = {};
+  const T = Object.assign({}, S, { tintDefs: '' });
+  const col = name => TINTED[name] ? U.darken(c, 0.12) : c;
+  T.flat = name => name in TINTED ? col(name) : S.flat(name);
+  T.fill = name => {
+    if (!(name in TINTED)) return S.fill(name);
+    if (!S.shaded) return col(name);
+    const id = `rbx-tint-${obj.id}-${name}`;
+    if (!ids[id]) { const b = col(name); ids[id] = 1; T.tintDefs += `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${U.lighten(b, 0.3)}"/><stop offset="0.5" stop-color="${b}"/><stop offset="1" stop-color="${U.darken(b, 0.25)}"/></linearGradient>`; }
+    return `url(#${id})`;
+  };
+  return T;
+};
+
 R.object2D = (obj, S, interactive) => {
   const def = lib.get(obj.type);
   if (!def || !def.draw) return '';
   let inner = '';
+  if (obj.tint) S = R.tintStyle(S, obj);
   try { inner = RNBX.isVertical(obj) ? lib.topView(obj, S) : def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
+  if (obj.tint && S.tintDefs) inner = `<defs>${S.tintDefs}</defs>` + inner;
   const op = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
   return `<g ${interactive ? `data-id="${obj.id}"` : ''} transform="${R.transform(obj)}"${op}>${inner}</g>`;
 };

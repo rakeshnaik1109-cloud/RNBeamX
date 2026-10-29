@@ -715,11 +715,11 @@ lib.register({
 /* ================= more types of existing parts (variants) ================= */
 const addVariants = (type, list) => { const d = lib.get(type); if (d) d.variants = (d.variants || []).concat(list); };
 addVariants('laser', [
-  { name: 'Tunable laser', props: { lambda: 1550, text: 'tunable', L: 18, H: 7 }, keywords: 'tunable laser external cavity telecom swept' },
-  { name: 'Fibre laser', props: { lambda: 1064, text: 'fibre', L: 16, H: 5 }, keywords: 'fiber fibre laser ytterbium erbium' },
-  { name: 'Ti:sapphire laser', props: { lambda: 800, pulsed: true, text: 'Ti:Sa', L: 24, H: 8 }, keywords: 'ti sapphire titanium femtosecond oscillator' },
-  { name: 'Quantum cascade laser (mid-IR)', props: { lambda: 4500, text: 'QCL', L: 12, H: 6 }, keywords: 'qcl quantum cascade mid infrared' },
-  { name: 'Laser diode module', props: { lambda: 405, L: 7, H: 4, power: 50 }, keywords: 'laser diode module pointer violet blue' },
+  { name: 'Tunable laser', props: { lambda: 1550, text: 'tunable', L: 18, H: 7, body: 'tunable' }, keywords: 'tunable laser external cavity telecom swept' },
+  { name: 'Fibre laser', props: { lambda: 1064, text: 'fibre', L: 16, H: 5, body: 'fibre' }, keywords: 'fiber fibre laser ytterbium erbium' },
+  { name: 'Ti:sapphire laser', props: { lambda: 800, pulsed: true, text: 'Ti:Sa', L: 24, H: 8, body: 'ultrafast' }, keywords: 'ti sapphire titanium femtosecond oscillator' },
+  { name: 'Quantum cascade laser (mid-IR)', props: { lambda: 4500, text: 'QCL', L: 12, H: 6, body: 'qcl' }, keywords: 'qcl quantum cascade mid infrared' },
+  { name: 'Laser diode module', props: { lambda: 405, L: 7, H: 4, power: 50, body: 'diode' }, keywords: 'laser diode module pointer violet blue' },
 ]);
 addVariants('lamp', [
   { name: 'Xenon arc lamp', props: { lmin: 380, lmax: 750, count: 9, L: 14, H: 10 }, keywords: 'xenon arc lamp solar simulator' },

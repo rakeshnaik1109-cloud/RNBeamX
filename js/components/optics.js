@@ -14,7 +14,7 @@ const roundOptic = (x0, x1, r, mat, bh, ring = true) => {
   if (ring) parts.push({ kind: 'cyl', x: [x1, x1 + 0.9], r: [r + 0.7, r + 0.7], mat: 'anod' });
   return parts;
 };
-const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0.9, d / 2 + 0.9], z: [bh - d / 2 - 0.9, bh + d / 2 + 0.9], mat: 'anod' });
+const plateMount = (x, d, bh) => ({ kind: 'box', x: [x, x + 1.1], y: [-d / 2 - 0.9, d / 2 + 0.9], z: [bh - d / 2 - 0.9, bh + d / 2 + 0.9], mat: 'anod', kin: true });
 
 /* ================= Mirrors & splitters ================= */
 lib.register({
