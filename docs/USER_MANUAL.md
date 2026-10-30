@@ -182,6 +182,25 @@ laser and a fibre end). **Fibre type** sets both the look and the physics:
 inside* (default) colours the fibre by the light it carries. In a build-up
 animation a fibre appears together with the parts it connects.
 
+## Fibre Raman probe
+
+*Samples & mechanics ▸ Fibre-optic Raman probe (working optics)* is a probe head
+whose inside is traced like the rest of the figure, as in commercial probes:
+
+- **Laser in** (fibre) → collimating lens → **band-pass** filter on the laser line →
+  **dichroic** (passes the laser) → focusing nose → sample.
+- The nose collects the back-scattered **Raman** light; the dichroic reflects it to
+  a **fold mirror**, a **long-pass** filter blocks the laser line, and a lens focuses
+  it into the **signal-out** fibre to the spectrometer.
+
+Connect a fibre from a fibre-output laser to the probe, and one from the probe to
+a spectrometer (spectrometers now take a fibre input). Set the laser and Raman
+wavelengths on the probe: the band-pass follows the laser line and the dichroic
+and long-pass edges sit between the two. Put a SERS chip (or a sample with
+*Emits* on) at the focus. *Name the inner parts* labels every element; the light
+paths show through the body. The template *Fibre Raman probe (inside view)* is a
+ready example. The closed variant draws a dark probe body with the same optics.
+
 ## Learn optics
 
 The **Learn** button (top bar, after *Guide*) opens a page for every optical part

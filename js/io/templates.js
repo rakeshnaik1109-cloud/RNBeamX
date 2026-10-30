@@ -470,10 +470,26 @@ T.list.push({
 T.GROUPS = [
   ['Interferometers & polarisation', ['michelson', 'mzi', 'fringes', 'polarization']],
   ['Microscopy & imaging', ['epifluor', 'confocal', 'lightsheet', 'raman', 'tower', 'fourf', 'aberration']],
-  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr']],
+  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
 ];
+/* ---------- fibre Raman probe (inside view, working optics) ---------- */
+T.list.push({
+  id: 'ramanprobe', name: 'Fibre Raman probe (inside view)', desc: 'Laser through a fibre into a probe: band-pass, dichroic, nose lens, SERS chip; Raman back via fold mirror and long-pass into a spectrometer',
+  build() {
+    const d = base('nature-15', 124, 100, 'Fibre-optic Raman probe');
+    const laser = mk('benchlaser', 20, 14, 0, { lambda: 785, power: 50, text: '785 nm', w: 16, h: 10 }, 'Laser 785 nm', [0, 9]);
+    const probe = mk('module', 58, 46, 90, { title: '', inside: 'probe', model: 'full', L: 44, H: 34, color: '#e3eaf3', snout: true, f: 9, ex: 785, em: 830, tags: true }, 'Raman probe', [-30, 24]);
+    const chip = mk('sample', 58, 86.5, 90, { look: 'chip', w: 1.6, h: 14, emit: true, emitLambda: 830, emitFrac: 0.05, emitDir: 'back' }, 'SERS chip', [0, 7]);
+    const spec = mk('spectrometer', 102, 14, 0, { L: 22, H: 11 }, 'Spectrometer', [0, 9]);
+    d.objects.push(laser, probe, chip, spec,
+      link('fiber', laser, probe, { fiberType: 'mmf', bend: 0.5, boots: true }),
+      link('fiber', probe, spec, { fiberType: 'mmf', bend: 0.6, boots: true }));
+    return d;
+  },
+});
+
 /* shared with the Learn pages, which build small demo setups the same way */
 T.helpers = { mk, base, ang, link, R, L, UP, DN };
 T.groupOf = id => { const g = T.GROUPS.find(([, ids]) => ids.includes(id)); return g ? g[0] : 'More'; };

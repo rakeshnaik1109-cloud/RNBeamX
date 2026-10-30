@@ -574,8 +574,19 @@ E('stage', { group: SM,
   see: ['retro', 'posstage'] });
 E('chamber', { group: SM, one: 'A cryostat or vacuum chamber holds a sample at low temperature or in vacuum; the light goes in and out through windows.',
   how: ['Many measurements need cold (4 K–300 K) or vacuum. Optical windows let the beams through; each window adds reflections and some lateral shift.'], see: ['window'] });
-E('module', { group: SM, one: 'A boxed optical module: a beam enters, something happens inside, the beam leaves. Use it for any instrument you do not want to draw in detail.',
-  how: ['The module can contain a probe head focusing the light at a set distance, or a Michelson (FTIR) interferometer. For a black-box sub-system it keeps the figure simple.'], see: ['custom'] });
+E('module', { group: SM, title: 'Fibre Raman probe (and optical modules)',
+  one: 'A fibre Raman probe sends laser light to a sample and collects the Raman light it scatters back, cleaning both with filters, inside one small head.',
+  how: ['<b>Excitation path.</b> The laser arrives through a fibre. A collimating lens makes the light parallel, and a narrow <b>band-pass</b> filter removes everything except the laser line (fibres themselves generate a weak Raman background that must not reach the sample). A <b>dichroic</b> mirror lets the laser through, and the lens in the nose focuses it onto the sample.',
+    '<b>Collection path.</b> The sample scatters a tiny fraction of the light at new wavelengths (Raman). The same nose lens collects it and makes it parallel again. Now the dichroic <b>reflects</b> it, because the Raman light is longer in wavelength than its edge; a <b>fold mirror</b> turns it back parallel to the axis. A <b>long-pass</b> filter blocks the much stronger laser light scattered back by the sample (Rayleigh scattering, ~10⁶ times stronger), and a lens focuses the Raman light into the collection fibre, which goes to the spectrometer.',
+    'In RNBeamX the <i>Fibre-optic Raman probe</i> has working optics: connect a fibre from a fibre-output laser to it (laser in) and another from it to a spectrometer (signal out). Set the laser and Raman wavelengths: the band-pass sits on the laser line and the dichroic and long-pass edges sit between the two. A SERS chip or a sample with <i>Emits</i> on, placed at the focus, sends the Raman light back. The demo is the <i>Fibre Raman probe</i> template; the other modules (Michelson, monochromator) are boxes the beam passes through.'],
+  math: [[`Δ${v('ν̃')} [cm⁻¹] = 10⁷ (${fr('1', v('λ') + '<sub>laser</sub>')} − ${fr('1', v('λ') + '<sub>Raman</sub>')})`, 'Raman shift (wavelengths in nm): 785 nm → 830 nm is a 690 cm⁻¹ band'],
+    [`${v('λ')}<sub>Raman</sub> = ${fr('1', '1/' + v('λ') + '<sub>laser</sub> − Δ' + v('ν̃') + '·10⁻⁷')}`, 'where a Raman band lands for a given laser'],
+    [`${v('λ')}<sub>laser</sub> < ${v('λ')}<sub>edge</sub> < ${v('λ')}<sub>Raman</sub>`, 'dichroic and long-pass edges between laser and Stokes Raman light'],
+    [`${v('P')}<sub>Raman</sub> ∝ ${v('P')}<sub>laser</sub> σ ${v('N')} Ω`, 'collected signal: cross-section σ (~10⁻²⁹ cm²/sr), molecules in focus N, collection solid angle Ω ≈ π NA²'],
+    [`OD<sub>LP</sub>(${v('λ')}<sub>laser</sub>) ≥ 6`, 'the long-pass must block the laser by a factor of a million or more']],
+  numbers: ['785 nm probes: band-pass 785 ± 1 nm, long-pass edge ~ 800 nm, working distance 5–10 mm', 'SERS enhances the Raman signal by 10⁶–10⁸ on metal nanostructures'],
+  demo: () => RNBX.templates.list.find(t => t.id === 'ramanprobe').build(),
+  see: ['dichroic', 'filter', 'fiber', 'spectrometer', 'sample'] });
 E('emagnet', { group: SM, one: 'An electromagnet makes a strong magnetic field between its pole pieces, e.g. for magneto-optics.',
   how: ['Current in the coils magnetises the iron core; the field concentrates in the gap between the poles. Samples in the gap show magneto-optical effects such as Faraday or Kerr rotation. Helmholtz coils make a weaker but very uniform field.'],
   math: [[`${v('B')} ≈ ${fr('μ<sub>0</sub>' + v('N') + v('I'), v('g'))}`, 'field in a gap g for N turns carrying current I (iron core)'],

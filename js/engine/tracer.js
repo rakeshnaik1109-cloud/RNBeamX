@@ -104,7 +104,7 @@ function buildScene(doc) {
     const tdef = target && RNBX.lib.get(target.type);
     if (!tdef || !tdef.port) return;
     const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1), ft = RNBX.lib.fiberType(link.props);
-    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
+    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: tdef.portInside ? null : target.id,
       w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
       M2: Math.max(s.M2 || 1, ft.m2), E: s.E && ft.pm ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
   });
@@ -433,11 +433,12 @@ RNBX.trace = function trace(doc) {
         const fl = fiberLight[link.id] = fiberLight[link.id] || {};
         fl[ray.lambda] = (fl[ray.lambda] || 0) + ray.P;
         const eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+        if (tdef && tdef.fiberSink) { record(target, Object.assign({}, ray, { P: ray.P * eff })); break; }
         // the fibre type sets the output: PM keeps the polarisation, multimode gives a bigger, worse beam
         const ft = RNBX.lib.fiberType(link.props), keepPol = !!ft.pm;
         const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1) * ft.wk;
         out.push(child(ray, {
-          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id, z: target.z || 0, vz: 0,
+          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: tdef && tdef.portInside ? null : target.id, z: target.z || 0, vz: 0,
           s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
           P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
           w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,

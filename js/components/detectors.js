@@ -99,6 +99,8 @@ det('camera', 'Camera (CCD / CMOS)', 'CAM', {
 det('spectrometer', 'Spectrometer', 'Spec', {
   keywords: 'spectrometer spectrograph monochromator raman detector',
   labelTemplate: 'Spectrometer', defaults: { L: 18, H: 10 },
+  // fibre input (SMA port on the entrance slit side): a fibre ending here delivers its light to the spectrometer
+  fiberPort: p => [-p.L / 2 - 0.3, 0], fiberDir: () => [-1, 0], fiberSink: true,
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 6, max: 60, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 4, max: 40, step: 0.5 }],
   labelPos: [0, 8.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],

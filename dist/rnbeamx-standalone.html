@@ -1914,7 +1914,7 @@ function buildScene(doc) {
     const tdef = target && RNBX.lib.get(target.type);
     if (!tdef || !tdef.port) return;
     const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1), ft = RNBX.lib.fiberType(link.props);
-    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
+    Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: tdef.portInside ? null : target.id,
       w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
       M2: Math.max(s.M2 || 1, ft.m2), E: s.E && ft.pm ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
   });
@@ -2243,11 +2243,12 @@ RNBX.trace = function trace(doc) {
         const fl = fiberLight[link.id] = fiberLight[link.id] || {};
         fl[ray.lambda] = (fl[ray.lambda] || 0) + ray.P;
         const eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+        if (tdef && tdef.fiberSink) { record(target, Object.assign({}, ray, { P: ray.P * eff })); break; }
         // the fibre type sets the output: PM keeps the polarisation, multimode gives a bigger, worse beam
         const ft = RNBX.lib.fiberType(link.props), keepPol = !!ft.pm;
         const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1) * ft.wk;
         out.push(child(ray, {
-          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id, z: target.z || 0, vz: 0,
+          o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: tdef && tdef.portInside ? null : target.id, z: target.z || 0, vz: 0,
           s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
           P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
           w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,
@@ -3656,6 +3657,8 @@ det('camera', 'Camera (CCD / CMOS)', 'CAM', {
 det('spectrometer', 'Spectrometer', 'Spec', {
   keywords: 'spectrometer spectrograph monochromator raman detector',
   labelTemplate: 'Spectrometer', defaults: { L: 18, H: 10 },
+  // fibre input (SMA port on the entrance slit side): a fibre ending here delivers its light to the spectrometer
+  fiberPort: p => [-p.L / 2 - 0.3, 0], fiberDir: () => [-1, 0], fiberSink: true,
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 6, max: 60, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 4, max: 40, step: 0.5 }],
   labelPos: [0, 8.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
@@ -4144,27 +4147,54 @@ lib.register({
 /* ---------- custom component (your own drawing or photo) ---------- */
 const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['splitter', 'Beam splitter'], ['lens', 'Lens'], ['absorb', 'Detector / block'], ['filter', 'Filter (band-pass)'], ['pass', 'Transparent (passes light)'], ['sample', 'Sample (can emit)'], ['source', 'Light source']];
 /* ---------- black-box module the beam passes through (FTIR, monochromator, …) ---------- */
+/* ---------- fibre Raman probe (working optics) ----------
+   Excitation on the probe axis (local y = 0): fibre in → collimating lens
+   → laser-line band-pass → dichroic (passes the laser) → focusing nose →
+   sample. The same nose collects the back-scattered Raman light; the
+   dichroic reflects it to a fold mirror, it runs back parallel to the
+   axis (local y = yc) through a long-pass filter (blocks the laser line)
+   and a lens focuses it into the collection fibre. Every element below
+   is a real traced surface; the sketch is drawn from the same geometry. */
+const probeGeo = p => {
+  const L = p.L, Hh = p.H, xl = -L / 2, k = Math.min(Hh * 0.13, L * 0.09);
+  const stokes = (p.em || 830) >= (p.ex || 785);
+  return { L, Hh, xl, k, yc: -Hh * 0.28, x0: xl + 0.25, xc: xl + L * 0.17, xf: xl + L * 0.42, xd: L / 2 - L * 0.2,
+    edge: p.ex + ((p.em || p.ex + 45) - p.ex) * 0.4, bw: Math.max(2, Math.min(10, Math.abs((p.em || 830) - p.ex) * 0.5)), stokes };
+};
+const probeFull = p => p.inside === 'probe' && p.model === 'full';
+lib.probeGeo = probeGeo;
+
 lib.register({
   type: 'module', name: 'Optical module (beam passes through)', abbr: 'MOD', category: 'Samples & mechanics', autoLabel: false,
   keywords: 'module box instrument black box michelson interferometer ftir monochromator spectrometer unit pass through',
-  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830 },
+  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830, model: 'sketch', tags: false },
   params: [{ key: 'title', label: 'Text in the box', type: 'textarea' },
     { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator'], ['probe', 'Fibre probe (excitation and collection paths)']] },
-    { key: 'ex', label: 'Excitation colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
-    { key: 'em', label: 'Collection colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'model', label: 'Probe optics', type: 'select', options: [['full', 'Working optics (traced: fibre in, filters, dichroic, fibre out)'], ['sketch', 'Sketch only (beam passes straight)']], show: p => p.inside === 'probe' },
+    { key: 'ex', label: 'Laser (excitation) wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe', hint: 'sets the band-pass filter' },
+    { key: 'em', label: 'Raman (collection) wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe', hint: 'dichroic and long-pass edge sit between the two' },
+    { key: 'tags', label: 'Name the inner parts', type: 'bool', show: p => p.inside === 'probe' },
     { key: 'snout', label: 'Focusing nose at the exit', type: 'bool' },
     { key: 'f', label: 'Focus distance below the nose (drawn)', type: 'number', unit: 'mm', min: 0, max: 200, step: 0.5, show: p => p.snout, hint: '0 = the beam passes straight' },
     { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 200, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
     { key: 'color', label: 'Box colour', type: 'color' }],
-  variants: [{ name: 'Fibre-optic probe head', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic filter handheld', props: { title: '', inside: 'probe', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
+  variants: [{ name: 'Fibre-optic Raman probe (working optics)', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic band pass long pass filter folding mirror', props: { title: '', inside: 'probe', model: 'full', L: 30, H: 20, color: '#e3eaf3', snout: true, f: 8, tags: true } },
+    { name: 'Fibre-optic probe head (closed)', abbr: 'Probe', keywords: 'raman probe head handheld closed body', props: { title: '', inside: 'probe', model: 'full', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
     { name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
   snap: 'perp', mount: false,
-  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
-  draw(p, S) {
-    const L = p.L, Hh = p.H;
+  // the working probe takes two fibres: the one arriving (laser in) and the one leaving (signal out)
+  fiberPort: (p, role) => probeFull(p) ? [-p.L / 2 - 0.9, role === 'from' ? probeGeo(p).yc : 0] : [-p.L / 2, 0],
+  fiberDir: () => [-1, 0],
+  fiberOk: p => probeFull(p),
+  port: p => ({ o: [probeGeo(p).xc + 0.2, 0], d: [1, 0] }),
+  portInside: true,   // light from the input fibre goes through the probe's own filter, dichroic and nose
+  bbox: p => [-p.L / 2 - (probeFull(p) ? 1 : 0), -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
+  draw(p, S, obj) {
+    const L = p.L, Hh = p.H, rot = obj ? obj.rot || 0 : 0;
     let s = '';
     if (p.snout) { const sl = Math.min(Hh * 0.35, 5), sw = Hh * 0.3; s += `<rect x="${n(L / 2 - 0.2)}" y="${n(-sw / 2)}" width="${n(sl + 0.2)}" height="${n(sw)}" rx="${n(sw * 0.12)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`; }
-    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
+    const see = probeFull(p) && !/^#[0-4]/.test(p.color);   // inside view: the traced beams show through the body
+    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}"${see ? ' fill-opacity="0.55"' : ''} ${H.stroke(S, 1.4)}/>`;
     if (p.inside === 'michelson') {
       const k = Math.min(L, Hh) * 0.2, cx = -L * 0.1, cy = Hh * 0.2;
       s += `<line x1="${n(cx - k * 0.45)}" y1="${n(cy + k * 0.45)}" x2="${n(cx + k * 0.45)}" y2="${n(cy - k * 0.45)}" ${H.stroke(S, 1.6, '#4a7fb5')}/>`;
@@ -4173,16 +4203,30 @@ lib.register({
       s += H.arrowGlyph(S, cx + k * 1.38, cy + k * 0.75, k * 0.6, S.ink);
     }
     if (p.inside === 'probe') {
-      // two parallel paths along the axis: excitation (y < 0) and collection (y > 0), joined by a dichroic and a mirror near the exit
-      const k = Hh * 0.17, y1 = -Hh * 0.2, y2 = Hh * 0.2, xa = -L / 2 + L * 0.12, xb = L / 2 - L * 0.22, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
-      const band = (y, x0, x1, c, fat) => `<path d="M ${n(x0)} ${n(y - k * fat)} L ${n(x1)} ${n(y - k * fat)} L ${n(x1)} ${n(y + k * fat)} L ${n(x0)} ${n(y + k * fat)} Z" fill="${c}" fill-opacity="0.75"/>`;
-      s += `<path d="M ${n(xa - L * 0.07)} ${n(y1)} L ${n(xa)} ${n(y1 - k)} L ${n(xa)} ${n(y1 + k)} Z" fill="${ce}" fill-opacity="0.75"/>` + band(y1, xa, L / 2, ce, 1);
-      s += `<path d="M ${n(xa - L * 0.07)} ${n(y2)} L ${n(xa)} ${n(y2 - k)} L ${n(xa)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>` + band(y2, xa, xb, cm, 1);
-      s += `<path d="M ${n(xb - k)} ${n(y1)} L ${n(xb + k)} ${n(y1)} L ${n(xb + k)} ${n(y2 + k)} L ${n(xb - k)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>`;
-      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.35)}" ry="${n(k * 1.15)}" fill="${S.shaded ? '#e9f4fb' : '#ffffff'}" ${H.stroke(S, 0.5)}/>`;
-      s += lens(xa + L * 0.02, y1) + lens(xa + L * 0.02, y2);
-      s += H.line(S, xa + L * 0.2, y1 - k, xa + L * 0.2, y1 + k, '', 1.4, U.darken(ce, 0.2)) + H.line(S, xa + L * 0.2, y2 - k, xa + L * 0.2, y2 + k, '', 1.4, '#1d1f23');
-      s += H.line(S, xb - k * 1.2, y1 + k * 1.2, xb + k * 1.2, y1 - k * 1.2, '', 1.3, '#d9dde3') + H.line(S, xb - k * 1.2, y2 + k * 1.2, xb + k * 1.2, y2 - k * 1.2, '', 1.3, '#b05cc8');
+      const g = probeGeo(p), k = g.k, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
+      const dark = U.luminance ? U.luminance(p.color) < 0.4 : /^#[0-4]/.test(p.color), ink = dark ? '#e9edf2' : S.ink;
+      const nose = L / 2 + (p.snout ? Math.min(Hh * 0.35, 5) : 0);
+      const dash = (pts, c) => `<path d="M ${pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')}" fill="none" stroke="${c}" stroke-width="${n(S.lw * 1.3)}" stroke-dasharray="${n(k * 0.35)} ${n(k * 0.25)}" stroke-linecap="round"/>`;
+      // light paths (the traced beams draw on top when fibres are connected)
+      s += dash([[g.x0, 0], [nose, 0]], ce) + dash([[nose, k * 0.25], [g.xd, k * 0.25], [g.xd, g.yc], [g.x0, g.yc]], cm);
+      // fibre ferrules at the back
+      [0, g.yc].forEach(y => { s += `<rect x="${n(g.xl - 0.9)}" y="${n(y - k * 0.32)}" width="${n(1.15)}" height="${n(k * 0.64)}" rx="0.15" fill="${S.fill('dark')}" ${H.stroke(S, 0.5)}/>`; });
+      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.28)}" ry="${n(k)}" fill="${S.shaded ? '#d9ecf8' : '#eef6fc'}" ${H.stroke(S, 0.55, dark ? '#cfd6df' : S.ink)}/>`;
+      s += lens(g.xc, 0) + lens(g.xc, g.yc);
+      s += `<rect x="${n(g.xf - 0.3)}" y="${n(-k)}" width="0.6" height="${n(2 * k)}" fill="${ce}" fill-opacity="0.85" ${H.stroke(S, 0.4)}/>`;
+      s += `<rect x="${n(g.xf - 0.3)}" y="${n(g.yc - k)}" width="0.6" height="${n(2 * k)}" fill="#e8913a" fill-opacity="0.85" ${H.stroke(S, 0.4)}/>`;
+      s += `<line x1="${n(g.xd - k)}" y1="${n(-k)}" x2="${n(g.xd + k)}" y2="${n(k)}" stroke="#e77f6d" stroke-width="${n(Math.max(0.45, k * 0.2))}" stroke-linecap="round"/>`;
+      s += `<line x1="${n(g.xd - k)}" y1="${n(g.yc - k)}" x2="${n(g.xd + k)}" y2="${n(g.yc + k)}" stroke="#2f4f8a" stroke-width="${n(Math.max(0.45, k * 0.2))}" stroke-linecap="round"/>`;
+      if (p.tags) {
+        // names stay upright whatever the probe's rotation, and sit on the outer side of each path
+        const fs = Math.min(S.fs * 0.62, k * 0.55);
+        const side = sy => { const w = U.v.rot([0, sy], rot); return Math.abs(w[0]) > 0.3 ? (w[0] > 0 ? 'start' : 'end') : 'middle'; };
+        const t = (x, y, str, sy) => `<text x="${n(x)}" y="${n(y)}" transform="rotate(${n(-rot)} ${n(x)} ${n(y)})" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="${side(sy)}" dominant-baseline="central">${U.esc(str)}</text>`;
+        const o1 = Hh / 2 + fs * 0.7, o2 = -Hh / 2 - fs * 0.7;   // just outside the body, level with each part
+        s += t(g.xc, o1, 'Collimating lens', 1) + t(g.xf, o1, 'Band-pass filter', 1) + t(g.xd, o1, 'Dichroic', 1);
+        s += t(g.xc, o2, 'Focusing lens', -1) + t(g.xf, o2, 'Long-pass filter', -1) + t(g.xd, o2, 'Fold mirror', -1);
+        s += t(g.xl + 0.2, o1, 'Laser in', 1) + t(g.xl + 0.2, o2, 'Signal out', -1);
+      }
     }
     if (p.inside === 'grating') {
       const k = Math.min(L, Hh) * 0.22;
@@ -4196,6 +4240,20 @@ lib.register({
     return s;
   },
   optics: (p, obj, doc) => {
+    const sc = (doc && doc.style.scale) || 10;
+    if (probeFull(p)) {
+      const g = probeGeo(p), k = g.k;
+      const out = [
+        { kind: 'filter', a: [g.xf, -k], b: [g.xf, k], mode: 'bandpass', center: p.ex, width: g.bw, T: 0.95 },
+        { kind: 'dichroic', a: [g.xd - k, -k], b: [g.xd + k, k], edge: g.edge, mode: g.stokes ? 'shortpass' : 'longpass' },
+        { kind: 'mirror', a: [g.xd - k, g.yc - k], b: [g.xd + k, g.yc + k], R: 1 },
+        { kind: 'filter', a: [g.xf, g.yc - k], b: [g.xf, g.yc + k], mode: g.stokes ? 'longpass' : 'shortpass', edge: g.edge, T: 0.95 },
+        { kind: 'lens', a: [g.xc, g.yc - k], b: [g.xc, g.yc + k], f: (g.xc - g.x0) * sc },
+        { kind: 'fiberIn', a: [g.x0, g.yc - k * 0.6], b: [g.x0, g.yc + k * 0.6] },
+      ];
+      if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * sc }); }
+      return out;
+    }
     const out = [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }];
     if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * ((doc && doc.style.scale) || 10) }); }
     return out;
@@ -6543,12 +6601,12 @@ lib.register({
   geometry(obj, doc) {
     const A = RNBX.getObjIn(doc, obj.props.from), B = RNBX.getObjIn(doc, obj.props.to);
     if (!A || !B) return null;
-    const end = o => {
+    const end = (o, role) => {
       const d = lib.get(o.type);
-      const lp = d && d.fiberPort ? d.fiberPort(o.props) : [0, 0];
-      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props) : [-1, 0]) };
+      const lp = d && d.fiberPort ? d.fiberPort(o.props, role) : [0, 0];
+      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props, role) : [-1, 0]) };
     };
-    const a = end(A), b = end(B);
+    const a = end(A, 'from'), b = end(B, 'to');
     const D = Math.max(6, V.dist(a.p, b.p)) * obj.props.bend;
     const c1 = V.add(a.p, V.mul(a.d, D)), c2 = V.add(b.p, V.mul(b.d, D));
     return { a: a.p, b: b.p, c1, c2, d: `M ${n(a.p[0])} ${n(a.p[1])} C ${n(c1[0])} ${n(c1[1])} ${n(c2[0])} ${n(c2[1])} ${n(b.p[0])} ${n(b.p[1])}` };
@@ -10203,10 +10261,26 @@ T.list.push({
 T.GROUPS = [
   ['Interferometers & polarisation', ['michelson', 'mzi', 'fringes', 'polarization']],
   ['Microscopy & imaging', ['epifluor', 'confocal', 'lightsheet', 'raman', 'tower', 'fourf', 'aberration']],
-  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr']],
+  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
 ];
+/* ---------- fibre Raman probe (inside view, working optics) ---------- */
+T.list.push({
+  id: 'ramanprobe', name: 'Fibre Raman probe (inside view)', desc: 'Laser through a fibre into a probe: band-pass, dichroic, nose lens, SERS chip; Raman back via fold mirror and long-pass into a spectrometer',
+  build() {
+    const d = base('nature-15', 124, 100, 'Fibre-optic Raman probe');
+    const laser = mk('benchlaser', 20, 14, 0, { lambda: 785, power: 50, text: '785 nm', w: 16, h: 10 }, 'Laser 785 nm', [0, 9]);
+    const probe = mk('module', 58, 46, 90, { title: '', inside: 'probe', model: 'full', L: 44, H: 34, color: '#e3eaf3', snout: true, f: 9, ex: 785, em: 830, tags: true }, 'Raman probe', [-30, 24]);
+    const chip = mk('sample', 58, 86.5, 90, { look: 'chip', w: 1.6, h: 14, emit: true, emitLambda: 830, emitFrac: 0.05, emitDir: 'back' }, 'SERS chip', [0, 7]);
+    const spec = mk('spectrometer', 102, 14, 0, { L: 22, H: 11 }, 'Spectrometer', [0, 9]);
+    d.objects.push(laser, probe, chip, spec,
+      link('fiber', laser, probe, { fiberType: 'mmf', bend: 0.5, boots: true }),
+      link('fiber', probe, spec, { fiberType: 'mmf', bend: 0.6, boots: true }));
+    return d;
+  },
+});
+
 /* shared with the Learn pages, which build small demo setups the same way */
 T.helpers = { mk, base, ang, link, R, L, UP, DN };
 T.groupOf = id => { const g = T.GROUPS.find(([, ids]) => ids.includes(id)); return g ? g[0] : 'More'; };
@@ -10913,7 +10987,7 @@ function connectClick(id) {
   const tool = S.ui.tool, o = RNBX.getObj(id);
   if (!o) return;
   const od = RNBX.lib.get(o.type);
-  if (tool === 'fiber' && !(od && od.fiberPort && (!od.fiberOk || od.fiberOk(o.props)))) { RNBX.toast('Fibres connect fibre couplers, fibre ends and fibre-output lasers. Add them from Fibre optics or Sources.'); return; }
+  if (tool === 'fiber' && !(od && od.fiberPort && (!od.fiberOk || od.fiberOk(o.props)))) { RNBX.toast('Fibres connect fibre couplers, fibre ends, fibre-output lasers, the Raman probe and spectrometers.'); return; }
   if (!S.ui.connectFrom) {
     S.ui.connectFrom = id;
     D.$('#connectHint').textContent = tool === 'fiber' ? 'Now click the output coupler' : 'Now click the second object';
@@ -13043,8 +13117,19 @@ E('stage', { group: SM,
   see: ['retro', 'posstage'] });
 E('chamber', { group: SM, one: 'A cryostat or vacuum chamber holds a sample at low temperature or in vacuum; the light goes in and out through windows.',
   how: ['Many measurements need cold (4 K–300 K) or vacuum. Optical windows let the beams through; each window adds reflections and some lateral shift.'], see: ['window'] });
-E('module', { group: SM, one: 'A boxed optical module: a beam enters, something happens inside, the beam leaves. Use it for any instrument you do not want to draw in detail.',
-  how: ['The module can contain a probe head focusing the light at a set distance, or a Michelson (FTIR) interferometer. For a black-box sub-system it keeps the figure simple.'], see: ['custom'] });
+E('module', { group: SM, title: 'Fibre Raman probe (and optical modules)',
+  one: 'A fibre Raman probe sends laser light to a sample and collects the Raman light it scatters back, cleaning both with filters, inside one small head.',
+  how: ['<b>Excitation path.</b> The laser arrives through a fibre. A collimating lens makes the light parallel, and a narrow <b>band-pass</b> filter removes everything except the laser line (fibres themselves generate a weak Raman background that must not reach the sample). A <b>dichroic</b> mirror lets the laser through, and the lens in the nose focuses it onto the sample.',
+    '<b>Collection path.</b> The sample scatters a tiny fraction of the light at new wavelengths (Raman). The same nose lens collects it and makes it parallel again. Now the dichroic <b>reflects</b> it, because the Raman light is longer in wavelength than its edge; a <b>fold mirror</b> turns it back parallel to the axis. A <b>long-pass</b> filter blocks the much stronger laser light scattered back by the sample (Rayleigh scattering, ~10⁶ times stronger), and a lens focuses the Raman light into the collection fibre, which goes to the spectrometer.',
+    'In RNBeamX the <i>Fibre-optic Raman probe</i> has working optics: connect a fibre from a fibre-output laser to it (laser in) and another from it to a spectrometer (signal out). Set the laser and Raman wavelengths: the band-pass sits on the laser line and the dichroic and long-pass edges sit between the two. A SERS chip or a sample with <i>Emits</i> on, placed at the focus, sends the Raman light back. The demo is the <i>Fibre Raman probe</i> template; the other modules (Michelson, monochromator) are boxes the beam passes through.'],
+  math: [[`Δ${v('ν̃')} [cm⁻¹] = 10⁷ (${fr('1', v('λ') + '<sub>laser</sub>')} − ${fr('1', v('λ') + '<sub>Raman</sub>')})`, 'Raman shift (wavelengths in nm): 785 nm → 830 nm is a 690 cm⁻¹ band'],
+    [`${v('λ')}<sub>Raman</sub> = ${fr('1', '1/' + v('λ') + '<sub>laser</sub> − Δ' + v('ν̃') + '·10⁻⁷')}`, 'where a Raman band lands for a given laser'],
+    [`${v('λ')}<sub>laser</sub> < ${v('λ')}<sub>edge</sub> < ${v('λ')}<sub>Raman</sub>`, 'dichroic and long-pass edges between laser and Stokes Raman light'],
+    [`${v('P')}<sub>Raman</sub> ∝ ${v('P')}<sub>laser</sub> σ ${v('N')} Ω`, 'collected signal: cross-section σ (~10⁻²⁹ cm²/sr), molecules in focus N, collection solid angle Ω ≈ π NA²'],
+    [`OD<sub>LP</sub>(${v('λ')}<sub>laser</sub>) ≥ 6`, 'the long-pass must block the laser by a factor of a million or more']],
+  numbers: ['785 nm probes: band-pass 785 ± 1 nm, long-pass edge ~ 800 nm, working distance 5–10 mm', 'SERS enhances the Raman signal by 10⁶–10⁸ on metal nanostructures'],
+  demo: () => RNBX.templates.list.find(t => t.id === 'ramanprobe').build(),
+  see: ['dichroic', 'filter', 'fiber', 'spectrometer', 'sample'] });
 E('emagnet', { group: SM, one: 'An electromagnet makes a strong magnetic field between its pole pieces, e.g. for magneto-optics.',
   how: ['Current in the coils magnetises the iron core; the field concentrates in the gap between the poles. Samples in the gap show magneto-optical effects such as Faraday or Kerr rotation. Helmholtz coils make a weaker but very uniform field.'],
   math: [[`${v('B')} ≈ ${fr('μ<sub>0</sub>' + v('N') + v('I'), v('g'))}`, 'field in a gap g for N turns carrying current I (iron core)'],

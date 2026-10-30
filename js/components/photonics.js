@@ -120,27 +120,54 @@ lib.register({
 /* ---------- custom component (your own drawing or photo) ---------- */
 const BEHAVIOURS = [['none', 'Decorative (no optics)'], ['mirror', 'Mirror'], ['splitter', 'Beam splitter'], ['lens', 'Lens'], ['absorb', 'Detector / block'], ['filter', 'Filter (band-pass)'], ['pass', 'Transparent (passes light)'], ['sample', 'Sample (can emit)'], ['source', 'Light source']];
 /* ---------- black-box module the beam passes through (FTIR, monochromator, …) ---------- */
+/* ---------- fibre Raman probe (working optics) ----------
+   Excitation on the probe axis (local y = 0): fibre in → collimating lens
+   → laser-line band-pass → dichroic (passes the laser) → focusing nose →
+   sample. The same nose collects the back-scattered Raman light; the
+   dichroic reflects it to a fold mirror, it runs back parallel to the
+   axis (local y = yc) through a long-pass filter (blocks the laser line)
+   and a lens focuses it into the collection fibre. Every element below
+   is a real traced surface; the sketch is drawn from the same geometry. */
+const probeGeo = p => {
+  const L = p.L, Hh = p.H, xl = -L / 2, k = Math.min(Hh * 0.13, L * 0.09);
+  const stokes = (p.em || 830) >= (p.ex || 785);
+  return { L, Hh, xl, k, yc: -Hh * 0.28, x0: xl + 0.25, xc: xl + L * 0.17, xf: xl + L * 0.42, xd: L / 2 - L * 0.2,
+    edge: p.ex + ((p.em || p.ex + 45) - p.ex) * 0.4, bw: Math.max(2, Math.min(10, Math.abs((p.em || 830) - p.ex) * 0.5)), stokes };
+};
+const probeFull = p => p.inside === 'probe' && p.model === 'full';
+lib.probeGeo = probeGeo;
+
 lib.register({
   type: 'module', name: 'Optical module (beam passes through)', abbr: 'MOD', category: 'Samples & mechanics', autoLabel: false,
   keywords: 'module box instrument black box michelson interferometer ftir monochromator spectrometer unit pass through',
-  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830 },
+  defaults: { L: 22, H: 14, title: 'Module', color: '#f3f4f6', inside: 'none', snout: false, f: 0, ex: 785, em: 830, model: 'sketch', tags: false },
   params: [{ key: 'title', label: 'Text in the box', type: 'textarea' },
     { key: 'inside', label: 'Sketch inside', type: 'select', options: [['none', 'None'], ['michelson', 'Michelson interferometer'], ['grating', 'Grating monochromator'], ['probe', 'Fibre probe (excitation and collection paths)']] },
-    { key: 'ex', label: 'Excitation colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
-    { key: 'em', label: 'Collection colour (sketch)', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe' },
+    { key: 'model', label: 'Probe optics', type: 'select', options: [['full', 'Working optics (traced: fibre in, filters, dichroic, fibre out)'], ['sketch', 'Sketch only (beam passes straight)']], show: p => p.inside === 'probe' },
+    { key: 'ex', label: 'Laser (excitation) wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe', hint: 'sets the band-pass filter' },
+    { key: 'em', label: 'Raman (collection) wavelength', type: 'wavelength', unit: 'nm', min: 200, max: 2000, step: 1, show: p => p.inside === 'probe', hint: 'dichroic and long-pass edge sit between the two' },
+    { key: 'tags', label: 'Name the inner parts', type: 'bool', show: p => p.inside === 'probe' },
     { key: 'snout', label: 'Focusing nose at the exit', type: 'bool' },
     { key: 'f', label: 'Focus distance below the nose (drawn)', type: 'number', unit: 'mm', min: 0, max: 200, step: 0.5, show: p => p.snout, hint: '0 = the beam passes straight' },
     { key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 200, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 2, max: 200, step: 0.5 },
     { key: 'color', label: 'Box colour', type: 'color' }],
-  variants: [{ name: 'Fibre-optic probe head', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic filter handheld', props: { title: '', inside: 'probe', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
+  variants: [{ name: 'Fibre-optic Raman probe (working optics)', abbr: 'Probe', keywords: 'raman probe head fiber fibre optic probe excitation collection dichroic band pass long pass filter folding mirror', props: { title: '', inside: 'probe', model: 'full', L: 30, H: 20, color: '#e3eaf3', snout: true, f: 8, tags: true } },
+    { name: 'Fibre-optic probe head (closed)', abbr: 'Probe', keywords: 'raman probe head handheld closed body', props: { title: '', inside: 'probe', model: 'full', L: 20, H: 13, color: '#4a4f57', snout: true, f: 6 } },
     { name: 'Michelson interferometer (FTIR)', abbr: 'FTIR', keywords: 'ftir fourier transform infrared michelson interferometer box', props: { title: 'Michelson\ninterferometer', inside: 'michelson', L: 26, H: 18, color: '#ffffff' } }],
   snap: 'perp', mount: false,
-  bbox: p => [-p.L / 2, -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
-  draw(p, S) {
-    const L = p.L, Hh = p.H;
+  // the working probe takes two fibres: the one arriving (laser in) and the one leaving (signal out)
+  fiberPort: (p, role) => probeFull(p) ? [-p.L / 2 - 0.9, role === 'from' ? probeGeo(p).yc : 0] : [-p.L / 2, 0],
+  fiberDir: () => [-1, 0],
+  fiberOk: p => probeFull(p),
+  port: p => ({ o: [probeGeo(p).xc + 0.2, 0], d: [1, 0] }),
+  portInside: true,   // light from the input fibre goes through the probe's own filter, dichroic and nose
+  bbox: p => [-p.L / 2 - (probeFull(p) ? 1 : 0), -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
+  draw(p, S, obj) {
+    const L = p.L, Hh = p.H, rot = obj ? obj.rot || 0 : 0;
     let s = '';
     if (p.snout) { const sl = Math.min(Hh * 0.35, 5), sw = Hh * 0.3; s += `<rect x="${n(L / 2 - 0.2)}" y="${n(-sw / 2)}" width="${n(sl + 0.2)}" height="${n(sw)}" rx="${n(sw * 0.12)}" fill="${S.fill('dark')}" ${H.stroke(S)}/>`; }
-    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}" ${H.stroke(S, 1.4)}/>`;
+    const see = probeFull(p) && !/^#[0-4]/.test(p.color);   // inside view: the traced beams show through the body
+    s += `<rect x="${n(-L / 2)}" y="${n(-Hh / 2)}" width="${n(L)}" height="${n(Hh)}" rx="${n(Math.min(L, Hh) * 0.04)}" fill="${p.color}"${see ? ' fill-opacity="0.55"' : ''} ${H.stroke(S, 1.4)}/>`;
     if (p.inside === 'michelson') {
       const k = Math.min(L, Hh) * 0.2, cx = -L * 0.1, cy = Hh * 0.2;
       s += `<line x1="${n(cx - k * 0.45)}" y1="${n(cy + k * 0.45)}" x2="${n(cx + k * 0.45)}" y2="${n(cy - k * 0.45)}" ${H.stroke(S, 1.6, '#4a7fb5')}/>`;
@@ -149,16 +176,30 @@ lib.register({
       s += H.arrowGlyph(S, cx + k * 1.38, cy + k * 0.75, k * 0.6, S.ink);
     }
     if (p.inside === 'probe') {
-      // two parallel paths along the axis: excitation (y < 0) and collection (y > 0), joined by a dichroic and a mirror near the exit
-      const k = Hh * 0.17, y1 = -Hh * 0.2, y2 = Hh * 0.2, xa = -L / 2 + L * 0.12, xb = L / 2 - L * 0.22, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
-      const band = (y, x0, x1, c, fat) => `<path d="M ${n(x0)} ${n(y - k * fat)} L ${n(x1)} ${n(y - k * fat)} L ${n(x1)} ${n(y + k * fat)} L ${n(x0)} ${n(y + k * fat)} Z" fill="${c}" fill-opacity="0.75"/>`;
-      s += `<path d="M ${n(xa - L * 0.07)} ${n(y1)} L ${n(xa)} ${n(y1 - k)} L ${n(xa)} ${n(y1 + k)} Z" fill="${ce}" fill-opacity="0.75"/>` + band(y1, xa, L / 2, ce, 1);
-      s += `<path d="M ${n(xa - L * 0.07)} ${n(y2)} L ${n(xa)} ${n(y2 - k)} L ${n(xa)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>` + band(y2, xa, xb, cm, 1);
-      s += `<path d="M ${n(xb - k)} ${n(y1)} L ${n(xb + k)} ${n(y1)} L ${n(xb + k)} ${n(y2 + k)} L ${n(xb - k)} ${n(y2 + k)} Z" fill="${cm}" fill-opacity="0.75"/>`;
-      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.35)}" ry="${n(k * 1.15)}" fill="${S.shaded ? '#e9f4fb' : '#ffffff'}" ${H.stroke(S, 0.5)}/>`;
-      s += lens(xa + L * 0.02, y1) + lens(xa + L * 0.02, y2);
-      s += H.line(S, xa + L * 0.2, y1 - k, xa + L * 0.2, y1 + k, '', 1.4, U.darken(ce, 0.2)) + H.line(S, xa + L * 0.2, y2 - k, xa + L * 0.2, y2 + k, '', 1.4, '#1d1f23');
-      s += H.line(S, xb - k * 1.2, y1 + k * 1.2, xb + k * 1.2, y1 - k * 1.2, '', 1.3, '#d9dde3') + H.line(S, xb - k * 1.2, y2 + k * 1.2, xb + k * 1.2, y2 - k * 1.2, '', 1.3, '#b05cc8');
+      const g = probeGeo(p), k = g.k, ce = U.wavelengthColor(p.ex), cm = U.wavelengthColor(p.em);
+      const dark = U.luminance ? U.luminance(p.color) < 0.4 : /^#[0-4]/.test(p.color), ink = dark ? '#e9edf2' : S.ink;
+      const nose = L / 2 + (p.snout ? Math.min(Hh * 0.35, 5) : 0);
+      const dash = (pts, c) => `<path d="M ${pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')}" fill="none" stroke="${c}" stroke-width="${n(S.lw * 1.3)}" stroke-dasharray="${n(k * 0.35)} ${n(k * 0.25)}" stroke-linecap="round"/>`;
+      // light paths (the traced beams draw on top when fibres are connected)
+      s += dash([[g.x0, 0], [nose, 0]], ce) + dash([[nose, k * 0.25], [g.xd, k * 0.25], [g.xd, g.yc], [g.x0, g.yc]], cm);
+      // fibre ferrules at the back
+      [0, g.yc].forEach(y => { s += `<rect x="${n(g.xl - 0.9)}" y="${n(y - k * 0.32)}" width="${n(1.15)}" height="${n(k * 0.64)}" rx="0.15" fill="${S.fill('dark')}" ${H.stroke(S, 0.5)}/>`; });
+      const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.28)}" ry="${n(k)}" fill="${S.shaded ? '#d9ecf8' : '#eef6fc'}" ${H.stroke(S, 0.55, dark ? '#cfd6df' : S.ink)}/>`;
+      s += lens(g.xc, 0) + lens(g.xc, g.yc);
+      s += `<rect x="${n(g.xf - 0.3)}" y="${n(-k)}" width="0.6" height="${n(2 * k)}" fill="${ce}" fill-opacity="0.85" ${H.stroke(S, 0.4)}/>`;
+      s += `<rect x="${n(g.xf - 0.3)}" y="${n(g.yc - k)}" width="0.6" height="${n(2 * k)}" fill="#e8913a" fill-opacity="0.85" ${H.stroke(S, 0.4)}/>`;
+      s += `<line x1="${n(g.xd - k)}" y1="${n(-k)}" x2="${n(g.xd + k)}" y2="${n(k)}" stroke="#e77f6d" stroke-width="${n(Math.max(0.45, k * 0.2))}" stroke-linecap="round"/>`;
+      s += `<line x1="${n(g.xd - k)}" y1="${n(g.yc - k)}" x2="${n(g.xd + k)}" y2="${n(g.yc + k)}" stroke="#2f4f8a" stroke-width="${n(Math.max(0.45, k * 0.2))}" stroke-linecap="round"/>`;
+      if (p.tags) {
+        // names stay upright whatever the probe's rotation, and sit on the outer side of each path
+        const fs = Math.min(S.fs * 0.62, k * 0.55);
+        const side = sy => { const w = U.v.rot([0, sy], rot); return Math.abs(w[0]) > 0.3 ? (w[0] > 0 ? 'start' : 'end') : 'middle'; };
+        const t = (x, y, str, sy) => `<text x="${n(x)}" y="${n(y)}" transform="rotate(${n(-rot)} ${n(x)} ${n(y)})" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${ink}" text-anchor="${side(sy)}" dominant-baseline="central">${U.esc(str)}</text>`;
+        const o1 = Hh / 2 + fs * 0.7, o2 = -Hh / 2 - fs * 0.7;   // just outside the body, level with each part
+        s += t(g.xc, o1, 'Collimating lens', 1) + t(g.xf, o1, 'Band-pass filter', 1) + t(g.xd, o1, 'Dichroic', 1);
+        s += t(g.xc, o2, 'Focusing lens', -1) + t(g.xf, o2, 'Long-pass filter', -1) + t(g.xd, o2, 'Fold mirror', -1);
+        s += t(g.xl + 0.2, o1, 'Laser in', 1) + t(g.xl + 0.2, o2, 'Signal out', -1);
+      }
     }
     if (p.inside === 'grating') {
       const k = Math.min(L, Hh) * 0.22;
@@ -172,6 +213,20 @@ lib.register({
     return s;
   },
   optics: (p, obj, doc) => {
+    const sc = (doc && doc.style.scale) || 10;
+    if (probeFull(p)) {
+      const g = probeGeo(p), k = g.k;
+      const out = [
+        { kind: 'filter', a: [g.xf, -k], b: [g.xf, k], mode: 'bandpass', center: p.ex, width: g.bw, T: 0.95 },
+        { kind: 'dichroic', a: [g.xd - k, -k], b: [g.xd + k, k], edge: g.edge, mode: g.stokes ? 'shortpass' : 'longpass' },
+        { kind: 'mirror', a: [g.xd - k, g.yc - k], b: [g.xd + k, g.yc + k], R: 1 },
+        { kind: 'filter', a: [g.xf, g.yc - k], b: [g.xf, g.yc + k], mode: g.stokes ? 'longpass' : 'shortpass', edge: g.edge, T: 0.95 },
+        { kind: 'lens', a: [g.xc, g.yc - k], b: [g.xc, g.yc + k], f: (g.xc - g.x0) * sc },
+        { kind: 'fiberIn', a: [g.x0, g.yc - k * 0.6], b: [g.x0, g.yc + k * 0.6] },
+      ];
+      if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * sc }); }
+      return out;
+    }
     const out = [{ kind: 'pass', a: [0, -p.H / 2], b: [0, p.H / 2] }];
     if (p.snout && p.f > 0) { const sl = Math.min(p.H * 0.35, 5), sw = p.H * 0.3; out.push({ kind: 'lens', a: [p.L / 2 + sl, -sw / 2], b: [p.L / 2 + sl, sw / 2], f: p.f * ((doc && doc.style.scale) || 10) }); }
     return out;

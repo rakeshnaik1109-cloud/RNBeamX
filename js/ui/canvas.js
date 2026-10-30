@@ -477,7 +477,7 @@ function connectClick(id) {
   const tool = S.ui.tool, o = RNBX.getObj(id);
   if (!o) return;
   const od = RNBX.lib.get(o.type);
-  if (tool === 'fiber' && !(od && od.fiberPort && (!od.fiberOk || od.fiberOk(o.props)))) { RNBX.toast('Fibres connect fibre couplers, fibre ends and fibre-output lasers. Add them from Fibre optics or Sources.'); return; }
+  if (tool === 'fiber' && !(od && od.fiberPort && (!od.fiberOk || od.fiberOk(o.props)))) { RNBX.toast('Fibres connect fibre couplers, fibre ends, fibre-output lasers, the Raman probe and spectrometers.'); return; }
   if (!S.ui.connectFrom) {
     S.ui.connectFrom = id;
     D.$('#connectHint').textContent = tool === 'fiber' ? 'Now click the output coupler' : 'Now click the second object';

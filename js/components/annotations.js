@@ -71,12 +71,12 @@ lib.register({
   geometry(obj, doc) {
     const A = RNBX.getObjIn(doc, obj.props.from), B = RNBX.getObjIn(doc, obj.props.to);
     if (!A || !B) return null;
-    const end = o => {
+    const end = (o, role) => {
       const d = lib.get(o.type);
-      const lp = d && d.fiberPort ? d.fiberPort(o.props) : [0, 0];
-      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props) : [-1, 0]) };
+      const lp = d && d.fiberPort ? d.fiberPort(o.props, role) : [0, 0];
+      return { p: U.toWorld(o, lp), d: U.dirToWorld(o, d && d.fiberDir ? d.fiberDir(o.props, role) : [-1, 0]) };
     };
-    const a = end(A), b = end(B);
+    const a = end(A, 'from'), b = end(B, 'to');
     const D = Math.max(6, V.dist(a.p, b.p)) * obj.props.bend;
     const c1 = V.add(a.p, V.mul(a.d, D)), c2 = V.add(b.p, V.mul(b.d, D));
     return { a: a.p, b: b.p, c1, c2, d: `M ${n(a.p[0])} ${n(a.p[1])} C ${n(c1[0])} ${n(c1[1])} ${n(c2[0])} ${n(c2[1])} ${n(b.p[0])} ${n(b.p[1])}` };
