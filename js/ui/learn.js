@@ -53,7 +53,8 @@ LN.readings = d => {
 /* several drawings share one page: give each its own ids (clip paths, gradients) so references
    like url(#rbx-page) resolve to its own definitions, not the first drawing's */
 let uid = 0;
-const ownIds = svg => { const k = 'l' + (++uid) + '-'; const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map(m => m[1]); let out = svg;
+const ownIds = svg => { const k = 'l' + (++uid) + '-'; const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map(m => m[1]);
+  let out = svg.replace(/<title>[^<]*<\/title>/, '');   // no "RNBeamX figure" tooltip on the page
   ids.forEach(id => { const e = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); out = out.replace(new RegExp(`(id="|url\\(#|href="#)${e}([")])`, 'g'), `$1${k}${id}$2`); }); return out; };
 const fmtP = P => P >= 1 ? U.fmt(P, 3) + ' mW' : P >= 1e-3 ? U.fmt(P * 1000, 3) + ' µW' : P > 0 ? U.fmt(P * 1e6, 3) + ' nW' : '0';
 

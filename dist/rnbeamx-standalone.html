@@ -12957,7 +12957,14 @@ E('rprism', { group: F0,
   how: ['A <b>right-angle prism</b> used through its hypotenuse turns a beam by 90° with total internal reflection: no coating needed and nearly 100 % reflectance. A <b>Dove prism</b> flips an image; rotating it rotates the image twice as fast. A <b>wedge</b> deflects a beam by a small fixed angle; an <b>axicon</b> (cone) makes a Bessel beam.'],
   math: [[`${v('θ')} > ${v('θ')}<sub>c</sub> = arcsin(1/${v('n')})`, 'total internal reflection when the angle inside exceeds the critical angle'],
     [`${v('δ')} ≈ (${v('n')} − 1) ${v('α')}`, 'deviation by a thin wedge of angle α']],
-  demo: demo(100, 56, a => { a('laser', 18, 44, 0, { lambda: 532 }, 'Laser', [0, 6]); a('rprism', 60, 44, 0, { kind: 'wedge' }, 'Wedge', [0, 8]); a('screen', 94, 40, 0, { d: 20 }); }),
+  demo: demo(120, 92, a => {
+    // right-angle prism: total internal reflection at the hypotenuse folds the beam by 90°
+    a('laser', 16, 12, 0, { lambda: 532, L: 14, H: 5 }, '', [0, 6]); a('rprism', 58, 12, 0, { kind: 'rightangle', s: 12 }, 'Right-angle prism: 90° fold (TIR)', [30, -2]); a('screen', 58, 34, 90, { d: 10 });
+    // Dove prism: the beam leaves parallel, flipped about the axis (the image is inverted)
+    a('laser', 16, 54, 0, { lambda: 532, L: 14, H: 5 }, '', [0, 6]); a('rprism', 58, 55.5, 0, { kind: 'dove', s: 10 }, 'Dove prism: image flipped', [0, 9]); a('screen', 104, 54, 0, { d: 10 });
+    // wedge: a small fixed tilt toward the thick end
+    a('laser', 16, 78, 0, { lambda: 532, L: 14, H: 5 }, '', [0, 6]); a('rprism', 58, 78, 0, { kind: 'wedge', s: 10 }, 'Wedge: small tilt', [0, 9]); a('screen', 104, 76, 0, { d: 12 });
+  }),
   see: ['prism', 'mirror'] });
 E('diffuser', { group: F0,
   one: 'A diffuser scatters light into a wide cone, making illumination even.',
@@ -13260,7 +13267,8 @@ LN.readings = d => {
 /* several drawings share one page: give each its own ids (clip paths, gradients) so references
    like url(#rbx-page) resolve to its own definitions, not the first drawing's */
 let uid = 0;
-const ownIds = svg => { const k = 'l' + (++uid) + '-'; const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map(m => m[1]); let out = svg;
+const ownIds = svg => { const k = 'l' + (++uid) + '-'; const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map(m => m[1]);
+  let out = svg.replace(/<title>[^<]*<\/title>/, '');   // no "RNBeamX figure" tooltip on the page
   ids.forEach(id => { const e = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); out = out.replace(new RegExp(`(id="|url\\(#|href="#)${e}([")])`, 'g'), `$1${k}${id}$2`); }); return out; };
 const fmtP = P => P >= 1 ? U.fmt(P, 3) + ' mW' : P >= 1e-3 ? U.fmt(P * 1000, 3) + ' µW' : P > 0 ? U.fmt(P * 1e6, 3) + ' nW' : '0';
 
