@@ -828,7 +828,7 @@ RNBX.defaultStyle = () => ({
 RNBX.defaultView3d = () => ({
   yaw: -28, pitch: 34, zoom: 1, panX: 0, panY: 0,
   beamHeight: 10, table: true, holes: true, posts: true,
-  tableColor: '#2c3036', tableFinish: 'black', shadow: true,
+  tableColor: '#b4b9bf', tableFinish: 'steel', shadow: true,   // brushed stainless steel by default
   mountStyle: 'lab', mountColor: '#2a2e34',
 });
 
@@ -849,11 +849,15 @@ RNBX.newDocument = (presetId = 'nature-2') => {
 /* Bring an older or hand-edited project up to the current schema. */
 RNBX.normalizeDocument = doc => {
   const fresh = RNBX.newDocument();
+  const raw3 = (doc && doc.view3d) || {};
   doc = Object.assign({}, fresh, doc);
   doc.page = Object.assign({}, fresh.page, doc.page);
   doc.style = Object.assign({}, fresh.style, doc.style);
   doc.view3d = Object.assign({}, fresh.view3d, doc.view3d);
-  if (doc.view3d.tableFinish == null || (doc.view3d.tableFinish === 'black' && doc.view3d.tableColor !== fresh.view3d.tableColor)) doc.view3d.tableFinish = doc.view3d.tableColor === fresh.view3d.tableColor ? 'black' : 'custom';
+  // figures saved before table finishes existed keep their table: the old matte-black default stays black
+  const BLACK = '#2c3036', STEEL = '#b4b9bf', tc = String(doc.view3d.tableColor || '').toLowerCase();
+  if (raw3.tableFinish == null && raw3.tableColor != null) doc.view3d.tableFinish = tc === BLACK ? 'black' : tc === STEEL ? 'steel' : 'custom';
+  else if (doc.view3d.tableFinish === 'black' && tc !== BLACK) doc.view3d.tableFinish = 'custom';
   doc.animation = Object.assign({}, fresh.animation, doc.animation);
   doc.animation.tracks = doc.animation.tracks || {};
   doc.animation.camera = doc.animation.camera || [];

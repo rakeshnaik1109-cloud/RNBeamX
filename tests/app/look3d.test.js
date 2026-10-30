@@ -59,6 +59,13 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('inspector has a Colour & mount section; a colour swatch sets the body colour', ui.has && ui.tint === '#2f5f9e', ui);
   H.check('photo look: dark studio backdrop, lab mounts, beam high enough for post holders', ui.bg === 'gradient' && ui.dark && ui.style === 'lab' && ui.bh >= 12, ui);
   await page.waitForTimeout(150); await H.shot(page, 'look3d-photo', '#stage');
+  const tbl = await page.evaluate(() => {
+    const fresh = RNBX.newDocument().view3d;
+    const old = RNBX.normalizeDocument({ objects: [], view3d: { tableColor: '#2c3036' } }).view3d;
+    const custom = RNBX.normalizeDocument({ objects: [], view3d: { tableColor: '#334455', tableFinish: 'black' } }).view3d;
+    return { fresh: [fresh.tableFinish, fresh.tableColor], old: [old.tableFinish, old.tableColor], custom: custom.tableFinish };
+  });
+  H.check('new figures get a brushed stainless-steel table; older matte-black figures keep theirs', tbl.fresh.join() === 'steel,#b4b9bf' && tbl.old.join() === 'black,#2c3036' && tbl.custom === 'custom', tbl);
   H.check('no errors', page.errors.length === 0, page.errors.join(' | '));
   await page.context().close();
 };
