@@ -180,8 +180,10 @@ lib.register({
       const dark = U.luminance ? U.luminance(p.color) < 0.4 : /^#[0-4]/.test(p.color), ink = dark ? '#e9edf2' : S.ink;
       const nose = L / 2 + (p.snout ? Math.min(Hh * 0.35, 5) : 0);
       const dash = (pts, c) => `<path d="M ${pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')}" fill="none" stroke="${c}" stroke-width="${n(S.lw * 1.3)}" stroke-dasharray="${n(k * 0.35)} ${n(k * 0.25)}" stroke-linecap="round"/>`;
-      // light paths (the traced beams draw on top when fibres are connected)
-      s += dash([[g.x0, 0], [nose, 0]], ce) + dash([[nose, k * 0.25], [g.xd, k * 0.25], [g.xd, g.yc], [g.x0, g.yc]], cm);
+      // sketched light paths, only while no traced light runs through the probe (then the real beams show instead);
+      // the two directions sit symmetrically about the axis
+      const lit = S.trace && obj && S.trace.segments.some(sg => { const m = U.toLocal(obj, [(sg.a[0] + sg.b[0]) / 2, (sg.a[1] + sg.b[1]) / 2]); return m[0] > -L / 2 && m[0] < nose && Math.abs(m[1]) < Hh / 2; });
+      if (!lit) { const e = k * 0.18; s += dash([[g.x0, -e], [nose, -e]], ce) + dash([[nose, e], [g.xd + e, e], [g.xd + e, g.yc + e], [g.x0, g.yc + e]], cm); }   // corners on the dichroic and fold-mirror lines
       // fibre ferrules at the back
       [0, g.yc].forEach(y => { s += `<rect x="${n(g.xl - 0.9)}" y="${n(y - k * 0.32)}" width="${n(1.15)}" height="${n(k * 0.64)}" rx="0.15" fill="${S.fill('dark')}" ${H.stroke(S, 0.5)}/>`; });
       const lens = (x, y) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(k * 0.28)}" ry="${n(k)}" fill="${S.shaded ? '#d9ecf8' : '#eef6fc'}" ${H.stroke(S, 0.55, dark ? '#cfd6df' : S.ink)}/>`;
