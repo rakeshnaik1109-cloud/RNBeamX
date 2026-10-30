@@ -39,6 +39,16 @@ document.addEventListener('DOMContentLoaded', () => {
   } else if (!RNBX.project.restore()) {
     RNBX.changed();
   }
+  // arriving from a Learn page: open its demo, or add the part (Ctrl+Z brings the previous figure back)
+  const lid = params.get('learn'), add = params.get('add');
+  if (lid && RNBX.learnContent && RNBX.learnContent.entries[lid]) {
+    const nd = RNBX.learn.demoDoc(lid);
+    if (nd) { RNBX.history.checkpoint(); nd.meta.title = RNBX.learn.title(lid); RNBX.setDocument(nd, true); setTimeout(() => RNBX.toast('Demo from Learn opened: change any setting and watch the beams. Ctrl+Z brings back your previous figure.'), 60); }
+    history.replaceState(null, '', location.pathname);
+  } else if (add && RNBX.lib.get(add)) {
+    setTimeout(() => { RNBX.canvas.placeNew({ type: add }, [S.doc.page.width / 2, S.doc.page.height / 2], false); RNBX.toast(RNBX.lib.get(add).name + ' added from Learn. Ctrl+Z to undo.'); }, 80);
+    history.replaceState(null, '', location.pathname);
+  }
   // arriving from RNSpectraX's "→ RNBeamX": add the spectrum as a new panel
   if (params.get('from') === 'rnspectrax') {
     const d = RNBX.plotData.readHandoff();

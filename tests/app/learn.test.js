@@ -21,22 +21,32 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('pages with a demo carry equations', r.noMath.length === 0, r.noMath);
   H.near('Malus’s law demo: H light through a polariser at 60° → 10 mW × cos²60° = 2.5 mW', r.malus.Detector, 2.5, 1e-3);
   H.check('λ/2 at 22.5° + PBS splits 5 / 5 mW; a 50:50 cube 5 / 5 mW; EOM at Vπ rotates H to V (10 mW through)', r.hwp.V === 5 && r.hwp.H === 5 && r.bs.Reflected === 5 && r.eom['Power meter'] === 10, r);
-  const ui = await page.evaluate(async () => {
-    document.querySelector('#btnLearn').click();
-    await new Promise(res => setTimeout(res, 100));
-    const first = document.querySelector('.learn-art h2').textContent;
-    const s = document.querySelector('.learn-search'); s.value = 'quarter'; s.dispatchEvent(new Event('input'));
-    const found = [...document.querySelectorAll('.learn-list button')].map(b => b.textContent);
-    s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    await new Promise(res => setTimeout(res, 50));
+  // Learn is its own page (like the guide): the button links to it in a new tab
+  const btn = await page.evaluate(() => { const b = document.querySelector('#btnLearn'); return { tag: b.tagName, href: b.getAttribute('href'), target: b.target }; });
+  H.check('the Learn button opens learn.html in a new tab', btn.tag === 'A' && btn.href === 'learn.html' && btn.target === '_blank', btn);
+  const lp = await page.context().newPage();
+  const lerr = []; lp.on('pageerror', e => lerr.push(e.message));
+  await lp.goto(base.replace(/index\.html.*$/, '').replace(/\/?$/, '/') + 'learn.html#qwp');
+  await lp.waitForTimeout(400);
+  const ui = await lp.evaluate(async () => {
     const title = document.querySelector('.learn-art h2').textContent, eqs = document.querySelectorAll('.learn-eq').length;
-    [...document.querySelectorAll('.learn-acts button')].find(b => /Open this demo/.test(b.textContent)).click();
-    await new Promise(res => setTimeout(res, 50));
-    return { first, found, title, eqs, open: !!document.querySelector('.learn-modal'), objs: RNBX.state.doc.objects.map(o => o.type).join(',') };
+    const svg = document.querySelector('.learn-svg svg'), clip = svg.querySelector('g[clip-path]');
+    const ownClip = clip ? !!svg.querySelector('[id="' + clip.getAttribute('clip-path').slice(5, -1) + '"]') : true;
+    const s = document.querySelector('.learn-search'); s.value = 'quarter'; s.dispatchEvent(new Event('input'));
+    s.value = 'polariser'; s.dispatchEvent(new Event('input')); s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await new Promise(r => setTimeout(r, 50));
+    const demo = document.querySelector('.learn-acts a');
+    return { title, eqs, ownClip, after: document.querySelector('.learn-art h2').textContent, hash: location.hash, demoHref: demo && demo.getAttribute('href') };
   });
-  H.check('Learn button opens on the basics; search finds the quarter-wave plate; Enter opens it with its equations', ui.first.startsWith('Light') && ui.found.some(t => /Quarter/.test(t)) && /Quarter/.test(ui.title) && ui.eqs >= 2, ui);
-  H.check('"Open this demo as a figure" loads the demo into the editor', !ui.open && /qwp/.test(ui.objs) && /pbs/.test(ui.objs), ui.objs);
-  await page.evaluate(() => RNBX.learn.open('hwp')); await page.waitForTimeout(200); await H.shot(page, 'learn-hwp');
+  H.check('learn.html#qwp opens the quarter-wave plate page with its equations; each drawing uses its own clip path', /Quarter/.test(ui.title) && ui.eqs >= 2 && ui.ownClip, ui);
+  H.check('search + Enter opens the best match and the address follows it (deep links)', /polariser/i.test(ui.after) && ui.hash === '#polarizer', ui);
+  H.check('"Open this demo" links to the editor with the demo', /index\.html\?learn=polarizer/.test(ui.demoHref || ''), ui.demoHref);
+  H.check('Learn page: no errors', lerr.length === 0, lerr.join(' | '));
+  await lp.goto(base.replace(/index\.html.*$/, '').replace(/\/?$/, '/') + 'index.html?learn=hwp');
+  await lp.waitForTimeout(600);
+  const ed = await lp.evaluate(() => ({ types: RNBX.state.doc.objects.map(o => o.type).join(','), url: location.search, undo: RNBX.history && RNBX.history.canUndo ? RNBX.history.canUndo() : null }));
+  H.check('index.html?learn=hwp opens that demo in the editor (and cleans the address)', /hwp/.test(ed.types) && /pbs/.test(ed.types) && ed.url === '', ed);
+  await lp.close();
   H.check('no errors', page.errors.length === 0, page.errors.join(' | '));
   await page.context().close();
 };

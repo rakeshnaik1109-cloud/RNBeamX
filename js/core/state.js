@@ -19,7 +19,7 @@ const RNBX = window.RNBX = window.RNBX || {};
 const U = RNBX.util;
 
 RNBX.VERSION = '1.2.0';
-RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX', guide: 'guide.html', doi: 'https://doi.org/10.5281/zenodo.23697703'}, window.RNBX_LINKS || {});
+RNBX.links = Object.assign({ home: 'https://rakeshnaik1109-cloud.github.io/RakeshNaik/', spectrax: 'https://rakeshnaik1109-cloud.github.io/RNSpectra_X/', code: 'https://github.com/rakeshnaik1109-cloud/RNBeamX', guide: 'guide.html', learn: 'learn.html', doi: 'https://doi.org/10.5281/zenodo.23697703'}, window.RNBX_LINKS || {});
 
 /* ---------- event bus ---------- */
 const listeners = {};

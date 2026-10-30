@@ -203,7 +203,9 @@ ready example. The closed variant draws a dark probe body with the same optics.
 
 ## Learn optics
 
-The **Learn** button (top bar, after *Guide*) opens a page for every optical part
+The **Learn** button (top bar, after *Guide*) opens **Learn optics** in a new tab
+(`learn.html`, like the guide; each page has its own address, e.g. `learn.html#pbs`,
+so it can be bookmarked or shared). It has a page for every optical part
 and for the basics: light and wavelength, Gaussian beams, polarisation,
 reflection and refraction, interference and diffraction. Each page has
 
@@ -213,8 +215,9 @@ reflection and refraction, interference and diffraction. Each page has
 - **the physics**: the equations, with every symbol explained;
 - typical numbers, the templates that use the part, and related pages.
 
-*Open this demo as a figure* loads the demo into the editor (Ctrl+Z brings your
-figure back); *Add this part to my figure* places the part. Search finds parts by
+*Open this demo in RNBeamX* opens the editor with the demo loaded (Ctrl+Z brings
+your previous figure back); *Add this part to my figure* opens the editor and
+places the part. Search finds parts by
 name or by what they do (e.g. "focus", "Raman", "polarisation").
 
 ## 4. Figure styles
