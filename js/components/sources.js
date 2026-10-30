@@ -265,7 +265,12 @@ lib.register({
   draw(p, S) {
     let s = H.bench(S, p.w, p.h, { color: p.boxColor, text: p.text || `${U.fmt(p.lambda, 4)} nm`, knob: true, displayColor: '#13202b', textColor: lib.colorOf(S.doc, p.lambda, p.color) });
     const port = [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18];
-    s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    if (p.output === 'free') {
+      // free-space output: a collimator nozzle on the side face; the beam starts at its tip
+      const x0 = p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, x1 = p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, r = Math.min(0.9, p.h * 0.1);
+      s += `<rect x="${n(x0)}" y="${n(-r)}" width="${n(x1 - x0)}" height="${n(2 * r)}" rx="${n(r * 0.3)}" fill="${S.fill('metal')}" ${H.stroke(S, 0.6)}/>`;
+      s += `<rect x="${n(x1 - 0.35)}" y="${n(-r * 1.15)}" width="0.35" height="${n(2.3 * r)}" fill="${S.fill('dark')}" ${H.stroke(S, 0.4)}/>`;
+    } else s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
     return s;
   },
   optics: p => H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2),

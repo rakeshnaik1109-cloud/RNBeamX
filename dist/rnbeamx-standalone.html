@@ -2900,7 +2900,12 @@ lib.register({
   draw(p, S) {
     let s = H.bench(S, p.w, p.h, { color: p.boxColor, text: p.text || `${U.fmt(p.lambda, 4)} nm`, knob: true, displayColor: '#13202b', textColor: lib.colorOf(S.doc, p.lambda, p.color) });
     const port = [p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, p.h * 0.18];
-    s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
+    if (p.output === 'free') {
+      // free-space output: a collimator nozzle on the side face; the beam starts at its tip
+      const x0 = p.w / 2 + H.benchDepth(p.w, p.h) * 0.4, x1 = p.w / 2 + H.benchDepth(p.w, p.h) * 0.8 + 0.6, r = Math.min(0.9, p.h * 0.1);
+      s += `<rect x="${n(x0)}" y="${n(-r)}" width="${n(x1 - x0)}" height="${n(2 * r)}" rx="${n(r * 0.3)}" fill="${S.fill('metal')}" ${H.stroke(S, 0.6)}/>`;
+      s += `<rect x="${n(x1 - 0.35)}" y="${n(-r * 1.15)}" width="0.35" height="${n(2.3 * r)}" fill="${S.fill('dark')}" ${H.stroke(S, 0.4)}/>`;
+    } else s += `<circle cx="${n(port[0])}" cy="${n(port[1])}" r="0.55" fill="#2b2f36" stroke="#000" stroke-width="${n(S.lw * 0.4)}"/>`;
     return s;
   },
   optics: p => H.boxAbsorb(-p.w / 2, -p.h / 2, p.w / 2, p.h / 2),
@@ -7120,13 +7125,20 @@ const disk = (c, nrm, r, t, mat) => ({ kind: 'disk3', c, nrm, r, t, mat });
 const knob = (c, nrm, r) => [disk(c, nrm, r * 0.55, r * 0.5, 'metal'), disk(c.map((v, i) => v + nrm[i] * r * 0.55), nrm, r, r * 0.7, 'black')];
 const feet = (x0, x1, y0, y1, h) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => { const sx = x < 0 ? 1 : -1, sy = y < 0 ? 1 : -1; return box(Math.min(x, x + sx * 1.1), Math.max(x, x + sx * 1.1), Math.min(y, y + sy * 1.1), Math.max(y, y + sy * 1.1), 0, h, 'black'); });
 const SMA = (x, y, z) => [vcyl(x, y, 0.55, z, z + 0.35, 'metal'), vcyl(x, y, 0.35, z + 0.35, z + 1.2, { color: '#d6b45c', spec: 0.8 })];
+const H3depth = (w, h) => lib.H.benchDepth(w, h);   // same side-face depth as the 2D drawing
 const set = (type, solid) => { const d = lib.get(type); if (d) d.solid = solid; };
 
 /* ---------- benchtop instruments ---------- */
 // fibre-output benchtop laser: body on feet, dark display and knob on the front, status lights, fibre port on the side
 set('benchlaser', (p, bh) => {
-  const w = p.w, h = p.h, H = Math.max(h * 0.75, 4), x0 = -w / 2, x1 = w / 2, y0 = -h / 2, y1 = h / 2, zb = 0.45;
+  const free = p.output === 'free';
+  // free-space output: the box is tall enough that its output nozzle sits at beam height and the beam leaves its tip
+  const w = p.w, h = p.h, H = Math.max(h * 0.75, 4, free ? bh + 1.8 : 0), x0 = -w / 2, x1 = w / 2, y0 = -h / 2, y1 = h / 2, zb = 0.45;
+  const xo = w / 2 + H3depth(w, h) * 0.8 + 0.6;
+  const port = free ? [cylX(x1, xo - 0.35, 0.85, bh, 'metal'), cylX(xo - 0.35, xo, 1, bh, 'black')]
+    : [cylX(x1, x1 + 0.7, 0.75, zb + (H - zb) * 0.4, 'metal', y1 * 0.35), cylX(x1 + 0.7, x1 + 1.3, 0.45, zb + (H - zb) * 0.4, { color: '#d6b45c', spec: 0.8 }, y1 * 0.35)];
   return [
+    ...port,
     ...feet(x0, x1, y0, y1, zb),
     box(x0, x1, y0, y1, zb, H, { color: p.boxColor || '#c9ced6', spec: 0.35 }),
     box(x0 + 0.4, x1 - 0.4, y0 + 0.4, y1 - 0.4, H, H + 0.25, { color: U.lighten(p.boxColor || '#c9ced6', 0.12), spec: 0.4 }),
@@ -7134,8 +7146,6 @@ set('benchlaser', (p, bh) => {
     ...knob([x1 - w * 0.18, y1, zb + (H - zb) * 0.62], [0, 1, 0], Math.min(1.1, H * 0.16)),
     ...['#e5484d', '#e6c44a', '#30a46c'].map((c, i) => disk([x0 + w * 0.12 + i * 0.9, y1 + 0.03, zb + (H - zb) * 0.22], [0, 1, 0], 0.28, 0.12, { color: c, spec: 0.8 })),
     ...[0.25, 0.4, 0.55, 0.7].map(f => box(x0 + w * f, x0 + w * f + 0.35, y0 + 1, y1 - 1, H + 0.25, H + 0.27, 'black', { decal: true })),
-    cylX(x1, x1 + 0.7, 0.75, zb + (H - zb) * 0.4, 'metal', y1 * 0.35),
-    cylX(x1 + 0.7, x1 + 1.3, 0.45, zb + (H - zb) * 0.4, { color: '#d6b45c', spec: 0.8 }, y1 * 0.35),
   ];
 });
 
