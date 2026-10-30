@@ -672,8 +672,46 @@ lib.register({
     const L = p.L, h = p.H / 2;
     let s = pigtail(S, -L / 2 - 1.4, 0, -L / 2, 0) + pigtail(S, L / 2, 0, L / 2 + 1.4, 0) + pigtail(S, 0, -h, 0, -h - 1.6);
     s += H.rect(S, -L / 2, -h, L, p.H, S.fill('metal'), 'rx="0.6"') + H.sheen(S, -L / 2, -h, L, h * 0.9, 0.6);
-    // two fibre cores that come close in the middle (fused coupler)
-    s += `<path d="M ${n(-L * 0.42)} 0 C ${n(-L * 0.1)} 0 ${n(-L * 0.1)} ${n(-h * 0.1)} 0 ${n(-h * 0.1)} C ${n(L * 0.1)} ${n(-h * 0.1)} ${n(L * 0.12)} 0 ${n(L * 0.42)} 0 M ${n(-L * 0.1)} ${n(-h * 0.25)} C 0 ${n(-h * 0.25)} 0 ${n(-h * 0.5)} 0 ${n(-h * 0.92)}" fill="none" stroke="${p.mode === 'wdm' ? U.wavelengthColor(p.edge > 780 ? 700 : p.edge) : '#3c6e9e'}" stroke-width="${n(S.lw * 1.4)}"/>`;
+    // inside: a fused biconical taper coupler. Two fibres (cladding + core) are fused and drawn into a
+    // narrow waist where the cores come close and light crosses over; then they separate again. Fibre A
+    // runs straight through; fibre B leaves to the side port, and its fourth end is sealed (terminator).
+    const g = Math.min(h * 0.42, 1.2), xa = -L * 0.38, xw = -L * 0.2, xb = -L * 0.03, gw = g * 0.32;
+    const clad = Math.max(0.42, g * 0.62), core = Math.max(0.14, g * 0.2);
+    const cA = `M ${n(-L / 2)} 0 L ${n(xa)} 0 C ${n(xa + (xw - xa) * 0.6)} 0 ${n(xw - (xw - xa) * 0.4)} ${n(-(g - gw) / 2)} ${n(xw)} ${n(-(g - gw) / 2)} C ${n(xw + (xb - xw) * 0.4)} ${n(-(g - gw) / 2)} ${n(xb - (xb - xw) * 0.6)} 0 ${n(xb)} 0 L ${n(L / 2)} 0`;
+    const yB = -g, yBw = -g + (g - gw) / 2;
+    const cB = `M ${n(-L * 0.46)} ${n(yB)} L ${n(xa)} ${n(yB)} C ${n(xa + (xw - xa) * 0.6)} ${n(yB)} ${n(xw - (xw - xa) * 0.4)} ${n(yBw)} ${n(xw)} ${n(yBw)} C ${n(xw + (xb - xw) * 0.4)} ${n(yBw)} ${n(xb - (xb - xw) * 0.6)} ${n(yB)} ${n(xb)} ${n(yB)} C ${n(-L * 0.005)} ${n(yB)} 0 ${n(yB)} 0 ${n(-h)}`;
+    const glass = S.shaded ? '#eef4f9' : '#f4f8fb', edge = '#8fa3b6';
+    // claddings, then the fused taper (an hourglass of glass around both fibres), then the cores
+    s += `<path d="${cA}" fill="none" stroke="${edge}" stroke-width="${n(clad + S.lw * 0.6)}" stroke-linecap="round"/><path d="${cB}" fill="none" stroke="${edge}" stroke-width="${n(clad + S.lw * 0.6)}" stroke-linecap="round"/>`;
+    s += `<path d="${cA}" fill="none" stroke="${glass}" stroke-width="${n(clad)}" stroke-linecap="round"/><path d="${cB}" fill="none" stroke="${glass}" stroke-width="${n(clad)}" stroke-linecap="round"/>`;
+    const top = yB - clad / 2, bot = clad / 2, wt = yBw - gw * 0.2, wb = -(g - gw) / 2 + gw * 0.2;
+    s += `<path d="M ${n(xa)} ${n(top)} C ${n(xa + (xw - xa) * 0.55)} ${n(top)} ${n(xw - (xw - xa) * 0.35)} ${n(wt)} ${n(xw)} ${n(wt)} C ${n(xw + (xb - xw) * 0.35)} ${n(wt)} ${n(xb - (xb - xw) * 0.55)} ${n(top)} ${n(xb)} ${n(top)} L ${n(xb)} ${n(bot)} C ${n(xb - (xb - xw) * 0.55)} ${n(bot)} ${n(xw + (xb - xw) * 0.35)} ${n(wb)} ${n(xw)} ${n(wb)} C ${n(xw - (xw - xa) * 0.35)} ${n(wb)} ${n(xa + (xw - xa) * 0.55)} ${n(bot)} ${n(xa)} ${n(bot)} Z" fill="${glass}" fill-opacity="0.95" stroke="${edge}" stroke-width="${n(S.lw * 0.5)}"/>`;
+    // cores: light in fibre A; fibre B is dark before the waist (its port is sealed) and carries the coupled
+    // light after it. A splitter shows one colour; a WDM shows both bands entering and separating at the waist.
+    const cw = n(core), wdm = p.mode === 'wdm', R = p.R == null ? 0.5 : p.R, yAw = -(g - gw) / 2;
+    const aPre = `M ${n(-L / 2)} 0 L ${n(xa)} 0 C ${n(xa + (xw - xa) * 0.6)} 0 ${n(xw - (xw - xa) * 0.4)} ${n(yAw)} ${n(xw)} ${n(yAw)}`;
+    const aPost = `M ${n(xw)} ${n(yAw)} C ${n(xw + (xb - xw) * 0.4)} ${n(yAw)} ${n(xb - (xb - xw) * 0.6)} 0 ${n(xb)} 0 L ${n(L / 2)} 0`;
+    const bPre = `M ${n(-L * 0.46)} ${n(yB)} L ${n(xa)} ${n(yB)} C ${n(xa + (xw - xa) * 0.6)} ${n(yB)} ${n(xw - (xw - xa) * 0.4)} ${n(yBw)} ${n(xw)} ${n(yBw)}`;
+    const bPost = `M ${n(xw)} ${n(yBw)} C ${n(xw + (xb - xw) * 0.4)} ${n(yBw)} ${n(xb - (xb - xw) * 0.6)} ${n(yB)} ${n(xb)} ${n(yB)} C ${n(-L * 0.005)} ${n(yB)} 0 ${n(yB)} 0 ${n(-h)}`;
+    const cLong = '#d0453a', cShort = '#2f7fd8', cStraight = wdm ? (p.pass === 'shortpass' ? cShort : cLong) : '#3c6e9e', cSide = wdm ? (p.pass === 'shortpass' ? cLong : cShort) : '#3c6e9e';
+    const line = (d, c, extra) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${cw}" stroke-linecap="round" ${extra || ''}/>`;
+    s += line(bPre, '#b9c3cd');
+    if (wdm) s += line(aPre, cShort) + line(aPre, cLong, `stroke-dasharray="${n(core * 2.4)} ${n(core * 2.4)}"`);
+    else s += line(aPre, cStraight);
+    s += line(aPost, cStraight, wdm ? '' : `stroke-opacity="${n(Math.max(0.3, Math.min(1, (1 - R) * 1.6)))}"`);
+    s += line(bPost, cSide, wdm ? '' : `stroke-opacity="${n(Math.max(0.3, Math.min(1, R * 1.6)))}"`);
+    // the sealed fourth port
+    s += `<rect x="${n(-L * 0.46 - core * 1.6)}" y="${n(yB - clad * 0.55)}" width="${n(core * 1.6)}" height="${n(clad * 1.1)}" rx="${n(core * 0.4)}" fill="#26292e"/>`;
+    // what goes where, small on the housing
+    const fs = Math.min(S.fs * 0.55, h * 0.5), t = (x, y, str, c, anc) => `<text x="${n(x)}" y="${n(y)}" font-family="${U.esc(S.font)}" font-size="${n(fs)}" fill="${c}" text-anchor="${anc}" dominant-baseline="central" font-weight="600">${U.esc(str)}</text>`;
+    if (wdm) {
+      const e = Math.round(p.edge), long = '> ' + e + ' nm', short = '< ' + e + ' nm';
+      s += t(L / 2 - 0.6, h * 0.52, p.pass === 'shortpass' ? short : long, cStraight, 'end');
+      s += t(clad, -h * 0.55, p.pass === 'shortpass' ? long : short, cSide, 'start');
+    } else {
+      s += t(L / 2 - 0.6, h * 0.52, Math.round((1 - R) * 100) + ' %', '#3d434b', 'end');
+      s += t(clad, -h * 0.55, Math.round(R * 100) + ' %', '#3d434b', 'start');
+    }
     return s;
   },
   optics: p => {
