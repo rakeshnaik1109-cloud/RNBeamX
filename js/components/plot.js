@@ -87,6 +87,63 @@ DataIO.calcResult = (src, doc) => {
   }
   return RNBX.thinfilm.cached(def.stack(src.props, src, doc), calc);
 };
+/* ---------- sensing: the resonance (dip of R, or peak of A), its
+   sensitivity to the analyte index, and a sensorgram that follows the
+   animation. Thin-film sources only (an RCWA grating is too slow to
+   recompute every frame). ---------- */
+const resCache = new Map();
+DataIO.canSense = src => { const def = src && lib.get(src.type); return !!(def && def.stack && !(def.grating && RNBX.rcwa && (src.props.calc || {}).method !== 'tmm')); };
+DataIO.resUnit = calc => (calc.scan === 'wl' ? (calc.unit === 'um' ? 'µm' : 'nm') : '°');
+/* resonance position (x of the curve) with props overridden; null if it is not inside the range */
+DataIO.resonance = (src, doc, props) => {
+  if (!DataIO.canSense(src)) return null;
+  const def = lib.get(src.type), p = props ? Object.assign({}, src.props, props) : src.props, TF = RNBX.thinfilm;
+  const calc = Object.assign({}, TF.DEFAULT_CALC, p.calc || {}), st = def.stack(p, src, doc), key = JSON.stringify([st, calc]);
+  if (resCache.has(key)) return resCache.get(key);
+  const r = TF.scan(st, calc), dip = calc.show.includes('R') || !calc.show.includes('A');
+  const e = TF.extremum(r.x, dip ? r.series.R : r.series.A, dip ? 'min' : 'max'), v = e && !e.edge ? e.x : null;
+  if (resCache.size > 4000) resCache.delete(resCache.keys().next().value);
+  resCache.set(key, v);
+  return v;
+};
+/* SPR prism: the analyte index now (database liquids at the working wavelength) */
+DataIO.analyteN = (src, props) => {
+  const p = props ? Object.assign({}, src.props, props) : src.props;
+  if (src.type !== 'prism') return null;
+  if (p.analyte === 'custom') return +p.analyteN;
+  const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, p.calc || {}), lam = c.scan === 'wl' ? (+c.lmin + +c.lmax) / 2 : +c.lambda;
+  return RNBX.thinfilm.nk({ mat: p.analyte }, lam).n;
+};
+/* bulk sensitivity S = d(resonance)/dn, in nm/RIU or °/RIU */
+DataIO.sensitivity = (src, doc) => {
+  const n0 = DataIO.analyteN(src);
+  if (n0 == null) return null;
+  const dn = 0.002, a = DataIO.resonance(src, doc, { analyte: 'custom', analyteN: n0 - dn }), b = DataIO.resonance(src, doc, { analyte: 'custom', analyteN: n0 + dn });
+  if (a == null || b == null) return null;
+  const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {});
+  return (b - a) / (2 * dn) * (c.scan === 'wl' && c.unit === 'um' ? 1000 : 1);
+};
+/* the sensorgram: resonance at evenly spaced times over the animation
+   (so frames reuse the cache), cut at tNow plus the exact point there */
+DataIO.sensorgram = (src, doc, tNow) => {
+  const an = doc.animation || {}, keys = (an.tracks || {})[src.id], D = an.duration || 6, N = 150;
+  const at = t => { const s = keys && keys.length ? RNBX.anim.sample(keys, t) : null; return s && s.props ? s.props : null; };
+  const pt = t => { const pr = at(t); return { t, n: DataIO.analyteN(src, pr), r: DataIO.resonance(src, doc, pr) }; };
+  const all = [];
+  for (let i = 0; i <= N; i++) all.push(pt(D * i / N));
+  const T = tNow == null ? D : U.clamp(tNow, 0, D), shown = all.filter(q => q.t <= T + 1e-9);
+  if (!shown.length || shown[shown.length - 1].t < T - 1e-9) shown.push(pt(T));
+  return { all, shown, now: shown[shown.length - 1], D, animated: !!(keys && keys.some(k => k.props)) };
+};
+DataIO.sensorCsv = plot => {
+  const doc = RNBX.state.doc, src = doc.objects.find(o => o.id === plot.props.link);
+  if (!src) return;
+  const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}), u = DataIO.resUnit(c), sg = DataIO.sensorgram(src, doc, null);
+  const r0 = sg.all[0].r, head = ['Time (s)', 'Analyte index', 'Resonance (' + u + ')', 'Shift (' + u + ')'];
+  const rows = sg.all.map(q => [U.round(q.t, 4), q.n == null ? '' : q.n.toFixed(5), q.r == null ? '' : q.r.toFixed(4), q.r == null || r0 == null ? '' : (q.r - r0).toFixed(4)].join(','));
+  U.track('sensorgram-csv');
+  U.download(new Blob([head.join(',') + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' }), 'sensorgram.csv');
+};
 DataIO.calcSeries = res => res.calc.show.split('').filter(q => CALC_STYLE[q]).map(q => ({ name: CALC_STYLE[q][0], x: res.x, y: res.series[q], color: CALC_STYLE[q][1], dash: 'solid' }));
 DataIO.calcYLabel = res => { const q = res.calc.show.split('').filter(v => CALC_STYLE[v]); return q.length === 1 ? CALC_STYLE[q[0]][0] : q.join(', '); };
 DataIO.addCalcPanel = src => {
@@ -99,6 +156,27 @@ DataIO.addCalcPanel = src => {
   U.track('calc-panel-' + src.type);
   return plot;
 };
+/* a sensorgram panel for an SPR chip or stack (opt.quiet: no undo step of its own, no toast) */
+DataIO.addSensorPanel = (src, opt = {}) => {
+  if (!DataIO.canSense(src)) return;
+  const hist = RNBX.history, cp = hist.checkpoint;
+  if (opt.quiet) hist.checkpoint = () => {};
+  const doc = RNBX.state.doc, before = new Set(doc.objects.map(o => o.id));
+  let plot;
+  try { plot = RNBX.arrange.addDataPanel(); } finally { hist.checkpoint = cp; }
+  // its panel letter: the next one after those already on the page
+  const used = doc.objects.filter(o => o.type === 'panel' && before.has(o.id)).map(o => String(o.props.text || '').trim().toLowerCase()).filter(t => /^[a-z]$/.test(t));
+  const fresh = doc.objects.filter(o => o.type === 'panel' && !before.has(o.id));
+  if (used.length && fresh.length) fresh[fresh.length - 1].props.text = String.fromCharCode(Math.min(122, Math.max(...used.map(t => t.charCodeAt(0))) + 1));
+  Object.assign(plot.props, { link: src.id, linkAuto: true, mode: 'sensor', series: [], legend: false, yNumbers: true, readout: true, showS: src.type === 'prism' });
+  if (!opt.quiet) {
+    RNBX.changed(); RNBX.inspector.build();
+    RNBX.toast(A_HINT);
+  }
+  U.track('sensor-panel');
+  return plot;
+};
+const A_HINT = 'Sensorgram added: animate the analyte index (Animate ▸ SPR sensing) and it tracks the resonance live';
 DataIO.downloadCsv = src => {
   const res = DataIO.calcResult(src);
   if (!res) return;
@@ -144,11 +222,17 @@ lib.register({
   defaults: {
     w: 70, h: 46, series: [], xlabel: 'Raman shift (cm^{−1})', ylabel: 'Intensity (a.u.)', xmin: '', xmax: '', ymin: '', ymax: '',
     xreverse: false, yNumbers: true, legend: true, legendPos: 'tr', frame: 'box', fontSize: 7, lineWidth: 0.8, offset: 0, ticksIn: true,
-    link: '', linkAuto: true,
+    link: '', linkAuto: true, mode: 'curve', mark: false, readout: true, showS: false, sgX: 'time', sgY: 'abs',
   },
   params: [
     { key: 'series', label: 'Data', type: 'series' },
     { key: 'linkAuto', label: 'Axis titles from the calculation', type: 'bool', show: p => !!p.link },
+    { key: 'mode', label: 'Show', type: 'select', options: [['curve', 'The calculated curve'], ['sensor', 'Sensorgram (resonance during the animation)']], show: p => !!p.link },
+    { key: 'mark', label: 'Mark the resonance (live)', type: 'bool', show: p => !!p.link && p.mode !== 'sensor', hint: 'follows the dip while you edit or animate' },
+    { key: 'sgX', label: 'Sensorgram x axis', type: 'select', options: [['time', 'Time'], ['n', 'Analyte index']], show: p => !!p.link && p.mode === 'sensor' },
+    { key: 'sgY', label: 'Sensorgram y axis', type: 'select', options: [['abs', 'Resonance position'], ['shift', 'Shift from the start']], show: p => !!p.link && p.mode === 'sensor' },
+    { key: 'readout', label: 'Values on the panel', type: 'bool', show: p => !!p.link && (p.mode === 'sensor' || p.mark) },
+    { key: 'showS', label: 'Sensitivity S (nm/RIU)', type: 'bool', show: p => !!p.link && (p.mode === 'sensor' || p.mark) && p.readout },
     { key: 'xlabel', label: 'x-axis title', type: 'text', show: p => !p.link || !p.linkAuto }, { key: 'ylabel', label: 'y-axis title', type: 'text', show: p => !p.link || !p.linkAuto },
     { key: 'xmin', label: 'x min', type: 'text', placeholder: 'auto' }, { key: 'xmax', label: 'x max', type: 'text', placeholder: 'auto' },
     { key: 'ymin', label: 'y min', type: 'text', placeholder: 'auto' }, { key: 'ymax', label: 'y max', type: 'text', placeholder: 'auto' },
@@ -167,23 +251,72 @@ lib.register({
   draw(p, S) {
     const fs = U.pt2mm(p.fontSize), lw = U.pt2mm(p.lineWidth), ink = RNBX.isDarkPage(S.doc.page) ? '#e8ecf2' : '#111111', axw = U.pt2mm(0.6);
     let series = (p.series || []).filter(s => s.x && s.x.length), lost = false, busy = null;
-    if (p.link) {
+    let mark = null, dot = null, fix = null, info = [], msg = '', hintTxt = '';
+    const src = p.link ? S.doc.objects.find(o => o.id === p.link) : null;
+    if (p.link && p.mode === 'sensor' && src) {
+      // sensorgram: the resonance as the animation runs (axes fixed to the whole run)
+      const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}), u = DataIO.resUnit(c), wl = c.scan === 'wl';
+      series = [];
+      if (!DataIO.canSense(src)) msg = 'A sensorgram needs a thin-film stack or SPR prism';
+      else {
+        const sg = DataIO.sensorgram(src, S.doc, S.time), useN = p.sgX === 'n' && src.type === 'prism', r0 = sg.all[0].r;
+        const xv = q => (useN ? q.n : q.t), yv = q => (q.r == null || (p.sgY === 'shift' && r0 == null) ? null : p.sgY === 'shift' ? q.r - r0 : q.r);
+        const ok = q => xv(q) != null && yv(q) != null, pts = sg.shown.filter(ok), full = sg.all.filter(ok);
+        if (pts.length) series = [{ name: 'Resonance', x: pts.map(xv), y: pts.map(yv), color: '#d62728', dash: 'solid' }];
+        if (full.length) {
+          const fx = full.map(xv), fy = full.map(yv), yl = Math.min(...fy), yh = Math.max(...fy), sp = Math.max(yh - yl, wl ? 0.5 : 0.05);
+          fix = { x: useN ? [Math.min(...fx), Math.max(...fx)] : [0, sg.D], y: [(yl + yh) / 2 - sp * 0.56, (yl + yh) / 2 + sp * 0.56] };
+          if (fix.x[1] - fix.x[0] < 1e-6) fix.x = [fix.x[0] - (useN ? 0.001 : 0.5), fix.x[1] + (useN ? 0.001 : 0.5)];
+        }
+        const now = sg.now;
+        if (ok(now)) dot = [xv(now), yv(now)];
+        if (!pts.length) msg = 'No resonance inside the scan range';
+        else if (!sg.animated && S.live) hintTxt = 'Animate → SPR sensing to run it';
+        if (p.readout && now.r != null) {
+          info.push((wl ? 'λ_{res}' : 'θ_{res}') + ' = ' + U.fmt(now.r, wl ? (c.unit === 'um' ? 4 : 2) : 3) + (u === '°' ? '°' : ' ' + u));
+          if (r0 != null && sg.animated) info.push('Δ = ' + (now.r - r0 >= 0 ? '+' : '−') + U.fmt(Math.abs(now.r - r0), wl ? 2 : 3) + (u === '°' ? '°' : ' ' + u));
+          if (now.n != null) info.push('n = ' + now.n.toFixed(4));
+        }
+        if (p.linkAuto) p = Object.assign({}, p, { xlabel: useN ? 'Analyte refractive index (RIU)' : 'Time (s)',
+          ylabel: (p.sgY === 'shift' ? 'Shift Δ' : 'Resonance ') + (wl ? 'λ_{res}' : 'θ_{res}') + ' (' + u + ')' });
+      }
+    } else if (p.link) {
       // live: recomputed from the linked stack on every change and animation frame
-      const src = S.doc.objects.find(o => o.id === p.link), res = src ? DataIO.calcResult(src, S.doc) : null;
+      const res = src ? DataIO.calcResult(src, S.doc) : null;
       if (res && res.x) { series = DataIO.calcSeries(res); if (p.linkAuto) p = Object.assign({}, p, { xlabel: res.xlabel, ylabel: DataIO.calcYLabel(res) }); }
       else if (res && res.pending) { series = []; busy = res.progress || 0; }
       else { series = []; lost = true; }
       if (res && res.pending && res.x) busy = res.progress || 0;
+      if (p.mark && res && res.x && !res.pending) {
+        // live resonance marker: follows the dip as the stack changes or animates
+        const c = res.calc, u = DataIO.resUnit(c), wl = c.scan === 'wl', dip = c.show.includes('R') || !c.show.includes('A');
+        const e = RNBX.thinfilm.extremum(res.x, dip ? res.series.R : res.series.A, dip ? 'min' : 'max');
+        if (e && !e.edge) {
+          mark = e;
+          if (p.readout) {
+            info.push((wl ? 'λ_{res}' : 'θ_{res}') + ' = ' + U.fmt(e.x, wl ? (c.unit === 'um' ? 4 : 2) : 3) + (u === '°' ? '°' : ' ' + u));
+            const nA = DataIO.analyteN(src);
+            if (nA != null) info.push('n = ' + nA.toFixed(4));
+            const Sv = p.showS && src.type === 'prism' ? DataIO.sensitivity(src, S.doc) : null;
+            if (Sv != null) info.push('S = ' + U.fmt(Sv, wl ? 0 : 1) + ' ' + (u === '°' ? '°' : 'nm') + '/RIU');
+          }
+        }
+      }
+    }
+    if (p.mode === 'sensor' && p.showS && src && src.type === 'prism' && p.readout && DataIO.canSense(src)) {
+      const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}), Sv = DataIO.sensitivity(src, S.doc);
+      if (Sv != null) info.push('S = ' + U.fmt(Sv, c.scan === 'wl' ? 0 : 1) + ' ' + (c.scan === 'wl' ? 'nm' : '°') + '/RIU');
     }
     let xs = [], ys = [];
     const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
     const off = series.length ? p.offset * Math.max(...series.map(range)) : 0;
     series.forEach((s, i) => { xs = xs.concat([Math.min(...s.x), Math.max(...s.x)]); ys = ys.concat([Math.min(...s.y) + i * off, Math.max(...s.y) + i * off]); });
     if (!series.length) { xs = [0, 1]; ys = [0, 1]; }
+    if (fix) { xs = fix.x; ys = fix.y; }
     const num = (v, d) => (v === '' || v == null || !isFinite(parseFloat(v)) ? d : parseFloat(v));
     let x0 = num(p.xmin, Math.min(...xs)), x1 = num(p.xmax, Math.max(...xs));
     let y0 = num(p.ymin, Math.min(...ys)), y1 = num(p.ymax, Math.max(...ys));
-    if (p.ymin === '' && p.ymax === '') { const pad = (y1 - y0 || 1) * 0.06; y0 -= pad; y1 += pad; }
+    if (p.ymin === '' && p.ymax === '' && !fix) { const pad = (y1 - y0 || 1) * 0.06; y0 -= pad; y1 += pad; }
     if (x1 === x0) x1 = x0 + 1; if (y1 === y0) y1 = y0 + 1;
     const xt = ticks(x0, x1, Math.max(3, Math.round(p.w / 14))), yt = ticks(y0, y1, Math.max(3, Math.round(p.h / 10)));
     const yLabW = p.yNumbers ? Math.max(...yt.out.map(v => RNBX.text.measure(fmtTick(v, yt.st), fs))) + 1.2 : 0.5;
@@ -202,7 +335,14 @@ lib.register({
       const dash = sr.dash === 'dash' ? `stroke-dasharray="${n(lw * 5)} ${n(lw * 3)}"` : sr.dash === 'dot' ? `stroke-dasharray="${n(lw)} ${n(lw * 2.5)}"` : '';
       s += `<path d="${d}" fill="none" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw)}" stroke-linejoin="round" stroke-linecap="round" ${dash}/>`;
     });
+    if (mark) s += `<line x1="${n(X(mark.x))}" y1="${n(T)}" x2="${n(X(mark.x))}" y2="${n(B)}" stroke="#d62728" stroke-width="${n(lw * 0.7)}" stroke-dasharray="${n(lw * 3)} ${n(lw * 2)}"/><circle cx="${n(X(mark.x))}" cy="${n(Y(mark.y))}" r="${n(lw * 1.6)}" fill="#d62728"/>`;
+    if (dot) s += `<circle cx="${n(X(dot[0]))}" cy="${n(Y(dot[1]))}" r="${n(lw * 1.8)}" fill="#d62728" stroke="${RNBX.isDarkPage(S.doc.page) ? '#0b1020' : '#ffffff'}" stroke-width="${n(lw * 0.5)}"/>`;
     s += '</g>';
+    // readout of the resonance: on the side away from the marker
+    if (info.length) {
+      const fr = fs * 0.85, right = mark ? X(mark.x) < (L + R) / 2 : false, tx = right ? R - fr * 0.6 : L + fr * 0.6;
+      info.forEach((t, i) => { s += `<text x="${n(tx)}" y="${n(T + fr * (1.25 + i * 1.25))}" font-size="${n(fr)}" text-anchor="${right ? 'end' : 'start'}">${RNBX.text.markup(t, fr)}</text>`; });
+    }
     // axes
     s += p.frame === 'box' ? `<rect x="${n(L)}" y="${n(T)}" width="${n(R - L)}" height="${n(B - T)}" fill="none" stroke="${ink}" stroke-width="${n(axw)}"/>`
       : `<path d="M ${n(L)} ${n(T)} L ${n(L)} ${n(B)} L ${n(R)} ${n(B)}" fill="none" stroke="${ink}" stroke-width="${n(axw)}"/>`;
@@ -219,7 +359,8 @@ lib.register({
         s += `<line x1="${n(lx)}" y1="${n(yy)}" x2="${n(lx + fl * 1.8)}" y2="${n(yy)}" stroke="${sr.color || PALETTE[i % PALETTE.length]}" stroke-width="${n(lw * 1.4)}"/><text x="${n(lx + fl * 2.3)}" y="${n(yy + fl * 0.35)}" font-size="${n(fl)}">${U.esc(sr.name)}</text>`;
       });
     }
-    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">${busy != null ? `Calculating (RCWA)… ${Math.round(busy * 100)} %` : lost ? 'The linked stack was deleted' : 'Import data in the inspector'}</text>`;
+    if (!series.length) s += `<text x="${n((L + R) / 2)}" y="${n((T + B) / 2)}" text-anchor="middle" fill="#8a919c" font-size="${n(fs * 0.9)}">${msg ? U.esc(msg) : busy != null ? `Calculating (RCWA)… ${Math.round(busy * 100)} %` : lost ? 'The linked stack was deleted' : 'Import data in the inspector'}</text>`;
+    else if (hintTxt) s += `<text x="${n(R - 1)}" y="${n(B - fs * 0.6)}" text-anchor="end" fill="#8a919c" font-size="${n(fs * 0.75)}">${U.esc(hintTxt)}</text>`;
     else if (busy != null && S.interactive !== false) s += `<text x="${n(R - 1)}" y="${n(T + fs * 0.9)}" text-anchor="end" fill="#8a919c" font-size="${n(fs * 0.8)}">updating ${Math.round(busy * 100)} %</text>`;
     return s + '</g>';
   },

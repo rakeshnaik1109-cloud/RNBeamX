@@ -378,6 +378,26 @@ Select one and open **Optical response (thin-film calculation)** in the inspecto
    as ordinary data. **CSV** downloads R, T and A; **Sources** lists the measured
    data used, with references to cite.
 
+**SPR real-time sensing.** A linked panel can follow the resonance as it moves:
+
+- **Mark the resonance (live)** in a linked panel draws a dashed line and a dot at
+  the dip (or the absorptance peak) and writes its position, e.g. λ<sub>res</sub> or
+  θ<sub>res</sub>, with the analyte index *n*. Tick **Sensitivity S** to add the bulk
+  sensitivity S = Δλ<sub>res</sub>/Δn (nm/RIU, or °/RIU for an angle scan), worked
+  out from the calculation at the current index.
+- **Sensorgram** (button next to *Add panel*, or *Show ▸ Sensorgram* in a linked
+  panel) plots the resonance against time while the figure animates, like a
+  real SPR instrument. The axes are fixed to the whole run so the trace grows
+  smoothly; the x axis can be the analyte index instead of time, and the y axis
+  the shift from the start. **Sensorgram CSV** downloads time, index, resonance
+  and shift.
+- **Animate ▸ SPR sensing** writes the analyte index for a run: *Binding*
+  (baseline, association 1 − e<sup>−t/τ</sup>, dissociation in buffer),
+  *Calibration steps* (equal injections) or a *Linear index sweep*. It adds a
+  sensorgram and marks the dip on the curve panel unless you choose *Keyframes
+  only*. Play it or export it as MP4 / GIF; removing the animation removes the
+  panels it added. The older *Binding / film growth* preset is unchanged.
+
 In an SPR setup the traced beam is also reflected at the chip with the calculated
 amplitudes, so detector readouts show the dip per wavelength. The *SPR sensor*
 template calculates R(λ) at the angle at which its beam actually meets the chip.
@@ -459,7 +479,7 @@ the *Animate* list.
 |---|---|
 | Presentation | **3D rotation (turntable)**: the whole setup turns on its table (full 360°, a swing, or turn-and-rise). Labels follow their parts or hide while it turns. · **Zoom to a part** · **Build-up** (parts appear as the light reaches them) · **Spotlight tour** (each part lights up in beam order) · **2D → 3D reveal** |
 | Light | **Light flow** · **Pulse train** · **Switch on** (the beam grows out of the source) · **Wavelength sweep** · **Laser on / off** |
-| Optics | **Rotate wave plate** · **Rotate polariser** · **Mirror / galvo scan** · **Piezo fringes** · **Delay-line scan** · **Focus sweep** · **Shutter open / close** · **AOM frequency sweep** · **Field-angle sweep** (ray bundles) · **Binding / film growth** (SPR analyte index or a coating thickness) |
+| Optics | **Rotate wave plate** · **Rotate polariser** · **Mirror / galvo scan** · **Piezo fringes** · **Delay-line scan** · **Focus sweep** · **Shutter open / close** · **AOM frequency sweep** · **Field-angle sweep** (ray bundles) · **Binding / film growth** (SPR analyte index or a coating thickness) · **SPR sensing** (binding, calibration steps or a sweep, with a live sensorgram) |
 
 **Stop & show figure.** While an animation plays, a *Playing* pill at the top of
 the canvas offers **Pause** (freeze at the current frame) and **■ Stop & show

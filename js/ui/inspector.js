@@ -75,15 +75,21 @@ function control(param, get, set, ctx = {}) {
       if (!o) return wrap;
       if (o.props.link) {
         const src = RNBX.getObj(o.props.link);
-        wrap.append(el('div', { class: 'readout', text: src ? `Calculated live from “${src.kindName || lib.get(src.type).name}”. Change its layers or settings and this panel follows.` : 'The linked stack was deleted.' }),
+        wrap.append(...[el('div', { class: 'readout', text: src ? `Calculated live from “${src.kindName || lib.get(src.type).name}”. Change its layers or settings and this panel follows.` : 'The linked stack was deleted.' }),
           el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
             src ? el('button', { class: 'btn small', type: 'button', text: 'Select the stack', onclick: () => RNBX.select([src.id]) }) : null,
             el('button', { class: 'btn small', type: 'button', text: 'Unlink (keep these curves)', onclick: () => {
               const res = src && RNBX.plotData.calcResult(src);
               RNBX.history.checkpoint();
-              if (res) { o.props.series = RNBX.plotData.calcSeries(res).map(q => Object.assign({}, q, { x: q.x.slice(), y: q.y.slice() })); o.props.xlabel = res.xlabel; o.props.ylabel = RNBX.plotData.calcYLabel(res); }
+              if (src && o.props.mode === 'sensor') {
+                const sg = RNBX.plotData.sensorgram(src, S.doc, null), pts = sg.all.filter(q => q.r != null);
+                o.props.series = [{ name: 'Resonance', x: pts.map(q => q.t), y: pts.map(q => q.r), color: '#d62728', dash: 'solid' }];
+                o.props.xlabel = 'Time (s)'; o.props.ylabel = 'Resonance'; o.props.mode = 'curve';
+              } else if (res) { o.props.series = RNBX.plotData.calcSeries(res).map(q => Object.assign({}, q, { x: q.x.slice(), y: q.y.slice() })); o.props.xlabel = res.xlabel; o.props.ylabel = RNBX.plotData.calcYLabel(res); }
               o.props.link = ''; RNBX.changed(); Ins.build();
-            } })));
+            } })),
+          src && o.props.mode === 'sensor' ? el('div', { class: 'row', style: { marginBottom: '8px' } },
+            el('button', { class: 'btn small', type: 'button', text: 'Sensorgram CSV', title: 'Time, analyte index, resonance and shift over the whole animation', onclick: () => RNBX.plotData.sensorCsv(o) })) : null].filter(Boolean));
         return wrap;
       }
       const set = d => { RNBX.history.checkpoint(); RNBX.plotData.apply(o, d); RNBX.changed(); Ins.build(); };
@@ -433,9 +439,11 @@ function responseSection(obj, def, set) {
   };
   update(); syncs.push(update);
   kids.push(out);
-  const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id);
+  const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id && o.props.mode !== 'sensor');
   kids.push(el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
     el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Its panel' : 'Add panel', title: linked ? 'Select the linked data panel' : 'Add a data panel that follows this calculation', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
+    RNBX.plotData.canSense(obj) ? (() => { const sp = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id && o.props.mode === 'sensor');
+      return el('button', { class: 'btn small', type: 'button', text: sp ? 'Its sensorgram' : 'Sensorgram', title: sp ? 'Select the sensorgram panel' : 'Add a panel that tracks the resonance while the figure animates', onclick: () => sp ? RNBX.select([sp.id]) : RNBX.plotData.addSensorPanel(obj) }); })() : null,
     el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Download the curves as CSV', onclick: () => RNBX.plotData.downloadCsv(obj) }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'Sources', title: 'Where the n, k data come from', onclick: () => RNBX.plotData.sourcesDialog(obj) })));
   return sec('Optical response (thin-film calculation)', ...kids);

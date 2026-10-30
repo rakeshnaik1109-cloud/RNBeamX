@@ -7,7 +7,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   const res = await page.evaluate(async () => {
     const out = {};
     const where = { flow: 'michelson', pulses: 'pumpprobe', switchon: 'michelson', wavelength: 'michelson', blink: 'michelson', waveplate: 'polarization', polariser: 'spr',
-      scan: 'confocal', fringes: 'fringes', delay: 'pumpprobe', focus: 'gaussian', shutter: null, aom: null, field: 'fourf', binding: 'spr',
+      scan: 'confocal', fringes: 'fringes', delay: 'pumpprobe', focus: 'gaussian', shutter: null, aom: null, field: 'fourf', binding: 'spr', sprsense: 'spr',
       orbit: 'confocal', zoom: 'confocal', build: 'confocal', spotlight: 'michelson', lift: 'michelson' };
     const P = RNBX.animPresets;
     for (const p of P.list) {
@@ -38,7 +38,7 @@ module.exports = async ({ base, getBrowser, H }) => {
     return out;
   });
   Object.entries(res).forEach(([id, r]) => H.check(`preset "${id}" animates the figure and can be removed`, r.ok && r.moves && r.applied === 1 && r.removed, r));
-  H.check('20 presets in three groups', Object.keys(res).length === 20, Object.keys(res).length);
+  H.check('21 presets in three groups', Object.keys(res).length === 21, Object.keys(res).length);
 
   // the 3D turntable turns the whole setup a full circle and stays framed
   const orbit = await page.evaluate(() => {
@@ -88,7 +88,7 @@ module.exports = async ({ base, getBrowser, H }) => {
     const playing = RNBX.state.playing; RNBX.anim.pause();
     return { cards, off, playing, mode: RNBX.state.doc.style.mode, open: !!document.querySelector('.modal') };
   });
-  H.check('Animate dialog: 20 cards, missing parts greyed, Apply plays it', dlg.cards === 20 && dlg.off > 0 && dlg.playing && dlg.mode === '3d' && !dlg.open, dlg);
+  H.check('Animate dialog: 21 cards, missing parts greyed, Apply plays it', dlg.cards === 21 && dlg.off > 0 && dlg.playing && dlg.mode === '3d' && !dlg.open, dlg);
 
   // pulse shapes: wave packet (default), Gaussian, bar; the packet's carrier follows the wavelength
   const ps = await page.evaluate(() => {

@@ -142,6 +142,7 @@ R.build = (srcDoc, opt = {}) => {
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
   S.trace = trace;
   const I = !!opt.interactive;
+  S.time = time; S.live = I;   // panels that follow the animation (sensorgram)
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
 
   let scene = '', over = '', labels = '', insets = '';

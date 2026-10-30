@@ -80,6 +80,9 @@ P.remove = uid => {
     else if (c.kind === 'camera') an.camera = [];
     else if (c.kind === 'reveal') delete an.reveal;
     else if (c.kind === 'mode') S.doc.style.mode = c.was;
+    else if (c.kind === 'object') S.doc.objects = S.doc.objects.filter(o => o.id !== c.id);
+    else if (c.kind === 'prop') { const o = S.doc.objects.find(q => q.id === c.id); if (o) o.props[c.key] = c.was; }
+    else if (c.kind === 'page') Object.assign(S.doc.page, c.was);
   });
   an.applied.splice(i, 1);
   A.setTime(0);
@@ -110,6 +113,7 @@ const I = {
   shutter: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h16"/>',
   aom: '<rect x="7" y="6" width="10" height="12"/><path d="M2 12h5M17 12h5M17 12l5-4"/>',
   field: '<path d="M4 6l16 6M4 12h16M4 18l16-6"/>',
+  sensor: '<path d="M3 20h18M3 4v16"/><path d="M5 16h4c2 0 2-8 5-8h5"/><circle cx="19" cy="8" r="1.4" fill="currentColor"/>',
   binding: '<path d="M3 18h18"/><circle cx="7" cy="15" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="17" cy="15" r="2"/>',
   orbit: '<ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3v18"/><path d="M19 9l2 3-3 1"/>',
   zoom: '<circle cx="10" cy="10" r="6"/><path d="M15 15l6 6M10 7v6M7 10h6"/>',
@@ -192,6 +196,50 @@ add({ id: 'binding', group: 'Optics', name: 'Binding / film growth', icon: 'bind
     if (t.type === 'prism') { const a = t.props.analyte === 'custom' ? t.props.analyteN : 1.333; t.props.analyte = 'custom'; t.props.analyteN = a; return propCurve(t.id, 'analyteN', sweep(D, a, o.b, o.bounce, v => ({ props: { analyteN: v, analyte: 'custom' } }))); }
     const a = t.props.nm || 50; return propCurve(t.id, 'nm', sweep(D, a, o.b, o.bounce, v => ({ props: { nm: v } })));
   } });
+
+/* SPR real-time sensing: the analyte index follows a measurement-like
+   profile; a sensorgram panel tracks the resonance while it plays */
+add({ id: 'sprsense', group: 'Optics', name: 'SPR sensing (sensorgram)', icon: 'sensor', desc: 'A sensing run on the SPR chip: the analyte index changes (binding, calibration steps or a sweep) and a sensorgram tracks the resonance shift live.', types: ['prism'],
+  accept: o => !!o.props.chip,
+  params: [{ key: 'profile', label: 'Run', type: 'select', options: [['binding', 'Binding: baseline, association, dissociation'], ['steps', 'Calibration steps (injections)'], ['sweep', 'Linear index sweep']], def: () => 'binding' },
+    { key: 'n0', label: 'Baseline index', type: 'number', min: 1, max: 2, step: 0.0001, def: (d, t) => { const v = t ? RNBX.plotData.analyteN(t) : 1.333; return U.round(v == null ? 1.333 : v, 4); } },
+    { key: 'dn', label: 'Index change Δn', type: 'number', min: -0.5, max: 0.5, step: 0.0005, def: () => 0.01 },
+    { key: 'steps', label: 'Injections (steps only)', type: 'number', min: 1, max: 10, step: 1, def: () => 4 },
+    { key: 'panel', label: 'Panels', type: 'select', options: [['add', 'Add a sensorgram and mark the dip'], ['none', 'Keyframes only']], def: () => 'add' },
+    Object.assign({}, dur, { def: d => (isStill(d) ? 12 : d.animation.duration) })],
+  apply(doc, t, o, D) {
+    const n0 = +o.n0, dn = +o.dn, k = (tt, v, ease) => ({ t: U.round(tt, 4), ease: ease || 'linear', props: { analyteN: U.round(v, 6), analyte: 'custom' } });
+    const keys = [];
+    if (o.profile === 'sweep') keys.push(k(0, n0), k(D, n0 + dn));
+    else if (o.profile === 'steps') {
+      const m = Math.max(1, Math.round(o.steps)), dt = D / (m + 1), ramp = Math.min(0.4, dt * 0.2);
+      keys.push(k(0, n0));
+      for (let i = 1; i <= m; i++) { keys.push(k(i * dt, n0 + dn * (i - 1) / m), k(i * dt + ramp, n0 + dn * i / m, 'inout')); }
+      keys.push(k(D, n0 + dn));
+    } else {
+      // Langmuir-like: rise 1 − e^(−t/τ) while analyte flows, then e^(−t/τ) decay in buffer
+      const t1 = D * 0.12, t2 = D * 0.55, tau1 = (t2 - t1) / 3.2, tau2 = (D - t2) / 2.2, sat = 1 - Math.exp(-(t2 - t1) / tau1), N = 24;
+      keys.push(k(0, n0), k(t1, n0));
+      for (let i = 1; i <= N; i++) { const tt = t1 + (t2 - t1) * i / N; keys.push(k(tt, n0 + dn * (1 - Math.exp(-(tt - t1) / tau1)))); }
+      for (let i = 1; i <= N; i++) { const tt = t2 + (D - t2) * i / N; keys.push(k(tt, n0 + dn * sat * (0.25 + 0.75 * Math.exp(-(tt - t2) / tau2)))); }
+    }
+    t.props.analyte = 'custom'; t.props.analyteN = n0;
+    const ch = propCurve(t.id, 'analyteN', keys);
+    if (o.panel === 'add') ch.push(...sensorPanels(doc, t));
+    return ch;
+  } });
+/* a sensorgram for the chip (and the live dip marker on its curve panel) */
+const sensorPanels = (doc, t) => {
+  const ch = [], curve = doc.objects.find(q => q.type === 'plot' && q.props.link === t.id && q.props.mode !== 'sensor');
+  if (curve && !curve.props.mark) { curve.props.mark = true; ch.push({ kind: 'prop', id: curve.id, key: 'mark', was: false }); }
+  if (!doc.objects.some(q => q.type === 'plot' && q.props.link === t.id && q.props.mode === 'sensor') && RNBX.plotData.addSensorPanel) {
+    const before = new Set(doc.objects.map(q => q.id)), page = { width: doc.page.width, height: doc.page.height, preset: doc.page.preset };
+    RNBX.plotData.addSensorPanel(t, { quiet: true });
+    doc.objects.filter(q => !before.has(q.id)).forEach(q => ch.push({ kind: 'object', id: q.id }));
+    if (doc.page.height !== page.height || doc.page.width !== page.width) ch.push({ kind: 'page', was: page });
+  }
+  return ch;
+};
 
 /* ================= Presentation ================= */
 add({ id: 'orbit', group: 'Presentation', name: '3D rotation (turntable)', icon: 'orbit', desc: 'The whole setup turns on its optical table: a full 360° turn or a gentle swing.',
