@@ -25,4 +25,9 @@ NO WARRANTY
   authors be liable for any claim, damages or other liability arising from the
   use of this software.
 
-Enquiries: Rakesh Naik, IIT Roorkee.
+THIRD-PARTY COMPONENTS
+  The bundled PDF libraries (jsPDF, svg2pdf.js) are not covered by this
+  licence; they remain under their own MIT licences, listed in
+  THIRD_PARTY_NOTICES.md.
+
+Enquiries and permission requests: Rakesh Naik, IIT Roorkee, rakesh_n@cpqct.iitr.ac.in

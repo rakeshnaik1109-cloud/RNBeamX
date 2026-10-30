@@ -172,5 +172,7 @@ Suggestions, bug reports, missing parts or templates, or help with a figure:
 ## Licence
 
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. See [LICENSE](LICENSE).
-Bundled third-party libraries keep their own licences
-(see [js/vendor/THIRD_PARTY_LICENSES.txt](js/vendor/THIRD_PARTY_LICENSES.txt)).
+Bundled third-party libraries keep their own licences: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). For permission to copy,
+redistribute or use RNBeamX commercially, write to
+[rakesh_n@cpqct.iitr.ac.in](mailto:rakesh_n@cpqct.iitr.ac.in?subject=RNBeamX%20licence).
