@@ -270,7 +270,8 @@ add({ id: 'zoom', group: 'Presentation', name: 'Zoom to a part', icon: 'zoom', d
     const c0 = { yaw: v.yaw, pitch: v.pitch, zoom: v.zoom || 1, panX: v.panX || 0, panY: v.panY || 0 };
     const zin = c0.zoom * o.z, cam = RNBX.render3d.camera(Object.assign({}, doc, { view3d: Object.assign({}, v, { zoom: zin, panX: 0, panY: 0 }) }));
     const pt = cam.p(target.x, target.y, bh + (target.z || 0));
-    const cin = Object.assign({}, c0, { zoom: zin, panX: U.round(W / 2 - pt[0], 3), panY: U.round(H / 2 - pt[1], 3) });
+    const ac = cam.area ? [(cam.area.x0 + cam.area.x1) / 2, (cam.area.y0 + cam.area.y1) / 2] : [W / 2, H / 2];
+    const cin = Object.assign({}, c0, { zoom: zin, panX: U.round(ac[0] - pt[0], 3), panY: U.round(ac[1] - pt[1], 3) });
     doc.animation.camera = [Object.assign({ t: 0 }, c0), Object.assign({ t: D * 0.35 }, cin), Object.assign({ t: D * 0.65 }, cin), Object.assign({ t: D }, c0)];
     return ch;
   } });

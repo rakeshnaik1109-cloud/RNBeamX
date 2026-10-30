@@ -40,6 +40,11 @@ module.exports = async ({ base, getBrowser, H }) => {
     const sp = RNBX.state.doc.objects.find(q => q.type === 'plot' && q.props.mode === 'sensor');
     sp.props.sgX = 'n'; sp.props.sgY = 'shift';
     out.byN = RNBX.render.build(RNBX.state.doc, { time: 6 }).svg.includes('Analyte refractive index');
+    // in 3D the table keeps clear of the data panels
+    const d3 = RNBX.state.doc, cam = RNBX.render3d.camera(d3), A = cam.area;
+    const tableBottom = Math.max(...[[A.x0, A.y0], [A.x1, A.y0], [A.x1, A.y1], [A.x0, A.y1]].map(q => cam.p(q[0], q[1], -2.5)[1]));
+    const plotTop = Math.min(...d3.objects.filter(q => q.type === 'plot').map(q => RNBX.lib.worldBox(q)[1]));
+    out.clear3d = { tableBottom, plotTop, ok: tableBottom < plotTop };
     // the original binding preset is untouched
     out.bindingPreset = !!P.list.find(q => q.id === 'binding');
     return out;
@@ -52,6 +57,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('removing the preset removes its panels, marker and keyframes', Object.values(r.removed).every(Boolean), r.removed);
   H.check('calibration steps and sweep: resonance moves one way only, no panels when asked', r.steps.mono && r.sweep.mono && r.steps.shift > 20 && r.sweep.shift > 20 && r.steps.panels === 1 && r.sweep.panels === 1, { steps: r.steps, sweep: r.sweep });
   H.check('sensorgram against the analyte index', r.byN);
+  H.check('3D view: the optical table is fitted above the data panels, not under them', r.clear3d.ok, r.clear3d);
   H.check('the existing binding preset is still there', r.bindingPreset);
   await page.close();
 };

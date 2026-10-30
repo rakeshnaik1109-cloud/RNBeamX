@@ -39,11 +39,34 @@ R3.MOUNT_STYLES = {
 const LIGHT = (() => { const l = [-0.45, 0.35, 0.82], k = Math.hypot(...l); return l.map(v => v / k); })();
 
 /* ---------- camera ---------- */
+/* the part of the page the table takes: all of it, unless data plots
+   sit below (or beside) the setup; then the table and the 3D view keep
+   to the rest, so the plots do not cover the setup */
+R3.tableArea = doc => {
+  const W = doc.page.width, H = doc.page.height, full = { x0: 0, y0: 0, x1: W, y1: H };
+  const plots = doc.objects.filter(o => o.type === 'plot' && !o.hidden && lib.get(o.type));
+  if (!plots.length) return full;
+  const b = plots.map(o => lib.worldBox(o)), gap = Math.min(W, H) * 0.02;
+  const u = [Math.min(...b.map(q => q[0])), Math.min(...b.map(q => q[1])), Math.max(...b.map(q => q[2])), Math.max(...b.map(q => q[3]))];
+  // captions and panel letters that belong to the plots
+  doc.objects.forEach(o => {
+    const d = lib.get(o.type);
+    if (!d || o.hidden || !d.annotation || o.type === 'plot' || d.connection) return;
+    const q = lib.worldBox(o);
+    if (q[1] >= u[1] - 12 && q[1] < u[3] && q[0] < u[2] && q[2] > u[0]) u[1] = Math.min(u[1], q[1]);
+    else if (q[0] >= u[0] - 12 && q[0] < u[2] && q[1] < u[3] && q[3] > u[1]) u[0] = Math.min(u[0], q[0]);
+  });
+  const ok = r => r.x1 - r.x0 > W * 0.3 && r.y1 - r.y0 > H * 0.25 ? r : null;
+  return (u[1] > H * 0.3 && ok({ x0: 0, y0: 0, x1: W, y1: u[1] - gap })) ||
+    (u[0] > W * 0.3 && ok({ x0: 0, y0: 0, x1: u[0] - gap, y1: H })) ||
+    (u[3] < H * 0.7 && ok({ x0: 0, y0: u[3] + gap, x1: W, y1: H })) ||
+    (u[2] < W * 0.7 && ok({ x0: u[2] + gap, y0: 0, x1: W, y1: H })) || full;
+};
 R3.camera = (doc) => {
-  const v3 = doc.view3d, W = doc.page.width, H = doc.page.height;
+  const v3 = doc.view3d, A = R3.tableArea(doc), W = A.x1 - A.x0, H = A.y1 - A.y0;
   const phi = U.rad(v3.yaw), th = U.rad(U.clamp(v3.pitch, 5, 90));
   const cf = Math.cos(phi), sf = Math.sin(phi), ct = Math.cos(th), sth = Math.sin(th);
-  const cx = W / 2, cy = H / 2;
+  const cx = A.x0 + W / 2, cy = A.y0 + H / 2;
   const raw = (x, y, z) => {
     const X = x - cx, Y = y - cy;
     const x1 = X * cf - Y * sf, y1 = X * sf + Y * cf;
@@ -52,15 +75,15 @@ R3.camera = (doc) => {
   // frame the table (page area) plus headroom for tall parts
   const zt = (v3.beamHeight || 6) * 2.2;
   const pts = [];
-  [[0, 0], [W, 0], [W, H], [0, H]].forEach(([x, y]) => { pts.push(raw(x, y, -2.5)); pts.push(raw(x, y, zt)); });
+  [[A.x0, A.y0], [A.x1, A.y0], [A.x1, A.y1], [A.x0, A.y1]].forEach(([x, y]) => { pts.push(raw(x, y, -2.5)); pts.push(raw(x, y, zt)); });
   const us = pts.map(p => p[0]), vs = pts.map(p => p[1]);
   const u0 = Math.min(...us), u1 = Math.max(...us), w0 = Math.min(...vs), w1 = Math.max(...vs);
   const m = Math.min(W, H) * 0.04;
   const k = Math.min((W - 2 * m) / (u1 - u0), (H - 2 * m) / (w1 - w0)) * (v3.zoom || 1);
   const uc = (u0 + u1) / 2, vc = (w0 + w1) / 2;
-  const ox = W / 2 + (v3.panX || 0), oy = H / 2 + (v3.panY || 0);
+  const ox = cx + (v3.panX || 0), oy = cy + (v3.panY || 0);
   const cam = {
-    k, phi, th, raw,
+    k, phi, th, raw, area: A,
     p(x, y, z) { const r = raw(x, y, z); return [ox + (r[0] - uc) * k, oy + (r[1] - vc) * k, r[2]]; },
     /* screen point → table-plane point at height z (for dragging in 3D) */
     unproject(sx, sy, z) {
@@ -275,18 +298,18 @@ R3.TABLE_FINISHES = {
 };
 R3.scene = (doc, trace, S, opt = {}) => {
   const cam = R3.camera(doc);
-  const v3 = doc.view3d, W = doc.page.width, H = doc.page.height, bh = v3.beamHeight || 6, k = cam.k;
-  const I = opt.interactive;
+  const v3 = doc.view3d, TA = cam.area, bh = v3.beamHeight || 6, k = cam.k;
+  const I = opt.interactive, X0 = TA.x0, Y0 = TA.y0, X1 = TA.x1, Y1 = TA.y1, CR = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]];
   let table = '';
   // table slab
   if (v3.table !== false) {
     const tc = v3.tableColor || '#2c3036', th = 2.5;
-    const top = [[0, 0], [W, 0], [W, H], [0, H]].map(q => cam.p(q[0], q[1], 0));
-    const bot = [[0, 0], [W, 0], [W, H], [0, H]].map(q => cam.p(q[0], q[1], -th));
+    const top = CR.map(q => cam.p(q[0], q[1], 0));
+    const bot = CR.map(q => cam.p(q[0], q[1], -th));
     const sides = [];
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4;
-      const a = [[0, 0], [W, 0], [W, H], [0, H]][i], b = [[0, 0], [W, 0], [W, H], [0, H]][j];
+      const a = CR[i], b = CR[j];
       const nx = (b[1] - a[1]), ny = -(b[0] - a[0]), l = Math.hypot(nx, ny);
       const nrm = [nx / l, ny / l, 0];
       if (cam.facing(nrm) > 0) sides.push(`<path d="M ${[top[i], top[j], bot[j], bot[i]].map(q => n(q[0]) + ' ' + n(q[1])).join(' L ')} Z" fill="${U.shadeRgb(tc, 0.65 + 0.25 * Math.max(0, nrm[0] * LIGHT[0] + nrm[1] * LIGHT[1]))}"/>`);
@@ -297,8 +320,8 @@ R3.scene = (doc, trace, S, opt = {}) => {
     if (fin.brushed) {
       // brushed metal: faint streaks along the long side of the table
       let lt = '', dk = '';
-      for (let y = 0.4, i = 0; y < H; y += 0.55, i++) {
-        const a = cam.p(0, y, 0), b = cam.p(W, y, 0), seg = `M ${n(a[0])} ${n(a[1])} L ${n(b[0])} ${n(b[1])} `;
+      for (let y = Y0 + 0.4, i = 0; y < Y1; y += 0.55, i++) {
+        const a = cam.p(X0, y, 0), b = cam.p(X1, y, 0), seg = `M ${n(a[0])} ${n(a[1])} L ${n(b[0])} ${n(b[1])} `;
         if ((i * 7) % 3 === 0) dk += seg; else if ((i * 5) % 4 === 1) lt += seg;
       }
       table += `<path d="${lt}" stroke="#ffffff" stroke-opacity="0.22" stroke-width="${n(Math.max(0.05, 0.12 * k))}" fill="none"/><path d="${dk}" stroke="#000000" stroke-opacity="0.07" stroke-width="${n(Math.max(0.05, 0.12 * k))}" fill="none"/>`;
@@ -306,7 +329,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
     if (v3.holes !== false) {
       const pitch = 5, rx = Math.max(0.08, 0.3 * k), ry = rx * Math.sin(cam.th);
       let d = '';
-      for (let x = pitch / 2; x < W; x += pitch) for (let y = pitch / 2; y < H; y += pitch) {
+      for (let x = X0 + pitch / 2; x < X1; x += pitch) for (let y = Y0 + pitch / 2; y < Y1; y += pitch) {
         const q = cam.p(x, y, 0);
         d += `M ${n(q[0] - rx)} ${n(q[1])} a ${n(rx)} ${n(ry)} 0 1 0 ${n(2 * rx)} 0 a ${n(rx)} ${n(ry)} 0 1 0 ${n(-2 * rx)} 0 `;
       }
