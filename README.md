@@ -140,6 +140,12 @@ recorded is an anonymous visit count, plus which features were used (for example
 nothing about your figures or files. Opened from a local file (the offline
 single-file build), RNBeamX is not counted.
 
+The "● N using now" count in the bottom bar is live presence through
+[Supabase Realtime](https://supabase.com/docs/guides/realtime/presence): each open
+tab holds one connection identified only by a random number made when the tab
+opens and forgotten when it closes. Nothing else is sent; if the service cannot
+be reached, the count stays hidden.
+
 ## Citing RNBeamX
 
 If RNBeamX contributes to published work (a figure, a graphical abstract or a

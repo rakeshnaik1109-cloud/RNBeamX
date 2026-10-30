@@ -236,3 +236,8 @@ a.icon-btn { text-decoration: none; }
 .play-pill { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg); font-size: 12.5px; font-weight: 600; z-index: 5; }
 .play-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; animation: rbxblink 1s infinite; }
 @keyframes rbxblink { 50% { opacity: .25; } }
+.live-count { display: inline-flex; align-items: center; gap: 5px; }
+.live-count b { font-weight: 700; color: var(--text); }
+.live-dot { animation: rbxlive 2s ease-in-out infinite; }
+@keyframes rbxlive { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }

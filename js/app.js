@@ -60,6 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('hashchange', () => { if (/[#&]fig=/.test(location.hash)) RNBX.share.openFromHash(); });
   RNBX.inspector.build();
   setTimeout(() => RNBX.canvas.fit(), 0);
+  // live "using now" count (anonymous presence; hidden if the service cannot be reached)
+  if (window.RNPresence && !navigator.webdriver) RNPresence.bind('rnbeamx', { track: true });
   window.addEventListener('beforeunload', () => U.store.set('rnbx_autosave_v1', { t: Date.now(), doc: S.doc }));
 });
 })();
