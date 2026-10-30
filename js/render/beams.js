@@ -54,7 +54,7 @@ B.envelope = (seg, wScale = 1) => {
       const A = V.add(seg.a, V.mul(d, s0)), Bp = V.add(seg.a, V.mul(d, s1));
       out.push({ A, B: Bp, h0, h1, pts: [V.add(A, V.mul(p, h0)), V.add(Bp, V.mul(p, h1)), V.sub(Bp, V.mul(p, h1)), V.sub(A, V.mul(p, h0))] });
     }
-    return out;
+    return B.cutEnds(seg, out);
   }
   const w0 = seg.w0 * wScale, dw = seg.dw * wScale, L = seg.len;
   const pieces = [];
@@ -68,9 +68,28 @@ B.envelope = (seg, wScale = 1) => {
     const A = V.add(seg.a, V.mul(d, s0)), Bp = V.add(seg.a, V.mul(d, s1));
     pieces.push({ A, B: Bp, h0, h1, pts: [V.add(A, V.mul(p, h0)), V.add(Bp, V.mul(p, h1)), V.sub(Bp, V.mul(p, h1)), V.sub(A, V.mul(p, h0))] });
   }
-  return pieces;
+  return B.cutEnds(seg, pieces);
 };
 const poly = pts => 'M ' + pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ') + ' Z';
+
+/* A beam ends exactly on the surface it meets: its edge at offset `off` across the
+   beam (unit vector p) lies on the surface line through P with direction t, not on a
+   square (or round) cap that would poke through a mirror or a prism face.
+   Grazing surfaces fall back to a square cut. */
+const edgeAt = (P, p, t, off) => {
+  const k = t ? V.dot(t, p) : 0;
+  return Math.abs(k) > 0.3 ? V.add(P, V.mul(t, off / k)) : V.add(P, V.mul(p, off));
+};
+B.cutEnds = (seg, pieces) => {
+  if (!pieces.length || (!seg.tA && !seg.tB)) return pieces;
+  const p = V.perp(V.norm(V.sub(seg.b, seg.a)));
+  const f = pieces[0], l = pieces[pieces.length - 1];
+  if (seg.tA) { f.pts[0] = edgeAt(f.A, p, seg.tA, f.h0); f.pts[3] = edgeAt(f.A, p, seg.tA, -f.h0); }
+  if (seg.tB) { l.pts[1] = edgeAt(l.B, p, seg.tB, l.h1); l.pts[2] = edgeAt(l.B, p, seg.tB, -l.h1); }
+  f.tA = seg.tA; l.tB = seg.tB;
+  return pieces;
+};
+B.edgeAt = edgeAt;
 
 B.isCollimated = seg => {
   if (seg.q0) { const a = B.hw(seg, 0), b = B.hw(seg, seg.len / 2), c = B.hw(seg, seg.len); return Math.max(a, b, c) - Math.min(a, b, c) < 0.015; }
@@ -136,16 +155,19 @@ B.draw2D = (trace, doc, opt = {}) => {
       const pieces = lineMode ? B.envelope(Object.assign({}, seg, { w0: lineW / 2, dw: 0 })) : B.envelope(seg);
       const d = V.norm(V.sub(seg.b, seg.a)), pp = V.perp(d);
       for (const pc of pieces) {
-        const band = [V.add(pc.A, V.mul(pp, pc.h0 * (1 - 2 * f0))), V.add(pc.B, V.mul(pp, pc.h1 * (1 - 2 * f0))), V.add(pc.B, V.mul(pp, pc.h1 * (1 - 2 * f1))), V.add(pc.A, V.mul(pp, pc.h0 * (1 - 2 * f1)))];
+        const band = [edgeAt(pc.A, pp, pc.tA, pc.h0 * (1 - 2 * f0)), edgeAt(pc.B, pp, pc.tB, pc.h1 * (1 - 2 * f0)), edgeAt(pc.B, pp, pc.tB, pc.h1 * (1 - 2 * f1)), edgeAt(pc.A, pp, pc.tA, pc.h0 * (1 - 2 * f1))];
         if (glow && g.i === 0) GLOW.forEach(([kk, a]) => { halo += `<path d="${poly(pc.pts)}" fill="#ffffff" fill-opacity="${n(a * op)}" stroke="#ffffff" stroke-opacity="${n(a * op)}" stroke-width="${n(Math.max(pc.h0, pc.h1) * kk)}" stroke-linejoin="round"/>`; });
         core += `<path d="${poly(band)}" fill="${coreCol}" fill-opacity="${n(op)}" stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="0.02"/>`;
       }
     } else if (lineMode || B.isCollimated(seg)) {
       const w = (lineMode ? lineW : 2 * B.hw(seg, 0)) * k;
       const geo = `x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}"`;
+      const pp = V.perp(V.norm(V.sub(seg.b, seg.a)));
+      // the beam is a band cut along the surfaces at its ends (no cap poking through a mirror or prism face)
+      const bandOf = h => poly([edgeAt(seg.a, pp, seg.tA, h), edgeAt(seg.b, pp, seg.tB, h), edgeAt(seg.b, pp, seg.tB, -h), edgeAt(seg.a, pp, seg.tA, -h)]);
       if (glow) GLOW.forEach(([kk, a]) => { halo += `<line ${geo} stroke="${col}" stroke-opacity="${n(a * op)}" stroke-width="${n(w * kk + 0.6)}" stroke-linecap="round"/>`; });
-      core += `<line ${geo} stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
-      if (glow && dark) core += `<line ${geo} stroke="#ffffff" stroke-opacity="${n(0.55 * op)}" stroke-width="${n(w * 0.32)}" stroke-linecap="round"/>`;
+      core += `<path d="${bandOf(w / 2)}" fill="${coreCol}" fill-opacity="${n(op)}" stroke="${coreCol}" stroke-opacity="${n(op)}" stroke-width="0.02"/>`;
+      if (glow && dark) core += `<path d="${bandOf(w * 0.16)}" fill="#ffffff" fill-opacity="${n(0.55 * op)}"/>`;
     } else {
       const sg = k === 1 ? seg : Object.assign({}, seg, { w0: seg.w0 * k, dw: seg.dw * k });
       for (const pc of B.envelope(sg)) {

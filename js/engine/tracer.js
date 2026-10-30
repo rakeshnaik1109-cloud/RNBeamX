@@ -165,7 +165,8 @@ RNBX.trace = function trace(doc) {
     { q: gauss ? startQ(r, r.lambda, r.M2) : null, M2: r.M2 || 1 }));
   let guard = 0;
 
-  const child = (ray, patch) => Object.assign({}, ray, { depth: ray.depth + 1 }, patch);
+  // tS: direction of the surface a ray starts on (set through `base`), so its drawn beam is cut along that surface
+  const child = (ray, patch) => Object.assign({}, ray, { depth: ray.depth + 1, tS: null }, patch);
   const record = (obj, ray) => {
     const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} };
     h.P += ray.P;
@@ -570,13 +571,17 @@ RNBX.trace = function trace(doc) {
     const len = best ? best.t : exitBox(ray.o, ray.d, box);
     if (len <= 0) continue;
     const end = V.add(ray.o, V.mul(ray.d, len));
-    segments.push(seg(ray, ray.o, end, len, ray.inside ? 'inside' : 'beam', best ? 'hit' : 'open'));
+    // the surface direction at both ends, so the drawing can cut the beam exactly along mirrors and faces
+    const tEnd = best ? (surfaces[bi].arcC ? V.perp(V.norm(V.sub(end, surfaces[bi].arcC))) : surfaces[bi].t) : null;
+    const sg = seg(ray, ray.o, end, len, ray.inside ? 'inside' : 'beam', best ? 'hit' : 'open');
+    sg.tA = ray.tS || null; sg.tB = tEnd;
+    segments.push(sg);
     if (!best) continue;
 
     const s = surfaces[bi];
     const w = ray.w + ray.dw * len;
     const nm = ray.inside || ray.glass ? (ray.nmed || 1) : 1;
-    const base = { o: end, last: bi, s: ray.s + len, opl: ray.opl + len * scale * nm, w, ignore: null, vlast: null, q: ray.q ? O.qProp(ray.q, len * scale) : null };
+    const base = { o: end, last: bi, s: ray.s + len, opl: ray.opl + len * scale * nm, w, ignore: null, vlast: null, q: ray.q ? O.qProp(ray.q, len * scale) : null, tS: tEnd };
     const out = [];
     interact(ray, s, end, base, out, { vertical: false, index: bi });
     for (const r of out) queue.push(r);
