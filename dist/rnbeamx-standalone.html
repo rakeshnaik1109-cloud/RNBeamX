@@ -1909,10 +1909,10 @@ function buildScene(doc) {
     const target = (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects).find(o => o.id === link.props.to);
     const tdef = target && RNBX.lib.get(target.type);
     if (!tdef || !tdef.port) return;
-    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1), ft = RNBX.lib.fiberType(link.props);
     Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
-      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1), dw: Math.tan(U.rad(target.props.divergence || 0)), viaFiber: link.id, Pin: s.P, P: s.P * eff,
-      E: s.E && link.props.fiberType === 'pm' ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
+      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
+      M2: Math.max(s.M2 || 1, ft.m2), E: s.E && ft.pm ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
   });
   return { surfaces, vertical, sources, fibers, scale };
 }
@@ -2239,14 +2239,15 @@ RNBX.trace = function trace(doc) {
         const fl = fiberLight[link.id] = fiberLight[link.id] || {};
         fl[ray.lambda] = (fl[ray.lambda] || 0) + ray.P;
         const eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
-        const keepPol = link.props.fiberType === 'pm';
-        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1);
+        // the fibre type sets the output: PM keeps the polarisation, multimode gives a bigger, worse beam
+        const ft = RNBX.lib.fiberType(link.props), keepPol = !!ft.pm;
+        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1) * ft.wk;
         out.push(child(ray, {
           o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id, z: target.z || 0, vz: 0,
           s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
           P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
-          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)), inside: null, nmed: 1,
-          q: gauss ? startQ({ w: wOut }, ray.lambda, 1) : null, M2: 1,
+          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,
+          q: gauss ? startQ({ w: wOut }, ray.lambda, ft.m2) : null, M2: ft.m2,
         }));
         break;
       }
@@ -6504,13 +6505,29 @@ const boxExit = (c, d, box) => {
 };
 
 /* ================= Connections ================= */
+/* fibre types: look (jacket colour, thickness, pattern) and what they do to the light.
+   m2 = beam quality of the light leaving the far end (single-mode ≈ 1), wk = output beam
+   size factor, pm = keeps the polarisation (every other fibre scrambles it) */
+lib.FIBER_TYPES = {
+  smf: { name: 'Single-mode (SMF, 9/125 µm)', color: null, k: 1, m2: 1, wk: 1, core: '9 µm', na: 0.14 },
+  mmf: { name: 'Multimode OM1/OM2 (62.5 or 50 µm, orange)', color: '#f08a24', k: 1.15, m2: 12, wk: 1.6, core: '50–62.5 µm', na: 0.2 },
+  om3: { name: 'Multimode OM3/OM4 (50 µm laser-optimised, aqua)', color: '#35bfc8', k: 1.15, m2: 10, wk: 1.5, core: '50 µm', na: 0.2 },
+  lmmf: { name: 'Large-core multimode (105–400 µm, NA 0.22)', color: '#d9661f', k: 1.35, m2: 40, wk: 2.2, core: '105–400 µm', na: 0.22 },
+  pm: { name: 'Polarisation-maintaining (PANDA)', color: '#3a6fb5', k: 1, m2: 1, wk: 1, pm: true, pattern: 'stripe', core: '6 µm', na: 0.12 },
+  pcf: { name: 'Photonic-crystal / hollow-core', color: '#8a63d2', k: 1.1, m2: 1.1, wk: 1, pattern: 'double', core: '5–30 µm', na: 0.05 },
+  bundle: { name: 'Fibre bundle (imaging / collection)', color: '#2b2f36', k: 2.4, m2: 60, wk: 2.5, pattern: 'ribs', core: 'many fibres', na: 0.22 },
+  armoured: { name: 'Armoured patch cable (steel spiral)', color: '#8f969f', k: 2, m2: 1, wk: 1, pattern: 'spiral', core: 'SMF inside', na: 0.14 },
+  pof: { name: 'Plastic optical fibre (POF, 1 mm)', color: '#1d1f23', k: 1.6, m2: 80, wk: 2.5, core: '980 µm', na: 0.5 },
+};
+lib.fiberType = p => lib.FIBER_TYPES[p.fiberType] || lib.FIBER_TYPES.smf;
+
 lib.register({
   type: 'fiber', name: 'Optical fibre', abbr: '', category: 'Connections', connection: true, autoLabel: false,
-  keywords: 'fiber fibre patch cable single mode multimode pm',
+  keywords: 'fiber fibre patch cable single mode multimode pm om3 om4 large core bundle armoured pcf hollow core plastic pof',
   tool: 'fiber', hint: 'Click a fibre coupler, then a second coupler.',
   defaults: { from: '', to: '', fiberType: 'smf', eff: 0.8, colorMode: 'light', color: '', width: 0.9, bend: 0.45, coil: false, length: 40, boots: false },
   params: [
-    { key: 'fiberType', label: 'Fibre type', type: 'select', options: [['smf', 'Single-mode'], ['mmf', 'Multimode'], ['pm', 'Polarisation-maintaining']] },
+    { key: 'fiberType', label: 'Fibre type', type: 'select', options: () => Object.entries(lib.FIBER_TYPES).map(([k, t]) => [k, t.name]), hint: 'PM keeps the polarisation; multimode fibres give a larger, less coherent output beam' },
     { key: 'eff', label: 'Coupling efficiency', type: 'range', min: 0, max: 1, step: 0.01 },
     { key: 'colorMode', label: 'Colour', type: 'select', options: [['light', 'Colour of the light inside'], ['jacket', 'Jacket colour']] },
     { key: 'color', label: 'Jacket colour', type: 'color', allowEmpty: true },
@@ -6536,15 +6553,21 @@ lib.register({
     const g = this.geometry(obj, doc);
     if (!g) return '';
     const p = obj.props;
-    let col = p.color || doc.style.fiberColor || '#f2b705';
+    const ft = lib.fiberType(p);
+    let col = p.color || ft.color || doc.style.fiberColor || '#f2b705';
     if (p.colorMode === 'light' && trace && trace.fiberLight[obj.id]) {
       const fl = trace.fiberLight[obj.id];
       const best = Object.keys(fl).sort((x, y) => fl[y] - fl[x])[0];
       col = lib.colorOf(doc, Number(best));
     }
-    const w = U.pt2mm(p.width || 0.9);
-    let s = `<path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w)}" stroke-linecap="round" ${p.fiberType === 'mmf' ? '' : ''}/>`;
+    const w = U.pt2mm(p.width || 0.9) * ft.k;
+    let s = `<path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
     if (S.shaded) s = `<path d="${g.d}" fill="none" stroke="${U.darken(col, 0.35)}" stroke-width="${n(w * 1.5)}" stroke-linecap="round"/>` + s + `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="${n(w * 0.35)}" stroke-linecap="round"/>`;
+    // type patterns: PM key stripe, hollow / photonic-crystal double wall, bundle ribs, armour spiral
+    if (ft.pattern === 'stripe') s += `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(w * 0.22)}" stroke-dasharray="${n(w * 2.5)} ${n(w * 1.5)}"/>`;
+    if (ft.pattern === 'double') s += `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(w * 0.45)}"/><path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w * 0.18)}"/>`;
+    if (ft.pattern === 'ribs') s += `<path d="${g.d}" fill="none" stroke="#9aa1ab" stroke-opacity="0.8" stroke-width="${n(w * 0.8)}" stroke-dasharray="${n(w * 0.18)} ${n(w * 0.32)}"/>`;
+    if (ft.pattern === 'spiral') s += `<path d="${g.d}" fill="none" stroke="#3d434b" stroke-opacity="0.75" stroke-width="${n(w * 0.95)}" stroke-dasharray="${n(w * 0.2)} ${n(w * 0.45)}"/>`;
     if (p.boots) {
       // strain-relief boots: short thick sections leaving each end along the cable
       const boot = (P, C) => { const dx = C[0] - P[0], dy = C[1] - P[1], L = Math.hypot(dx, dy) || 1, l = Math.min(3, L * 0.6), e = [P[0] + dx / L * l, P[1] + dy / L * l]; return `<line x1="${n(P[0])}" y1="${n(P[1])}" x2="${n(e[0])}" y2="${n(e[1])}" stroke="#16181c" stroke-width="${n(Math.max(w * 3.2, 1.1))}" stroke-linecap="round"/>`; };
@@ -7500,7 +7523,14 @@ R.connection = (obj, doc, S, trace, interactive) => {
   // an invisible fat stroke makes thin connections easy to click
   const g = def.geometry(obj, doc);
   const hit = interactive && g ? `<path d="${g.d}" fill="none" stroke="transparent" stroke-width="2.5"/>` : '';
-  return `<g ${interactive ? `data-id="${obj.id}"` : ''}>${body}${hit}</g>`;
+  const op = R.connOpacity(obj, doc);
+  if (op <= 0.001) return '';
+  return `<g ${interactive ? `data-id="${obj.id}"` : ''}${op < 1 ? ` opacity="${n(op)}"` : ''}>${body}${hit}</g>`;
+};
+/* a fibre or wire is only as visible as the fainter of its two ends (so it appears with them in a build-up) */
+R.connOpacity = (obj, doc) => {
+  const o = x => x && x.opacity != null ? x.opacity : 1;
+  return Math.min(o(obj), o(RNBX.getObjIn(doc, obj.props.from)), o(RNBX.getObjIn(doc, obj.props.to)));
 };
 
 R.inset = (obj, doc) => {
@@ -7919,10 +7949,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
       const pts = [];
       if (g.c1) { for (let i = 0; i <= 24; i++) { const t = i / 24, mt = 1 - t; pts.push([0, 1].map(j => mt * mt * mt * g.a[j] + 3 * mt * mt * t * g.c1[j] + 3 * mt * t * t * g.c2[j] + t * t * t * g.b[j])); } } else pts.push(...g.pts);
       const sc = pts.map(q => cam.p(q[0], q[1], 0.4));
-      let col = obj.type === 'fiber' ? (obj.props.color || doc.style.fiberColor) : (obj.props.color || '#9aa1ab');
+      const cop = RNBX.render.connOpacity(obj, doc);
+      if (cop <= 0.001) continue;
+      const ft = obj.type === 'fiber' ? lib.fiberType(obj.props) : { k: 1 };
+      let col = obj.type === 'fiber' ? (obj.props.color || ft.color || doc.style.fiberColor) : (obj.props.color || '#9aa1ab');
       if (obj.type === 'fiber' && obj.props.colorMode === 'light' && trace.fiberLight[obj.id]) { const fl = trace.fiberLight[obj.id]; col = lib.colorOf(doc, Number(Object.keys(fl).sort((a, b) => fl[b] - fl[a])[0])); }
       const d = 'M ' + sc.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ');
-      items.push({ z: -1e6, svg: `<g ${I ? `data-id="${obj.id}"` : ''}><path d="${d}" fill="none" stroke="${U.darken(col, 0.3)}" stroke-width="${n(Math.max(0.3, U.pt2mm(obj.props.width || 0.8) * k * 1.6))}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.2, U.pt2mm(obj.props.width || 0.8) * k))}" stroke-linecap="round" stroke-linejoin="round"/></g>` });
+      const cw = U.pt2mm(obj.props.width || 0.8) * k * ft.k;
+      items.push({ z: -1e6, svg: `<g ${I ? `data-id="${obj.id}"` : ''}${cop < 1 ? ` opacity="${n(cop)}"` : ''}><path d="${d}" fill="none" stroke="${U.darken(col, 0.3)}" stroke-width="${n(Math.max(0.3, cw * 1.6))}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.2, cw))}" stroke-linecap="round" stroke-linejoin="round"/>${ft.pattern === 'stripe' ? `<path d="${d}" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="${n(Math.max(0.06, cw * 0.22))}" stroke-dasharray="${n(cw * 2.5)} ${n(cw * 1.5)}"/>` : ''}${ft.pattern === 'ribs' || ft.pattern === 'spiral' ? `<path d="${d}" fill="none" stroke="${ft.pattern === 'ribs' ? '#9aa1ab' : '#3d434b'}" stroke-opacity="0.75" stroke-width="${n(cw * 0.85)}" stroke-dasharray="${n(cw * 0.2)} ${n(cw * 0.4)}"/>` : ''}</g>` });
       continue;
     }
     const faces = R3.objectFaces(obj, doc);
@@ -12871,6 +12905,27 @@ E('coupler', { group: FB,
   numbers: ['SMF-28 at 1550 nm: mode diameter 10.4 µm, NA 0.14, loss 0.2 dB/km'],
   demo: demo(110, 56, (a, T, d) => { a('laser', 16, 14, 0, { lambda: 633 }, 'Laser', [0, 6]); const c1 = a('coupler', 50, 14, 180, {}, 'In', [0, 6]); const c2 = a('coupler', 50, 42, 0, {}, 'Out', [0, 6]); d.objects.push(T.link('fiber', c1, c2)); a('screen', 96, 42, 0, {}); }),
   see: ['benchlaser', 'circulator', 'fibersplit'] });
+E('fiber', { group: FB,
+  one: 'An optical fibre guides light along a flexible glass (or plastic) thread; the type decides how many modes it carries and whether it keeps the polarisation.',
+  how: ['Light travels in the <b>core</b>, kept there by total internal reflection at the lower-index <b>cladding</b>. A <b>single-mode</b> fibre (SMF, core ~9 µm) carries one transverse mode, so its output is a clean Gaussian beam; it is the standard for telecom (yellow jacket) and for delivering laser light.',
+    '<b>Multimode</b> fibres have bigger cores (50–62.5 µm, orange or aqua jackets; up to 1 mm for large-core and plastic fibres). They accept light easily and carry high power, but the output is a speckled, more divergent beam with poor beam quality (large M²). They are used for collecting light, for spectroscopy and for illumination. A <b>fibre bundle</b> packs many fibres together to collect light or carry an image.',
+    'Ordinary fibres scramble the polarisation. A <b>polarisation-maintaining</b> (PM, PANDA) fibre has stress rods that keep light launched along its slow axis linearly polarised. <b>Photonic-crystal</b> and <b>hollow-core</b> fibres guide light with a pattern of air holes: endlessly single-mode, very nonlinear (supercontinuum) or guiding in air with low dispersion.',
+    'In RNBeamX choose the <i>Fibre type</i> on a fibre: it changes the look (jacket colour, thickness, stripe or armour) and the physics (PM keeps the polarisation; multimode gives a larger, lower-quality output). The demo sends H-polarised light through three fibres to a polariser: only the PM fibre keeps it.'],
+  math: [[`NA = ${rt(v('n') + '<sub>core</sub>² − ' + v('n') + '<sub>clad</sub>²')} = sin ${v('θ')}<sub>max</sub>`, 'numerical aperture: the acceptance cone'],
+    [`${v('V')} = ${fr('2π' + v('a'), v('λ'))} NA`, 'V-number (a = core radius); single-mode when V < 2.405'],
+    [`${v('N')}<sub>modes</sub> ≈ ${fr(v('V') + '²', '2')}`, 'number of modes in a step-index multimode fibre (50 µm, NA 0.2, 633 nm → ~600)'],
+    [`${v('P')}(${v('L')}) = ${v('P')}<sub>0</sub> 10<sup>−α${v('L')}/10</sup>`, 'attenuation α in dB/km: SMF 0.2 dB/km at 1550 nm, POF ~150 dB/km'],
+    [`${v('B')} = ${fr('2π', v('L') + '<sub>B</sub>')}`, 'PM fibre birefringence from its beat length L<sub>B</sub> (2–5 mm)']],
+  numbers: ['SMF-28: 8.2 µm core, NA 0.14 · OM3: 50 µm, NA 0.2 · 105 µm large-core: NA 0.22 · PANDA PM: extinction > 20 dB'],
+  demo: demo(120, 90, (a, T, d) => {
+    [['smf', 'Single-mode', 12], ['pm', 'PM fibre', 40], ['mmf', 'Multimode', 68]].forEach(([ft, name, y]) => {
+      a('laser', 14, y, 0, { lambda: 633, pol: 'H', power: 10, L: 12, H: 5 }, '', [0, 6]);
+      const c1 = a('coupler', 34, y, 180, {}, '', [0, 6]), c2 = a('coupler', 62, y + 8, 0, {}, name, [0, 6]);
+      d.objects.push(T.link('fiber', c1, c2, { fiberType: ft, colorMode: 'jacket', bend: 0.5 }));
+      a('polarizer', 82, y + 8, 0, { angle: 0 }, '', [0, 7]); a('pd', 106, y + 8, 0, {}, name, [0, 6]);
+    });
+  }),
+  see: ['coupler', 'benchlaser', 'c-pol', 'scfiber'] });
 E('circulator', { group: FB,
   one: 'A fibre circulator routes light port 1 → 2 → 3, so light returning from a probe goes to a detector instead of the laser.',
   how: ['Inside, Faraday rotators and polarisation optics make the routing non-reciprocal. Light entering port 1 leaves port 2; light coming back into port 2 leaves port 3. Used in fibre sensors, OCT and fibre Bragg grating readout.'],

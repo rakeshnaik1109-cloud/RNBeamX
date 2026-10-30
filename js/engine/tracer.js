@@ -103,10 +103,10 @@ function buildScene(doc) {
     const target = (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects).find(o => o.id === link.props.to);
     const tdef = target && RNBX.lib.get(target.type);
     if (!tdef || !tdef.port) return;
-    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
+    const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1), ft = RNBX.lib.fiberType(link.props);
     Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: target.id,
-      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1), dw: Math.tan(U.rad(target.props.divergence || 0)), viaFiber: link.id, Pin: s.P, P: s.P * eff,
-      E: s.E && link.props.fiberType === 'pm' ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
+      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
+      M2: Math.max(s.M2 || 1, ft.m2), E: s.E && ft.pm ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
   });
   return { surfaces, vertical, sources, fibers, scale };
 }
@@ -433,14 +433,15 @@ RNBX.trace = function trace(doc) {
         const fl = fiberLight[link.id] = fiberLight[link.id] || {};
         fl[ray.lambda] = (fl[ray.lambda] || 0) + ray.P;
         const eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1);
-        const keepPol = link.props.fiberType === 'pm';
-        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1);
+        // the fibre type sets the output: PM keeps the polarisation, multimode gives a bigger, worse beam
+        const ft = RNBX.lib.fiberType(link.props), keepPol = !!ft.pm;
+        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1) * ft.wk;
         out.push(child(ray, {
           o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: target.id, z: target.z || 0, vz: 0,
           s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
           P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
-          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)), inside: null, nmed: 1,
-          q: gauss ? startQ({ w: wOut }, ray.lambda, 1) : null, M2: 1,
+          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,
+          q: gauss ? startQ({ w: wOut }, ray.lambda, ft.m2) : null, M2: ft.m2,
         }));
         break;
       }

@@ -479,6 +479,27 @@ E('coupler', { group: FB,
   numbers: ['SMF-28 at 1550 nm: mode diameter 10.4 µm, NA 0.14, loss 0.2 dB/km'],
   demo: demo(110, 56, (a, T, d) => { a('laser', 16, 14, 0, { lambda: 633 }, 'Laser', [0, 6]); const c1 = a('coupler', 50, 14, 180, {}, 'In', [0, 6]); const c2 = a('coupler', 50, 42, 0, {}, 'Out', [0, 6]); d.objects.push(T.link('fiber', c1, c2)); a('screen', 96, 42, 0, {}); }),
   see: ['benchlaser', 'circulator', 'fibersplit'] });
+E('fiber', { group: FB,
+  one: 'An optical fibre guides light along a flexible glass (or plastic) thread; the type decides how many modes it carries and whether it keeps the polarisation.',
+  how: ['Light travels in the <b>core</b>, kept there by total internal reflection at the lower-index <b>cladding</b>. A <b>single-mode</b> fibre (SMF, core ~9 µm) carries one transverse mode, so its output is a clean Gaussian beam; it is the standard for telecom (yellow jacket) and for delivering laser light.',
+    '<b>Multimode</b> fibres have bigger cores (50–62.5 µm, orange or aqua jackets; up to 1 mm for large-core and plastic fibres). They accept light easily and carry high power, but the output is a speckled, more divergent beam with poor beam quality (large M²). They are used for collecting light, for spectroscopy and for illumination. A <b>fibre bundle</b> packs many fibres together to collect light or carry an image.',
+    'Ordinary fibres scramble the polarisation. A <b>polarisation-maintaining</b> (PM, PANDA) fibre has stress rods that keep light launched along its slow axis linearly polarised. <b>Photonic-crystal</b> and <b>hollow-core</b> fibres guide light with a pattern of air holes: endlessly single-mode, very nonlinear (supercontinuum) or guiding in air with low dispersion.',
+    'In RNBeamX choose the <i>Fibre type</i> on a fibre: it changes the look (jacket colour, thickness, stripe or armour) and the physics (PM keeps the polarisation; multimode gives a larger, lower-quality output). The demo sends H-polarised light through three fibres to a polariser: only the PM fibre keeps it.'],
+  math: [[`NA = ${rt(v('n') + '<sub>core</sub>² − ' + v('n') + '<sub>clad</sub>²')} = sin ${v('θ')}<sub>max</sub>`, 'numerical aperture: the acceptance cone'],
+    [`${v('V')} = ${fr('2π' + v('a'), v('λ'))} NA`, 'V-number (a = core radius); single-mode when V < 2.405'],
+    [`${v('N')}<sub>modes</sub> ≈ ${fr(v('V') + '²', '2')}`, 'number of modes in a step-index multimode fibre (50 µm, NA 0.2, 633 nm → ~600)'],
+    [`${v('P')}(${v('L')}) = ${v('P')}<sub>0</sub> 10<sup>−α${v('L')}/10</sup>`, 'attenuation α in dB/km: SMF 0.2 dB/km at 1550 nm, POF ~150 dB/km'],
+    [`${v('B')} = ${fr('2π', v('L') + '<sub>B</sub>')}`, 'PM fibre birefringence from its beat length L<sub>B</sub> (2–5 mm)']],
+  numbers: ['SMF-28: 8.2 µm core, NA 0.14 · OM3: 50 µm, NA 0.2 · 105 µm large-core: NA 0.22 · PANDA PM: extinction > 20 dB'],
+  demo: demo(120, 90, (a, T, d) => {
+    [['smf', 'Single-mode', 12], ['pm', 'PM fibre', 40], ['mmf', 'Multimode', 68]].forEach(([ft, name, y]) => {
+      a('laser', 14, y, 0, { lambda: 633, pol: 'H', power: 10, L: 12, H: 5 }, '', [0, 6]);
+      const c1 = a('coupler', 34, y, 180, {}, '', [0, 6]), c2 = a('coupler', 62, y + 8, 0, {}, name, [0, 6]);
+      d.objects.push(T.link('fiber', c1, c2, { fiberType: ft, colorMode: 'jacket', bend: 0.5 }));
+      a('polarizer', 82, y + 8, 0, { angle: 0 }, '', [0, 7]); a('pd', 106, y + 8, 0, {}, name, [0, 6]);
+    });
+  }),
+  see: ['coupler', 'benchlaser', 'c-pol', 'scfiber'] });
 E('circulator', { group: FB,
   one: 'A fibre circulator routes light port 1 → 2 → 3, so light returning from a probe goes to a detector instead of the laser.',
   how: ['Inside, Faraday rotators and polarisation optics make the routing non-reciprocal. Light entering port 1 leaves port 2; light coming back into port 2 leaves port 3. Used in fibre sensors, OCT and fibre Bragg grating readout.'],

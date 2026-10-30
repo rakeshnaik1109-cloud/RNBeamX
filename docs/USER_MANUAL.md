@@ -162,6 +162,26 @@ have their own positions, so tidying the 3D view never disturbs the 2D layout. L
 | `*text*`, `**text**` | italic, bold |
 | `{f}`, `{lambda}`, `{angle}` | live value of that component's parameter |
 
+## Fibres
+
+Draw a fibre with the *Fibre* tool between two fibre couplers (or a fibre-output
+laser and a fibre end). **Fibre type** sets both the look and the physics:
+
+| Type | Look | Light at the far end |
+|---|---|---|
+| Single-mode (SMF) | thin, yellow jacket | clean Gaussian beam (M² = 1); polarisation scrambled |
+| Multimode OM1/OM2, OM3/OM4 | orange / aqua | larger beam, M² ≈ 10–12; polarisation scrambled |
+| Large-core multimode | thick, dark orange | much larger beam, M² ≈ 40 |
+| Polarisation-maintaining (PANDA) | blue with a key stripe | Gaussian beam; **keeps the polarisation** |
+| Photonic-crystal / hollow-core | purple, double wall | near-Gaussian beam |
+| Fibre bundle | thick black, ribbed | large, incoherent beam |
+| Armoured patch cable | thick steel spiral | single-mode light inside |
+| Plastic optical fibre (POF) | black, 1 mm | very large, incoherent beam |
+
+*Colour ▸ Jacket colour* shows the standard jacket colours; *Colour of the light
+inside* (default) colours the fibre by the light it carries. In a build-up
+animation a fibre appears together with the parts it connects.
+
 ## Learn optics
 
 The **Learn** button (top bar, after *Guide*) opens a page for every optical part

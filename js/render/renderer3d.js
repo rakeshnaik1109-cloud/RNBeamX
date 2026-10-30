@@ -321,10 +321,14 @@ R3.scene = (doc, trace, S, opt = {}) => {
       const pts = [];
       if (g.c1) { for (let i = 0; i <= 24; i++) { const t = i / 24, mt = 1 - t; pts.push([0, 1].map(j => mt * mt * mt * g.a[j] + 3 * mt * mt * t * g.c1[j] + 3 * mt * t * t * g.c2[j] + t * t * t * g.b[j])); } } else pts.push(...g.pts);
       const sc = pts.map(q => cam.p(q[0], q[1], 0.4));
-      let col = obj.type === 'fiber' ? (obj.props.color || doc.style.fiberColor) : (obj.props.color || '#9aa1ab');
+      const cop = RNBX.render.connOpacity(obj, doc);
+      if (cop <= 0.001) continue;
+      const ft = obj.type === 'fiber' ? lib.fiberType(obj.props) : { k: 1 };
+      let col = obj.type === 'fiber' ? (obj.props.color || ft.color || doc.style.fiberColor) : (obj.props.color || '#9aa1ab');
       if (obj.type === 'fiber' && obj.props.colorMode === 'light' && trace.fiberLight[obj.id]) { const fl = trace.fiberLight[obj.id]; col = lib.colorOf(doc, Number(Object.keys(fl).sort((a, b) => fl[b] - fl[a])[0])); }
       const d = 'M ' + sc.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ');
-      items.push({ z: -1e6, svg: `<g ${I ? `data-id="${obj.id}"` : ''}><path d="${d}" fill="none" stroke="${U.darken(col, 0.3)}" stroke-width="${n(Math.max(0.3, U.pt2mm(obj.props.width || 0.8) * k * 1.6))}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.2, U.pt2mm(obj.props.width || 0.8) * k))}" stroke-linecap="round" stroke-linejoin="round"/></g>` });
+      const cw = U.pt2mm(obj.props.width || 0.8) * k * ft.k;
+      items.push({ z: -1e6, svg: `<g ${I ? `data-id="${obj.id}"` : ''}${cop < 1 ? ` opacity="${n(cop)}"` : ''}><path d="${d}" fill="none" stroke="${U.darken(col, 0.3)}" stroke-width="${n(Math.max(0.3, cw * 1.6))}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.2, cw))}" stroke-linecap="round" stroke-linejoin="round"/>${ft.pattern === 'stripe' ? `<path d="${d}" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="${n(Math.max(0.06, cw * 0.22))}" stroke-dasharray="${n(cw * 2.5)} ${n(cw * 1.5)}"/>` : ''}${ft.pattern === 'ribs' || ft.pattern === 'spiral' ? `<path d="${d}" fill="none" stroke="${ft.pattern === 'ribs' ? '#9aa1ab' : '#3d434b'}" stroke-opacity="0.75" stroke-width="${n(cw * 0.85)}" stroke-dasharray="${n(cw * 0.2)} ${n(cw * 0.4)}"/>` : ''}</g>` });
       continue;
     }
     const faces = R3.objectFaces(obj, doc);

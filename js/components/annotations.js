@@ -37,13 +37,29 @@ const boxExit = (c, d, box) => {
 };
 
 /* ================= Connections ================= */
+/* fibre types: look (jacket colour, thickness, pattern) and what they do to the light.
+   m2 = beam quality of the light leaving the far end (single-mode ≈ 1), wk = output beam
+   size factor, pm = keeps the polarisation (every other fibre scrambles it) */
+lib.FIBER_TYPES = {
+  smf: { name: 'Single-mode (SMF, 9/125 µm)', color: null, k: 1, m2: 1, wk: 1, core: '9 µm', na: 0.14 },
+  mmf: { name: 'Multimode OM1/OM2 (62.5 or 50 µm, orange)', color: '#f08a24', k: 1.15, m2: 12, wk: 1.6, core: '50–62.5 µm', na: 0.2 },
+  om3: { name: 'Multimode OM3/OM4 (50 µm laser-optimised, aqua)', color: '#35bfc8', k: 1.15, m2: 10, wk: 1.5, core: '50 µm', na: 0.2 },
+  lmmf: { name: 'Large-core multimode (105–400 µm, NA 0.22)', color: '#d9661f', k: 1.35, m2: 40, wk: 2.2, core: '105–400 µm', na: 0.22 },
+  pm: { name: 'Polarisation-maintaining (PANDA)', color: '#3a6fb5', k: 1, m2: 1, wk: 1, pm: true, pattern: 'stripe', core: '6 µm', na: 0.12 },
+  pcf: { name: 'Photonic-crystal / hollow-core', color: '#8a63d2', k: 1.1, m2: 1.1, wk: 1, pattern: 'double', core: '5–30 µm', na: 0.05 },
+  bundle: { name: 'Fibre bundle (imaging / collection)', color: '#2b2f36', k: 2.4, m2: 60, wk: 2.5, pattern: 'ribs', core: 'many fibres', na: 0.22 },
+  armoured: { name: 'Armoured patch cable (steel spiral)', color: '#8f969f', k: 2, m2: 1, wk: 1, pattern: 'spiral', core: 'SMF inside', na: 0.14 },
+  pof: { name: 'Plastic optical fibre (POF, 1 mm)', color: '#1d1f23', k: 1.6, m2: 80, wk: 2.5, core: '980 µm', na: 0.5 },
+};
+lib.fiberType = p => lib.FIBER_TYPES[p.fiberType] || lib.FIBER_TYPES.smf;
+
 lib.register({
   type: 'fiber', name: 'Optical fibre', abbr: '', category: 'Connections', connection: true, autoLabel: false,
-  keywords: 'fiber fibre patch cable single mode multimode pm',
+  keywords: 'fiber fibre patch cable single mode multimode pm om3 om4 large core bundle armoured pcf hollow core plastic pof',
   tool: 'fiber', hint: 'Click a fibre coupler, then a second coupler.',
   defaults: { from: '', to: '', fiberType: 'smf', eff: 0.8, colorMode: 'light', color: '', width: 0.9, bend: 0.45, coil: false, length: 40, boots: false },
   params: [
-    { key: 'fiberType', label: 'Fibre type', type: 'select', options: [['smf', 'Single-mode'], ['mmf', 'Multimode'], ['pm', 'Polarisation-maintaining']] },
+    { key: 'fiberType', label: 'Fibre type', type: 'select', options: () => Object.entries(lib.FIBER_TYPES).map(([k, t]) => [k, t.name]), hint: 'PM keeps the polarisation; multimode fibres give a larger, less coherent output beam' },
     { key: 'eff', label: 'Coupling efficiency', type: 'range', min: 0, max: 1, step: 0.01 },
     { key: 'colorMode', label: 'Colour', type: 'select', options: [['light', 'Colour of the light inside'], ['jacket', 'Jacket colour']] },
     { key: 'color', label: 'Jacket colour', type: 'color', allowEmpty: true },
@@ -69,15 +85,21 @@ lib.register({
     const g = this.geometry(obj, doc);
     if (!g) return '';
     const p = obj.props;
-    let col = p.color || doc.style.fiberColor || '#f2b705';
+    const ft = lib.fiberType(p);
+    let col = p.color || ft.color || doc.style.fiberColor || '#f2b705';
     if (p.colorMode === 'light' && trace && trace.fiberLight[obj.id]) {
       const fl = trace.fiberLight[obj.id];
       const best = Object.keys(fl).sort((x, y) => fl[y] - fl[x])[0];
       col = lib.colorOf(doc, Number(best));
     }
-    const w = U.pt2mm(p.width || 0.9);
-    let s = `<path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w)}" stroke-linecap="round" ${p.fiberType === 'mmf' ? '' : ''}/>`;
+    const w = U.pt2mm(p.width || 0.9) * ft.k;
+    let s = `<path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
     if (S.shaded) s = `<path d="${g.d}" fill="none" stroke="${U.darken(col, 0.35)}" stroke-width="${n(w * 1.5)}" stroke-linecap="round"/>` + s + `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="${n(w * 0.35)}" stroke-linecap="round"/>`;
+    // type patterns: PM key stripe, hollow / photonic-crystal double wall, bundle ribs, armour spiral
+    if (ft.pattern === 'stripe') s += `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(w * 0.22)}" stroke-dasharray="${n(w * 2.5)} ${n(w * 1.5)}"/>`;
+    if (ft.pattern === 'double') s += `<path d="${g.d}" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="${n(w * 0.45)}"/><path d="${g.d}" fill="none" stroke="${col}" stroke-width="${n(w * 0.18)}"/>`;
+    if (ft.pattern === 'ribs') s += `<path d="${g.d}" fill="none" stroke="#9aa1ab" stroke-opacity="0.8" stroke-width="${n(w * 0.8)}" stroke-dasharray="${n(w * 0.18)} ${n(w * 0.32)}"/>`;
+    if (ft.pattern === 'spiral') s += `<path d="${g.d}" fill="none" stroke="#3d434b" stroke-opacity="0.75" stroke-width="${n(w * 0.95)}" stroke-dasharray="${n(w * 0.2)} ${n(w * 0.45)}"/>`;
     if (p.boots) {
       // strain-relief boots: short thick sections leaving each end along the cable
       const boot = (P, C) => { const dx = C[0] - P[0], dy = C[1] - P[1], L = Math.hypot(dx, dy) || 1, l = Math.min(3, L * 0.6), e = [P[0] + dx / L * l, P[1] + dy / L * l]; return `<line x1="${n(P[0])}" y1="${n(P[1])}" x2="${n(e[0])}" y2="${n(e[1])}" stroke="#16181c" stroke-width="${n(Math.max(w * 3.2, 1.1))}" stroke-linecap="round"/>`; };

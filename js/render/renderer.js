@@ -77,7 +77,14 @@ R.connection = (obj, doc, S, trace, interactive) => {
   // an invisible fat stroke makes thin connections easy to click
   const g = def.geometry(obj, doc);
   const hit = interactive && g ? `<path d="${g.d}" fill="none" stroke="transparent" stroke-width="2.5"/>` : '';
-  return `<g ${interactive ? `data-id="${obj.id}"` : ''}>${body}${hit}</g>`;
+  const op = R.connOpacity(obj, doc);
+  if (op <= 0.001) return '';
+  return `<g ${interactive ? `data-id="${obj.id}"` : ''}${op < 1 ? ` opacity="${n(op)}"` : ''}>${body}${hit}</g>`;
+};
+/* a fibre or wire is only as visible as the fainter of its two ends (so it appears with them in a build-up) */
+R.connOpacity = (obj, doc) => {
+  const o = x => x && x.opacity != null ? x.opacity : 1;
+  return Math.min(o(obj), o(RNBX.getObjIn(doc, obj.props.from)), o(RNBX.getObjIn(doc, obj.props.to)));
 };
 
 R.inset = (obj, doc) => {
