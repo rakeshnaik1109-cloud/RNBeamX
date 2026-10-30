@@ -438,6 +438,9 @@ a.icon-btn { text-decoration: none; }
 .status .credit a:hover { text-decoration: underline; }
 @media (max-width: 1250px) { .status .credit .who { display: none; } }
 @media (max-width: 760px) { .status .credit { display: none; } }
+.play-pill { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg); font-size: 12.5px; font-weight: 600; z-index: 5; }
+.play-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; animation: rbxblink 1s infinite; }
+@keyframes rbxblink { 50% { opacity: .25; } }
 
 </style>
 </head>
@@ -502,6 +505,7 @@ a.icon-btn { text-decoration: none; }
       </div>
     </div>
     <div class="connect-hint" id="connectHint" hidden></div>
+    <div class="play-pill" id="playPill" hidden><span class="dot"></span> Playing <button type="button" class="btn small" id="btnPillPause" title="Pause here (Space in the timeline)">Pause</button><button type="button" class="btn small primary" id="btnPillStill" title="Stop and show the figure as it was before the animation (Esc)">■ Stop &amp; show figure</button></div>
   </main>
 
   <aside class="panel right" id="rightPanel">
@@ -8505,9 +8509,44 @@ A.syncBase = () => {
   if (ck.length) Object.assign(S.doc.view3d, sample(ck, S.time, ['yaw', 'pitch', 'zoom', 'panX', 'panY']));
 };
 
+/* ---------- the still figure ----------
+   Playing (or scrubbing) moves the parts and the 3D camera to their
+   animated values. The figure as it was before the animation ran is
+   remembered the first time that happens, and "Stop & show figure"
+   brings it back exactly. Without a remembered figure, the end of the
+   animation is used (a build-up is complete there, a turntable is back
+   where it started). */
+A.still = null;
+S.stillView = null;   // the document shown as its still figure (null = animation shown)
+A.capture = () => {
+  if (A.still && A.still.doc === S.doc) return;
+  const doc = S.doc, objs = {};
+  doc.objects.forEach(o => { objs[o.id] = { x: o.x, y: o.y, rot: o.rot, scale: o.scale, opacity: o.opacity, props: U.deepClone(o.props) }; });
+  A.still = { doc, objs, view3d: U.deepClone(doc.view3d) };
+};
+A.forget = () => { A.still = null; };
+A.showStill = () => {
+  A.pause();
+  const doc = S.doc, st = A.still && A.still.doc === doc ? A.still : null;
+  if (st) {
+    doc.objects.forEach(o => { const s = st.objs[o.id]; if (!s) return; o.x = s.x; o.y = s.y; o.rot = s.rot; o.scale = s.scale; o.opacity = s.opacity; o.props = U.deepClone(s.props); });
+    Object.assign(doc.view3d, U.deepClone(st.view3d));
+    S.time = 0;
+  } else {
+    S.time = doc.animation.duration || 6;
+    A.syncBase();
+  }
+  A.still = null;
+  S.stillView = doc;
+  RNBX.emit('time', S.time);
+  RNBX.emit('playstate', false);
+  RNBX.changed('time');
+};
+
 /* ---------- playback ---------- */
 let raf = 0, t0 = 0, start = 0;
 A.setTime = t => {
+  A.capture(); S.stillView = null;
   const D = S.doc.animation.duration || 6;
   S.time = U.clamp(t, 0, D);
   A.syncBase();
@@ -8516,6 +8555,7 @@ A.setTime = t => {
 };
 A.play = () => {
   if (S.playing) return;
+  A.capture(); S.stillView = null;
   S.playing = true;
   const D = S.doc.animation.duration || 6;
   if (S.time >= D - 1e-3) S.time = 0;
@@ -8647,6 +8687,7 @@ P.apply = (p, target, o) => {
   const doc = S.doc;
   RNBX.history.checkpoint();
   if (S.playing) A.pause();
+  A.capture();
   const D = o.dur || 6, fresh = isStill(doc);
   const changes = p.apply(doc, target, o, D) || [];
   fitDuration(doc, D, fresh);
@@ -10458,7 +10499,7 @@ C.visibleCenter = () => {
 /* ---------- rendering ---------- */
 C.render = () => {
   const doc = S.doc, W = doc.page.width, H = doc.page.height;
-  const live = RNBX.anim.isLive(doc);
+  const live = RNBX.anim.isLive(doc) && S.stillView !== doc;
   lastBuild = RNBX.render.build(doc, { interactive: true, time: live ? S.time : null, motion: S.playing });
   figure.innerHTML = lastBuild.inner;
   C.trace = lastBuild.trace;
@@ -12177,7 +12218,9 @@ T.build = () => {
     return el('label', { title }, i, label);
   };
   const bar = el('div', { class: 'tl-bar' },
-    D.iconBtn('stop', 'Back to start', () => RNBX.anim.stop()), playBtn, timeEl, scrub,
+    D.iconBtn('stop', 'Back to start', () => RNBX.anim.stop()), playBtn,
+    el('button', { class: 'btn small', type: 'button', text: 'Show figure', title: 'Stop and show the figure as it was before the animation (Esc while playing)', onclick: () => RNBX.anim.showStill() }),
+    timeEl, scrub,
     num('duration', 'Length (s)', 0.5, 600, 0.5, () => { if (S.time > an.duration) RNBX.anim.setTime(an.duration); }),
     num('fps', 'fps', 5, 60, 1),
     chk('loop', 'Loop'),
@@ -13656,7 +13699,9 @@ M.init = () => {
     D.iconBtn('trash', 'Delete', () => RNBX.removeObjects(S.selection.slice())),
     D.iconBtn('key', 'Add keyframe', () => { if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } else RNBX.toast('Select an object first'); }),
     D.iconBtn('play', 'Play / pause', () => RNBX.anim.toggle(), { id: 'tbPlay' }));
-  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); });
+  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); const pp = D.$('#playPill'); if (pp) pp.hidden = !pl; });
+  D.$('#btnPillPause').onclick = () => RNBX.anim.pause();
+  D.$('#btnPillStill').onclick = () => RNBX.anim.showStill();
   // picking a component from the drawer closes it
   RNBX.on('selection', () => { if (app.classList.contains('drawer-open')) app.classList.remove('drawer-open'); });
   M.syncTools();
@@ -13699,7 +13744,7 @@ function onKey(e) {
   const step = e.shiftKey ? 5 : 0.5;
   switch (e.key) {
     case 'Delete': case 'Backspace': if (S.selection.length) { e.preventDefault(); RNBX.removeObjects(S.selection.slice()); } break;
-    case 'Escape': if (S.ui.tool !== 'select') RNBX.canvas.setTool('select'); else RNBX.select([]); RNBX.palette.build(); break;
+    case 'Escape': if (S.playing) { RNBX.anim.showStill(); break; } if (S.ui.tool !== 'select') RNBX.canvas.setTool('select'); else RNBX.select([]); RNBX.palette.build(); break;
     case 'ArrowLeft': e.preventDefault(); nudge(-step, 0); break;
     case 'ArrowRight': e.preventDefault(); nudge(step, 0); break;
     case 'ArrowUp': e.preventDefault(); nudge(0, -step); break;

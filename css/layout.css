@@ -233,3 +233,6 @@ a.icon-btn { text-decoration: none; }
 .status .credit a:hover { text-decoration: underline; }
 @media (max-width: 1250px) { .status .credit .who { display: none; } }
 @media (max-width: 760px) { .status .credit { display: none; } }
+.play-pill { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg); font-size: 12.5px; font-weight: 600; z-index: 5; }
+.play-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; animation: rbxblink 1s infinite; }
+@keyframes rbxblink { 50% { opacity: .25; } }

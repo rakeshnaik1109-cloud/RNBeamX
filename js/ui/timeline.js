@@ -38,7 +38,9 @@ T.build = () => {
     return el('label', { title }, i, label);
   };
   const bar = el('div', { class: 'tl-bar' },
-    D.iconBtn('stop', 'Back to start', () => RNBX.anim.stop()), playBtn, timeEl, scrub,
+    D.iconBtn('stop', 'Back to start', () => RNBX.anim.stop()), playBtn,
+    el('button', { class: 'btn small', type: 'button', text: 'Show figure', title: 'Stop and show the figure as it was before the animation (Esc while playing)', onclick: () => RNBX.anim.showStill() }),
+    timeEl, scrub,
     num('duration', 'Length (s)', 0.5, 600, 0.5, () => { if (S.time > an.duration) RNBX.anim.setTime(an.duration); }),
     num('fps', 'fps', 5, 60, 1),
     chk('loop', 'Loop'),

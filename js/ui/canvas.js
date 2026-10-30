@@ -63,7 +63,7 @@ C.visibleCenter = () => {
 /* ---------- rendering ---------- */
 C.render = () => {
   const doc = S.doc, W = doc.page.width, H = doc.page.height;
-  const live = RNBX.anim.isLive(doc);
+  const live = RNBX.anim.isLive(doc) && S.stillView !== doc;
   lastBuild = RNBX.render.build(doc, { interactive: true, time: live ? S.time : null, motion: S.playing });
   figure.innerHTML = lastBuild.inner;
   C.trace = lastBuild.trace;

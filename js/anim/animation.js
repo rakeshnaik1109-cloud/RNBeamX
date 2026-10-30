@@ -214,9 +214,44 @@ A.syncBase = () => {
   if (ck.length) Object.assign(S.doc.view3d, sample(ck, S.time, ['yaw', 'pitch', 'zoom', 'panX', 'panY']));
 };
 
+/* ---------- the still figure ----------
+   Playing (or scrubbing) moves the parts and the 3D camera to their
+   animated values. The figure as it was before the animation ran is
+   remembered the first time that happens, and "Stop & show figure"
+   brings it back exactly. Without a remembered figure, the end of the
+   animation is used (a build-up is complete there, a turntable is back
+   where it started). */
+A.still = null;
+S.stillView = null;   // the document shown as its still figure (null = animation shown)
+A.capture = () => {
+  if (A.still && A.still.doc === S.doc) return;
+  const doc = S.doc, objs = {};
+  doc.objects.forEach(o => { objs[o.id] = { x: o.x, y: o.y, rot: o.rot, scale: o.scale, opacity: o.opacity, props: U.deepClone(o.props) }; });
+  A.still = { doc, objs, view3d: U.deepClone(doc.view3d) };
+};
+A.forget = () => { A.still = null; };
+A.showStill = () => {
+  A.pause();
+  const doc = S.doc, st = A.still && A.still.doc === doc ? A.still : null;
+  if (st) {
+    doc.objects.forEach(o => { const s = st.objs[o.id]; if (!s) return; o.x = s.x; o.y = s.y; o.rot = s.rot; o.scale = s.scale; o.opacity = s.opacity; o.props = U.deepClone(s.props); });
+    Object.assign(doc.view3d, U.deepClone(st.view3d));
+    S.time = 0;
+  } else {
+    S.time = doc.animation.duration || 6;
+    A.syncBase();
+  }
+  A.still = null;
+  S.stillView = doc;
+  RNBX.emit('time', S.time);
+  RNBX.emit('playstate', false);
+  RNBX.changed('time');
+};
+
 /* ---------- playback ---------- */
 let raf = 0, t0 = 0, start = 0;
 A.setTime = t => {
+  A.capture(); S.stillView = null;
   const D = S.doc.animation.duration || 6;
   S.time = U.clamp(t, 0, D);
   A.syncBase();
@@ -225,6 +260,7 @@ A.setTime = t => {
 };
 A.play = () => {
   if (S.playing) return;
+  A.capture(); S.stillView = null;
   S.playing = true;
   const D = S.doc.animation.duration || 6;
   if (S.time >= D - 1e-3) S.time = 0;

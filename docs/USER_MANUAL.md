@@ -438,6 +438,13 @@ the *Animate* list.
 | Light | **Light flow** · **Pulse train** · **Switch on** (the beam grows out of the source) · **Wavelength sweep** · **Laser on / off** |
 | Optics | **Rotate wave plate** · **Rotate polariser** · **Mirror / galvo scan** · **Piezo fringes** · **Delay-line scan** · **Focus sweep** · **Shutter open / close** · **AOM frequency sweep** · **Field-angle sweep** (ray bundles) · **Binding / film growth** (SPR analyte index or a coating thickness) |
 
+**Stop & show figure.** While an animation plays, a *Playing* pill at the top of
+the canvas offers **Pause** (freeze at the current frame) and **■ Stop & show
+figure**, which stops playback and brings back the figure exactly as it was
+before the animation ran: the parts, their visibility and the 3D view. The same
+is on the timeline bar (*Show figure*) and on **Esc** while playing. Press play
+again to resume the animation; nothing in it is lost.
+
 **Pulse shape** (timeline bar, or the *Pulse train* animation): pulses are drawn as a
 *wave packet* (a few optical cycles under a Gaussian envelope; the carrier follows
 the wavelength, so a 400 nm pump oscillates faster than an 800 nm probe), as a

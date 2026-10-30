@@ -103,6 +103,27 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('pulse shapes: wave packet is the default; packet, Gaussian and bar each draw differently (2D and 3D)', ps.def === 'packet' && ps.differ && ps.clean && ps.filled, ps);
   H.check('wave packet: a 400 nm pump has a faster carrier than an 800 nm probe', ps.dens[0] > ps.dens[1] * 1.5, ps.dens);
 
+  // Stop & show figure: after playing a build-up and a 3D turn, the figure comes back exactly as before
+  const still = await page.evaluate(async () => {
+    RNBX.setDocument(RNBX.normalizeDocument(RNBX.templates.list.find(t => t.id === 'michelson').build()));
+    const doc = RNBX.state.doc; doc.style.mode = '3d'; const yaw0 = doc.view3d.yaw;
+    const before = RNBX.render.build(doc).svg;
+    const P = RNBX.animPresets;
+    P.apply(P.list.find(q => q.id === 'build'), null, { grow: 2, dur: 4 });
+    P.apply(P.list.find(q => q.id === 'orbit'), null, { kind: 'full', pitch: 30, dir: '1', dur: 4 });
+    RNBX.anim.play(); await new Promise(r => setTimeout(r, 350));
+    const pill = !document.getElementById('playPill').hidden;
+    RNBX.anim.setTime(1.3);
+    const during = { yaw: doc.view3d.yaw, faded: doc.objects.some(o => o.opacity === 0) };
+    RNBX.anim.play(); await new Promise(r => setTimeout(r, 100));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await new Promise(r => setTimeout(r, 60));
+    const after = RNBX.render.build(doc).svg, canvasStill = !RNBX.anim.isLive(doc) || RNBX.state.stillView === doc;
+    return { pill, during, playing: RNBX.state.playing, pillAfter: !document.getElementById('playPill').hidden, yaw: [yaw0, doc.view3d.yaw], same: before === after, canvasStill, visible: doc.objects.every(o => o.opacity == null || o.opacity === 1) };
+  });
+  H.check('while playing, a "Stop & show figure" pill is shown on the canvas', still.pill && still.during.faded && still.during.yaw !== still.yaw[0], still);
+  H.check('Esc / Stop & show figure stops playback and restores the figure exactly as before the animation (3D view and parts)', !still.playing && !still.pillAfter && still.yaw[0] === still.yaw[1] && still.visible && still.same && still.canvasStill, still);
+
   // GIF export makes a valid looping GIF
   const gif = await page.evaluate(async () => {
     RNBX.setDocument(RNBX.templates.list.find(t => t.id === 'michelson').build());

@@ -58,6 +58,7 @@ P.apply = (p, target, o) => {
   const doc = S.doc;
   RNBX.history.checkpoint();
   if (S.playing) A.pause();
+  A.capture();
   const D = o.dur || 6, fresh = isStill(doc);
   const changes = p.apply(doc, target, o, D) || [];
   fitDuration(doc, D, fresh);

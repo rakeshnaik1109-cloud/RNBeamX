@@ -208,7 +208,9 @@ M.init = () => {
     D.iconBtn('trash', 'Delete', () => RNBX.removeObjects(S.selection.slice())),
     D.iconBtn('key', 'Add keyframe', () => { if (S.selection.length) { RNBX.anim.addKey(S.selection); RNBX.timeline.show(); } else RNBX.toast('Select an object first'); }),
     D.iconBtn('play', 'Play / pause', () => RNBX.anim.toggle(), { id: 'tbPlay' }));
-  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); });
+  RNBX.on('playstate', pl => { const b = D.$('#tbPlay'); if (b) b.innerHTML = D.icon(pl ? 'pause' : 'play'); const pp = D.$('#playPill'); if (pp) pp.hidden = !pl; });
+  D.$('#btnPillPause').onclick = () => RNBX.anim.pause();
+  D.$('#btnPillStill').onclick = () => RNBX.anim.showStill();
   // picking a component from the drawer closes it
   RNBX.on('selection', () => { if (app.classList.contains('drawer-open')) app.classList.remove('drawer-open'); });
   M.syncTools();
@@ -251,7 +253,7 @@ function onKey(e) {
   const step = e.shiftKey ? 5 : 0.5;
   switch (e.key) {
     case 'Delete': case 'Backspace': if (S.selection.length) { e.preventDefault(); RNBX.removeObjects(S.selection.slice()); } break;
-    case 'Escape': if (S.ui.tool !== 'select') RNBX.canvas.setTool('select'); else RNBX.select([]); RNBX.palette.build(); break;
+    case 'Escape': if (S.playing) { RNBX.anim.showStill(); break; } if (S.ui.tool !== 'select') RNBX.canvas.setTool('select'); else RNBX.select([]); RNBX.palette.build(); break;
     case 'ArrowLeft': e.preventDefault(); nudge(-step, 0); break;
     case 'ArrowRight': e.preventDefault(); nudge(step, 0); break;
     case 'ArrowUp': e.preventDefault(); nudge(0, -step); break;
