@@ -1915,7 +1915,7 @@ function buildScene(doc) {
     if (!tdef || !tdef.port) return;
     const port = tdef.port(target.props), eff = U.clamp(link.props.eff == null ? 0.8 : link.props.eff, 0, 1), ft = RNBX.lib.fiberType(link.props);
     Object.assign(s, { o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), z: target.z || 0, ignore: tdef.portInside ? null : target.id,
-      w: (target.props.beamWidth || 0.7) / 2 * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
+      w: (port.w != null ? port.w : (target.props.beamWidth || 0.7) / 2) * (target.scale || 1) * ft.wk, dw: Math.tan(U.rad(port.div != null ? port.div : target.props.divergence || 0)) * ft.wk, viaFiber: link.id, Pin: s.P, P: s.P * eff,
       M2: Math.max(s.M2 || 1, ft.m2), E: s.E && ft.pm ? O.scaleJ(s.E, Math.sqrt(eff)) : null });
   });
   return { surfaces, vertical, sources, fibers, scale };
@@ -2246,12 +2246,12 @@ RNBX.trace = function trace(doc) {
         if (tdef && tdef.fiberSink) { record(target, Object.assign({}, ray, { P: ray.P * eff })); break; }
         // the fibre type sets the output: PM keeps the polarisation, multimode gives a bigger, worse beam
         const ft = RNBX.lib.fiberType(link.props), keepPol = !!ft.pm;
-        const wOut = (target.props.beamWidth || doc.style.beamWidth) / 2 * (target.scale || 1) * ft.wk;
+        const wOut = (port.w != null ? port.w : (target.props.beamWidth || doc.style.beamWidth) / 2) * (target.scale || 1) * ft.wk;
         out.push(child(ray, {
           o: U.toWorld(target, port.o), d: V.norm(U.dirToWorld(target, port.d)), last: -1, ignore: tdef && tdef.portInside ? null : target.id, z: target.z || 0, vz: 0,
           s: base.s + (link.props.length || 40), opl: base.opl + (link.props.length || 40) * scale * 1.45,
           P: ray.P * eff, E: keepPol ? O.scaleJ(ray.E, Math.sqrt(eff)) : null,
-          w: wOut, dw: Math.tan(U.rad(target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,
+          w: wOut, dw: Math.tan(U.rad(port.div != null ? port.div : target.props.divergence || 0)) * ft.wk, inside: null, nmed: 1,
           q: gauss ? startQ({ w: wOut }, ray.lambda, ft.m2) : null, M2: ft.m2,
         }));
         break;
@@ -4186,7 +4186,7 @@ lib.register({
   fiberPort: (p, role) => probeFull(p) ? [-p.L / 2 - 0.9, role === 'from' ? probeGeo(p).yc : 0] : [-p.L / 2, 0],
   fiberDir: () => [-1, 0],
   fiberOk: p => probeFull(p),
-  port: p => ({ o: [probeGeo(p).xc + 0.2, 0], d: [1, 0] }),
+  port: p => { const g = probeGeo(p), r = Math.min(0.45, g.k * 0.4); return { o: [g.x0, 0], d: [1, 0], w: 0.04, div: U.deg(Math.atan(r / (g.xc - g.x0))) }; },
   portInside: true,   // light from the input fibre goes through the probe's own filter, dichroic and nose
   bbox: p => [-p.L / 2 - (probeFull(p) ? 1 : 0), -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
   draw(p, S, obj) {
@@ -4246,6 +4246,7 @@ lib.register({
     if (probeFull(p)) {
       const g = probeGeo(p), k = g.k;
       const out = [
+        { kind: 'lens', a: [g.xc, -k], b: [g.xc, k], f: (g.xc - g.x0) * sc },
         { kind: 'filter', a: [g.xf, -k], b: [g.xf, k], mode: 'bandpass', center: p.ex, width: g.bw, T: 0.95 },
         { kind: 'dichroic', a: [g.xd - k, -k], b: [g.xd + k, k], edge: g.edge, mode: g.stokes ? 'shortpass' : 'longpass' },
         { kind: 'mirror', a: [g.xd - k, g.yc - k], b: [g.xd + k, g.yc + k], R: 1 },

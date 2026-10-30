@@ -159,7 +159,7 @@ lib.register({
   fiberPort: (p, role) => probeFull(p) ? [-p.L / 2 - 0.9, role === 'from' ? probeGeo(p).yc : 0] : [-p.L / 2, 0],
   fiberDir: () => [-1, 0],
   fiberOk: p => probeFull(p),
-  port: p => ({ o: [probeGeo(p).xc + 0.2, 0], d: [1, 0] }),
+  port: p => { const g = probeGeo(p), r = Math.min(0.45, g.k * 0.4); return { o: [g.x0, 0], d: [1, 0], w: 0.04, div: U.deg(Math.atan(r / (g.xc - g.x0))) }; },
   portInside: true,   // light from the input fibre goes through the probe's own filter, dichroic and nose
   bbox: p => [-p.L / 2 - (probeFull(p) ? 1 : 0), -p.H / 2, p.L / 2 + (p.snout ? Math.min(p.H * 0.35, 5) : 0), p.H / 2],
   draw(p, S, obj) {
@@ -219,6 +219,7 @@ lib.register({
     if (probeFull(p)) {
       const g = probeGeo(p), k = g.k;
       const out = [
+        { kind: 'lens', a: [g.xc, -k], b: [g.xc, k], f: (g.xc - g.x0) * sc },
         { kind: 'filter', a: [g.xf, -k], b: [g.xf, k], mode: 'bandpass', center: p.ex, width: g.bw, T: 0.95 },
         { kind: 'dichroic', a: [g.xd - k, -k], b: [g.xd + k, k], edge: g.edge, mode: g.stokes ? 'shortpass' : 'longpass' },
         { kind: 'mirror', a: [g.xd - k, g.yc - k], b: [g.xd + k, g.yc + k], R: 1 },
