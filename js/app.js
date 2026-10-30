@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.layers.init();
   RNBX.timeline.init();
   RNBX.animateUI.init();
+  RNBX.learn.init();
   RNBX.menus.init();
 
   RNBX.on('change', kind => { if (kind !== 'selection' && kind !== 'time') RNBX.project.autosave(); });

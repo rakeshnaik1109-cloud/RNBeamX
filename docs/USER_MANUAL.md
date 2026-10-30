@@ -162,6 +162,22 @@ have their own positions, so tidying the 3D view never disturbs the 2D layout. L
 | `*text*`, `**text**` | italic, bold |
 | `{f}`, `{lambda}`, `{angle}` | live value of that component's parameter |
 
+## Learn optics
+
+The **Learn** button (top bar, after *Guide*) opens a page for every optical part
+and for the basics: light and wavelength, Gaussian beams, polarisation,
+reflection and refraction, interference and diffraction. Each page has
+
+- a plain explanation of what the part does and how it works;
+- a **live demo** traced by RNBeamX, with the power each detector receives
+  (e.g. a polariser at 60° passes 10 mW × cos² 60° = 2.5 mW);
+- **the physics**: the equations, with every symbol explained;
+- typical numbers, the templates that use the part, and related pages.
+
+*Open this demo as a figure* loads the demo into the editor (Ctrl+Z brings your
+figure back); *Add this part to my figure* places the part. Search finds parts by
+name or by what they do (e.g. "focus", "Raman", "polarisation").
+
 ## 4. Figure styles
 
 - **Schematic**: textbook line art with flat tints; best for Optics Express / APL-type figures.

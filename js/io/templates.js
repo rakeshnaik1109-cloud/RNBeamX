@@ -474,5 +474,7 @@ T.GROUPS = [
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
 ];
+/* shared with the Learn pages, which build small demo setups the same way */
+T.helpers = { mk, base, ang, link, R, L, UP, DN };
 T.groupOf = id => { const g = T.GROUPS.find(([, ids]) => ids.includes(id)); return g ? g[0] : 'More'; };
 })();

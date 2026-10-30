@@ -133,3 +133,50 @@ input[type=color] { width: 34px; height: 28px; border: 1px solid var(--line-2); 
 
 .progress { height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--line); }
 .progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .1s; }
+
+/* ---------- Learn ---------- */
+.modal.learn-modal { width: min(1180px, 100%); height: calc(100vh - 32px); }
+.learn-modal .modal-body { padding: 0; overflow: hidden; flex: 1; display: flex; min-height: 0; }
+.learn { display: grid; grid-template-columns: 250px 1fr; width: 100%; min-height: 0; }
+.learn-side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.learn-search { margin: 12px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
+.learn-list { overflow-y: auto; padding: 0 8px 16px; flex: 1; }
+.learn-list h4 { margin: 14px 6px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+.learn-list button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--text); padding: 5px 8px; border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; }
+.learn-list button:hover { background: var(--hover, rgba(127,127,127,.1)); }
+.learn-list button.on { background: var(--accent); color: #fff; }
+.learn-art { overflow-y: auto; padding: 18px 26px 40px; min-height: 0; line-height: 1.6; }
+.learn-art h2 { margin: 2px 0 4px; font-size: 22px; }
+.learn-art h3 { margin: 22px 0 6px; font-size: 15px; }
+.learn-art p { margin: 0 0 10px; }
+.learn-head { display: flex; gap: 16px; align-items: center; }
+.learn-icon { width: 96px; flex: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.learn-icon svg { width: 100%; height: auto; display: block; }
+.learn-group { color: var(--accent); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
+.learn-one { font-size: 15px; color: var(--muted); margin: 0; }
+.learn-fig { margin: 16px 0 6px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; }
+.learn-svg svg { width: 100%; height: auto; display: block; max-height: 340px; }
+.learn-fig figcaption { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; font-size: 12px; color: #4b5563; background: #f6f7f9; border-top: 1px solid #e5e7eb; }
+.learn-read { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.learn .chip { display: inline-block; padding: 2px 9px; border-radius: 99px; background: var(--hover, rgba(127,127,127,.12)); border: 1px solid var(--line); font-size: 12px; color: var(--text); }
+.learn-fig .chip { background: #fff; color: #1f2937; border-color: #d6dae0; }
+.learn .chip.link { cursor: pointer; font: inherit; font-size: 12.5px; }
+.learn .chip.link:hover { border-color: var(--accent); color: var(--accent); }
+.learn-see { display: flex; flex-wrap: wrap; gap: 6px; }
+.learn-acts { gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+.learn-acts .btn { flex: none; }
+.learn-math { display: grid; gap: 8px; }
+.learn-eq { display: grid; grid-template-columns: minmax(260px, auto) 1fr; gap: 14px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2, rgba(127,127,127,.05)); }
+.learn-eq .eq { font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", Georgia, serif; font-size: 17px; line-height: 2.3; padding: 2px 0; }
+.learn-eq .note-t { font-size: 12.5px; color: var(--muted); }
+.learn-art ul { margin: 0; padding-left: 20px; }
+.fr { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; font-size: .9em; }
+.fr > span:first-child { border-bottom: 1px solid currentColor; padding: 0 3px; }
+.fr > span:last-child { padding: 0 3px; }
+.ov { border-top: 1px solid currentColor; padding: 0 2px; }
+@media (max-width: 760px) {
+  .learn { grid-template-columns: 1fr; grid-template-rows: 180px 1fr; }
+  .learn-side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .learn-eq { grid-template-columns: 1fr; }
+  .learn-art { padding: 14px; }
+}
