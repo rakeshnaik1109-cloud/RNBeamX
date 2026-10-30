@@ -412,8 +412,9 @@ R3.scene = (doc, trace, S, opt = {}) => {
         pa = [pa[0] + ox, pa[1] + oy, pa[2]]; pb = [pb[0] + ox, pb[1] + oy, pb[2]];
       }
       const g = `x1="${n(pa[0])}" y1="${n(pa[1])}" x2="${n(pb[0])}" y2="${n(pb[1])}"`;
-      let svg = `<line ${g} stroke="${col}" stroke-opacity="${n(0.1 * op)}" stroke-width="${n(w * 4.5 + 0.5)}" stroke-linecap="round"/>` +
-        `<line ${g} stroke="${col}" stroke-opacity="${n(0.25 * op)}" stroke-width="${n(w * 2.2)}" stroke-linecap="round"/>` +
+      // the glow around a beam is capped, so wide beams (e.g. LED illumination) do not become a cloud
+      let svg = `<line ${g} stroke="${col}" stroke-opacity="${n(0.1 * op)}" stroke-width="${n(w + Math.min(w * 3.5, 1.6 * k) + 0.5)}" stroke-linecap="round"/>` +
+        `<line ${g} stroke="${col}" stroke-opacity="${n(0.25 * op)}" stroke-width="${n(w + Math.min(w * 1.2, 0.8 * k))}" stroke-linecap="round"/>` +
         `<line ${g} stroke="${U.lighten(col, 0.2)}" stroke-opacity="${n(op)}" stroke-width="${n(w)}" stroke-linecap="round"/>`;
       if (dark || doc.style.beamGlow) svg += `<line ${g} stroke="#ffffff" stroke-opacity="${n(0.6 * op)}" stroke-width="${n(w * 0.3)}" stroke-linecap="round"/>`;
       items.push({ z: (pa[2] + pb[2]) / 2 + 0.01, svg });
