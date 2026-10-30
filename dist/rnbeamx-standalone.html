@@ -3273,7 +3273,18 @@ lib.register({
     s += `<path d="M ${n(x2)} ${n(-b * 0.8)} Q ${n(x2 + 0.9)} 0 ${n(x2)} ${n(b * 0.8)} Z" fill="${S.fill('glass')}" ${H.stroke(S, 0.8)}/>`;
     return s;
   },
-  optics: (p, obj, doc) => [{ kind: 'lens', a: [p.L / 2, -p.D1 / 2], b: [p.L / 2, p.D1 / 2], f: (p.fd || 3) * (doc ? doc.style.scale : 10) }],
+  // in the table plane: the back aperture limits what enters, and the light converges from the back of the
+  // objective (as through its lens stack) to the focus at the working distance in front of the nose.
+  // An upright (vertical) objective keeps a single lens at the nose.
+  optics: (p, obj, doc) => {
+    const sc = doc ? doc.style.scale : 10, fd = p.fd || 3;
+    if (obj && RNBX.isVertical(obj)) return [{ kind: 'lens', a: [p.L / 2, -p.D1 / 2], b: [p.L / 2, p.D1 / 2], f: fd * sc }];
+    const back = -p.L / 2, k = (obj && obj.scale) || 1;
+    return [
+      { kind: 'aperture', a: [back, -p.D1 / 2], b: [back, p.D1 / 2], r: p.D1 / 2 * 0.92 * k },
+      { kind: 'lens', a: [back + 0.05, -p.D1 / 2], b: [back + 0.05, p.D1 / 2], f: ((p.L / 2 - back - 0.05) * k + fd) * sc },
+    ];
+  },
   solid: (p, bh) => [
     { kind: 'cyl', x: [-p.L / 2, p.L * 0.12], r: [p.D1 / 2, p.D1 / 2], mat: 'metal' },
     { kind: 'cyl', x: [p.L * 0.12, p.L / 2], r: [p.D1 / 2, p.D2 / 2], mat: 'metal' },
@@ -10217,7 +10228,8 @@ T.list.push({
   build() {
     const d = base('nature-2', 183, 100, 'Epi-fluorescence microscope');
     const led = mk('led', 22, 58, 0, { lambda: 470, beamWidth: 1.2, divergence: 8, power: 20 }, 'LED 470 nm', [0, 6]);
-    const col = mk('lens', 33.3, 58, 0, { f: 150, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
+    // the collector sits one focal length from the LED, so the excitation is parallel and fills the objective's back aperture
+    const col = mk('lens', 36, 58, 0, { f: 163, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
     const cube = mk('filtercube', 90, 58, 0, { exc: 470, excW: 40, edge: 495, em: 525, emW: 50 }, 'Filter cube', [-12, 7]);
     const obj = mk('objective', 90, 36, -90, { fd: 3, mag: '40×' }, 'Objective 40×', [13, 0]);
     const smp = mk('sample', 90, 27.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 525, emitFrac: 0.4, spot: '#3fb26b' }, 'Labelled cells', [15, -2]);

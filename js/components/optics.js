@@ -293,7 +293,18 @@ lib.register({
     s += `<path d="M ${n(x2)} ${n(-b * 0.8)} Q ${n(x2 + 0.9)} 0 ${n(x2)} ${n(b * 0.8)} Z" fill="${S.fill('glass')}" ${H.stroke(S, 0.8)}/>`;
     return s;
   },
-  optics: (p, obj, doc) => [{ kind: 'lens', a: [p.L / 2, -p.D1 / 2], b: [p.L / 2, p.D1 / 2], f: (p.fd || 3) * (doc ? doc.style.scale : 10) }],
+  // in the table plane: the back aperture limits what enters, and the light converges from the back of the
+  // objective (as through its lens stack) to the focus at the working distance in front of the nose.
+  // An upright (vertical) objective keeps a single lens at the nose.
+  optics: (p, obj, doc) => {
+    const sc = doc ? doc.style.scale : 10, fd = p.fd || 3;
+    if (obj && RNBX.isVertical(obj)) return [{ kind: 'lens', a: [p.L / 2, -p.D1 / 2], b: [p.L / 2, p.D1 / 2], f: fd * sc }];
+    const back = -p.L / 2, k = (obj && obj.scale) || 1;
+    return [
+      { kind: 'aperture', a: [back, -p.D1 / 2], b: [back, p.D1 / 2], r: p.D1 / 2 * 0.92 * k },
+      { kind: 'lens', a: [back + 0.05, -p.D1 / 2], b: [back + 0.05, p.D1 / 2], f: ((p.L / 2 - back - 0.05) * k + fd) * sc },
+    ];
+  },
   solid: (p, bh) => [
     { kind: 'cyl', x: [-p.L / 2, p.L * 0.12], r: [p.D1 / 2, p.D1 / 2], mat: 'metal' },
     { kind: 'cyl', x: [p.L * 0.12, p.L / 2], r: [p.D1 / 2, p.D2 / 2], mat: 'metal' },

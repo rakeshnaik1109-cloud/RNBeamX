@@ -368,7 +368,8 @@ T.list.push({
   build() {
     const d = base('nature-2', 183, 100, 'Epi-fluorescence microscope');
     const led = mk('led', 22, 58, 0, { lambda: 470, beamWidth: 1.2, divergence: 8, power: 20 }, 'LED 470 nm', [0, 6]);
-    const col = mk('lens', 33.3, 58, 0, { f: 150, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
+    // the collector sits one focal length from the LED, so the excitation is parallel and fills the objective's back aperture
+    const col = mk('lens', 36, 58, 0, { f: 163, d: 9, shape: 'planoconvex' }, 'Collector', [0, -7.5]);
     const cube = mk('filtercube', 90, 58, 0, { exc: 470, excW: 40, edge: 495, em: 525, emW: 50 }, 'Filter cube', [-12, 7]);
     const obj = mk('objective', 90, 36, -90, { fd: 3, mag: '40×' }, 'Objective 40×', [13, 0]);
     const smp = mk('sample', 90, 27.8, -90, { look: 'slide', w: 1.4, h: 12, T: 0, emit: true, emitLambda: 525, emitFrac: 0.4, spot: '#3fb26b' }, 'Labelled cells', [15, -2]);
