@@ -27,6 +27,7 @@ const MATS = {
 const mat = m => typeof m === 'object' && m ? Object.assign({ spec: 0.4 }, m) : (MATS[m] || MATS.body);
 /* materials that a part's "Body colour" replaces (housings and mounts, not glass or mirrors) */
 const BODY_MATS = new Set(['body', 'dark', 'anod', 'black', 'laser', 'laserhead']);
+const OPTIC_MATS = new Set(['glass', 'mirror', 'crystal', 'wph', 'wpq', 'polar', 'gold', 'grating']);
 /* how mounted parts stand on the table in 3D */
 R3.MOUNT_STYLES = {
   lab: 'Post holder, post and slotted base',
@@ -195,11 +196,19 @@ R3.objectFaces = (obj, doc) => {
   const W = vert
     ? (p) => { const w = U.toWorld(obj, [p[2] - bh, p[1]]); return [w[0], w[1], zc + p[0] * s * dir]; }
     : (p) => { const w = U.toWorld(obj, [p[0], p[1]]); return [w[0], w[1], zmap(p[2])]; };
-  // "Body colour": two-tone housings keep a darker trim in the same colour
+  // "Body colour" recolours housings (two-tone housings keep a darker trim in the same colour; metal
+  // bodies a lighter shade); "Optic colour" recolours the optical element (glass, coatings, crystals, filters)
+  const isBody = q => BODY_MATS.has(q.mat) || q.mat === 'metal' || (q.mat && typeof q.mat === 'object' && !q.mat.alpha && (q.mat.spec == null || q.mat.spec < 0.75) && !q.decal);
+  const isOptic = q => OPTIC_MATS.has(q.mat) || (q.mat && typeof q.mat === 'object' && q.mat.alpha);
   const light = obj.tint && parts.some(q => q.mat === 'body' || q.mat === 'laserhead');
+  const anyBody = obj.tint && parts.some(isBody);
   const tinted = part => {
     const m0 = mat(part.mat);
-    if (!obj.tint || !BODY_MATS.has(part.mat)) return m0;
+    if (obj.optic && isOptic(part)) return Object.assign({}, m0, { color: obj.optic, iri: false });
+    if (!obj.tint) return m0;
+    if (!anyBody) return Object.assign({}, m0, { color: obj.tint, iri: false });   // nothing body-like (all glass): recolour the whole part, see-through stays see-through
+    if (!isBody(part)) return m0;
+    if (part.mat === 'metal') return Object.assign({}, m0, { color: U.lighten(obj.tint, 0.35) });
     return Object.assign({}, m0, { color: light && !['body', 'laserhead'].includes(part.mat) ? U.darken(obj.tint, 0.45) : obj.tint });
   };
   let r0max = 0;

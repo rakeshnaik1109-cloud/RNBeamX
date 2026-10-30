@@ -66,6 +66,21 @@ module.exports = async ({ base, getBrowser, H }) => {
     return { fresh: [fresh.tableFinish, fresh.tableColor], old: [old.tableFinish, old.tableColor], custom: custom.tableFinish };
   });
   H.check('new figures get a brushed stainless-steel table; older matte-black figures keep theirs', tbl.fresh.join() === 'steel,#b4b9bf' && tbl.old.join() === 'black,#2c3036' && tbl.custom === 'custom', tbl);
+  // every part takes a body colour (2D and 3D); optics also take an optic colour
+  const every = await page.evaluate(() => {
+    const T = RNBX.templates.helpers, out = { body2d: [], body3d: [], optic: [] };
+    const parts = RNBX.lib.all().filter(d => !d.hidden && !d.annotation && !d.connection && !d.special && !['Structures', 'Nanostructures & films', 'Shapes', 'Graphical abstract', 'Annotations'].includes(d.category));
+    const svg = (ty, extra, mode) => { const d = T.base('nature-15', 40, 28, ''); d.objects.push(Object.assign(T.mk(ty, 20, 14, 0, {}), extra)); d.style.mode = mode; return RNBX.render.build(RNBX.normalizeDocument(d)).svg; };
+    parts.forEach(d => {
+      ['shaded', 'schematic'].forEach(m => { if (svg(d.type, {}, m) === svg(d.type, { tint: '#b8343a' }, m)) out.body2d.push(d.type + '/' + m); });
+      if (svg(d.type, {}, '3d') === svg(d.type, { tint: '#b8343a' }, '3d')) out.body3d.push(d.type);
+      if (d.optics && ['mirror', 'lens', 'hwp', 'qwp', 'polarizer', 'filter', 'bscube', 'bsplate', 'window', 'prism'].includes(d.type) && svg(d.type, {}, 'shaded') === svg(d.type, { optic: '#5fae63' }, 'shaded')) out.optic.push(d.type);
+    });
+    out.n = parts.length;
+    return out;
+  });
+  H.check('every part changes with a body colour in 2D (shaded and schematic) and in 3D', every.body2d.length === 0 && every.body3d.length === 0, every);
+  H.check('optical elements take an optic colour (mirror, lens, wave plates, polariser, filter, splitters, window, prism)', every.optic.length === 0, every.optic);
   H.check('no errors', page.errors.length === 0, page.errors.join(' | '));
   await page.context().close();
 };

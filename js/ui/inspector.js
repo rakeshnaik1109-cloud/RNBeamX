@@ -221,12 +221,19 @@ const lookSection = objs => {
   return sec('Colour & mount',
     el('div', { class: 'grid2' },
       control({ key: 'tint', label: 'Body colour', type: 'color', allowEmpty: true }, k => o[k] || '', set),
-      control({ key: 'mountColor', label: 'Mount colour (3D)', type: 'color', allowEmpty: true }, k => o[k] || '', set)),
-    control({ key: 'post', label: 'Post in 3D', type: 'select', options: [['auto', 'Automatic (figure setting)']].concat(Object.entries(RNBX.render3d.MOUNT_STYLES)) }, k => o[k] || 'auto', set),
-    el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px', marginBottom: '10px' } },
+      control({ key: 'optic', label: 'Optic colour', type: 'color', allowEmpty: true }, k => o[k] || '', set)),
+    el('div', { class: 'row swatch-row' }, el('small', { text: 'Body' }),
       ...COLOUR_PRESETS.map(([name, c]) => el('button', { class: 'swatch-btn', type: 'button', title: name, style: { background: c }, onclick: () => set('tint', c, true) })),
-      el('button', { class: 'btn small ghost', type: 'button', text: 'Default', onclick: () => set('tint', '', true) })));
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Default', onclick: () => set('tint', '', true) })),
+    el('div', { class: 'row swatch-row' }, el('small', { text: 'Optic' }),
+      ...OPTIC_PRESETS.map(([name, c]) => el('button', { class: 'swatch-btn', type: 'button', title: name, style: { background: c }, onclick: () => set('optic', c, true) })),
+      el('button', { class: 'btn small ghost', type: 'button', text: 'Default', onclick: () => set('optic', '', true) })),
+    el('div', { class: 'grid2' },
+      control({ key: 'mountColor', label: 'Mount colour (3D)', type: 'color', allowEmpty: true }, k => o[k] || '', set),
+      control({ key: 'post', label: 'Post in 3D', type: 'select', options: [['auto', 'Automatic (figure setting)']].concat(Object.entries(RNBX.render3d.MOUNT_STYLES)) }, k => o[k] || 'auto', set)));
 };
+const OPTIC_PRESETS = [['Clear glass', '#cfe6f5'], ['Silver coating', '#dfe5ec'], ['Gold coating', '#e2bb57'], ['Copper', '#c8794a'], ['Blue filter', '#5b9bd5'],
+  ['Green filter', '#5fae63'], ['Amber filter', '#e8a23a'], ['Red filter', '#d9534f'], ['Violet', '#9b7fd0'], ['Smoke grey', '#7d848e']];
 const COLOUR_PRESETS = [['Black anodised', '#26292e'], ['Graphite', '#4a5058'], ['Silver', '#c4c9cf'], ['White', '#f2f3f5'], ['Blue anodised', '#2f5f9e'],
   ['Red anodised', '#b8343a'], ['Gold', '#c9a443'], ['Green', '#2f8a5b'], ['Orange', '#e07b2e'], ['Purple', '#6b4fa8']];
 

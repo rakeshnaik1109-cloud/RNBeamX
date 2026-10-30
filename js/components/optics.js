@@ -400,7 +400,7 @@ lib.register({
   bbox: p => (p.look === 'tilted' ? [-p.d * 0.18, -p.d / 2, p.d * 0.18, p.d / 2] : [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2]),
   tint: p => p.tintColor ? p.tintColor : p.mode === 'nd' ? '#6f747b' : U.wavelengthColor(p.mode === 'longpass' ? p.edge + 60 : p.mode === 'shortpass' ? p.edge - 60 : p.center),
   draw(p, S, obj) {
-    const c = lib.get('filter').tint(p);
+    const c = (obj && obj.optic) || lib.get('filter').tint(p);
     if (p.look === 'tilted') return H.tiltDisc(S, p.d, { kind: 'filter', tint: c, id: obj ? obj.id : 'x' });
     let s = H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, p.mode === 'nd' ? (S.shaded ? 'url(#rbx-nd)' : '#8c9198') : U.lighten(c, S.shaded ? 0.15 : 0.45));
     return s + H.sheen(S, -p.t / 2, -p.d / 2, p.t, p.d * 0.4);

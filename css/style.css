@@ -198,3 +198,5 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 @media (max-width: 760px) { .learn-sub { display: none; } .learn-top { gap: 8px; padding: 8px 12px; } }
 .learn-page a.btn { text-decoration: none; color: var(--text); }
 .learn-page a.btn.primary { color: #fff; }
+.swatch-row { flex-wrap: wrap; gap: 4px; margin-bottom: 8px; align-items: center; }
+.swatch-row small { width: 38px; color: var(--faint); font-size: 11px; }

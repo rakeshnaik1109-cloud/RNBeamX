@@ -40,32 +40,52 @@ R.label = (obj, doc, x, y, interactive) => {
   return (lop ? `<g${lop}>` : '') + lead + `<g ${interactive ? `data-label="${obj.id}"` : ''} font-family="${U.esc(doc.style.font)}" font-size="${n(fs)}" fill="${col}" ${obj.label.bold ? 'font-weight="700"' : ''} ${obj.label.italic ? 'font-style="italic"' : ''}>${body}</g>` + (lop ? '</g>' : '');
 };
 
-/* "Body colour": housings and mounts drawn with the body, dark,
-   anodised or black fills take the part's own colour (glass, mirrors
-   and coatings keep theirs). Shaded mode gets a matching gradient. */
-const TINTED = { body: 0, dark: 1, anod: 1, black: 1 };
+/* Part colours. "Body colour" recolours housings and mounts (the body, dark,
+   anodised and black fills); "Optic colour" recolours the optical element
+   itself (glass, mirror coatings, crystals, wave plates, polarisers, gold).
+   Shaded mode gets matching gradients. A part drawn without any of those
+   fills is recoloured as a whole, keeping its light and dark shading. */
+const TINTED = { body: 0, dark: 1, anod: 1, black: 1, metal: 2 };
+const OPTIC = { glass: 1, mirror: 1, mirrorFace: 1, crystal: 1, wph: 1, wpq: 1, polar: 1, gold: 1, nd: 1, rainbow: 1, sensor: 1, wafer: 1 };
 R.tintStyle = (S, obj) => {
-  const c = obj.tint, ids = {};
+  const ids = {};
   const T = Object.assign({}, S, { tintDefs: '' });
-  const col = name => TINTED[name] ? U.darken(c, 0.12) : c;
-  T.flat = name => name in TINTED ? col(name) : S.flat(name);
+  const pick = name => (obj.tint && name in TINTED) ? (TINTED[name] === 2 ? U.lighten(obj.tint, 0.35) : TINTED[name] ? U.darken(obj.tint, 0.12) : obj.tint) : (obj.optic && name in OPTIC) ? obj.optic : null;
+  T.flat = name => pick(name) || S.flat(name);
   T.fill = name => {
-    if (!(name in TINTED)) return S.fill(name);
-    if (!S.shaded) return col(name);
-    const id = `rbx-tint-${obj.id}-${name}`;
-    if (!ids[id]) { const b = col(name); ids[id] = 1; T.tintDefs += `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${U.lighten(b, 0.3)}"/><stop offset="0.5" stop-color="${b}"/><stop offset="1" stop-color="${U.darken(b, 0.25)}"/></linearGradient>`; }
+    const b = pick(name);
+    if (!b) return S.fill(name);
+    if (!S.shaded) return b;
+    const id = `rbx-tint-${obj.id}-${name}`, a = name in OPTIC && name !== 'mirror' && name !== 'gold' ? 0.88 : 1;
+    if (!ids[id]) { ids[id] = 1; T.tintDefs += `<linearGradient id="${id}" x1="0" y1="0" x2="${name in OPTIC ? 1 : 0}" y2="1"><stop offset="0" stop-color="${U.lighten(b, 0.35)}" stop-opacity="${a}"/><stop offset="0.5" stop-color="${b}" stop-opacity="${a}"/><stop offset="1" stop-color="${U.darken(b, 0.25)}" stop-opacity="${a}"/></linearGradient>`; }
     return `url(#${id})`;
   };
   return T;
+};
+/* whole-part recolour: grey levels of the drawing mapped onto the colour (black stays black, white turns pale) */
+R.colorizeFilter = (id, c) => {
+  const rgb = U.hexToRgb ? U.hexToRgb(c) : [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+  const row = v => { const k = 2 * v / 255; return `${n(0.2126 * k)} ${n(0.7152 * k)} ${n(0.0722 * k)} 0 0`; };
+  return `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="${row(rgb[0])} ${row(rgb[1])} ${row(rgb[2])} 0 0 0 1 0"/></filter>`;
 };
 
 R.object2D = (obj, S, interactive) => {
   const def = lib.get(obj.type);
   if (!def || !def.draw) return '';
   let inner = '';
-  if (obj.tint) S = R.tintStyle(S, obj);
-  try { inner = RNBX.isVertical(obj) ? lib.topView(obj, S) : def.draw(obj.props, S, obj); } catch (e) { console.error(obj.type, e); }
-  if (obj.tint && S.tintDefs) inner = `<defs>${S.tintDefs}</defs>` + inner;
+  const draw = St => { try { return RNBX.isVertical(obj) ? lib.topView(obj, St) : def.draw(obj.props, St, obj); } catch (e) { console.error(obj.type, e); return ''; } };
+  if (obj.tint || obj.optic) {
+    const T = R.tintStyle(S, obj);
+    inner = draw(T);
+    let defs = T.tintDefs;
+    // a body colour that changed nothing (no housing fills in this drawing): recolour the whole part
+    if (obj.tint && !obj.optic && !defs && inner === draw(S)) {
+      const fid = `rbx-cz-${obj.id}`;
+      defs += R.colorizeFilter(fid, obj.tint);
+      inner = `<g filter="url(#${fid})">${inner}</g>`;
+    }
+    if (defs) inner = `<defs>${defs}</defs>` + inner;
+  } else inner = draw(S);
   const op = obj.opacity != null && obj.opacity < 1 ? ` opacity="${obj.opacity}"` : '';
   return `<g ${interactive ? `data-id="${obj.id}"` : ''} transform="${R.transform(obj)}"${op}>${inner}</g>`;
 };
