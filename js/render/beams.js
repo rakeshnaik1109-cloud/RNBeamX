@@ -250,6 +250,31 @@ B.polMarker = (seg, col, doc) => {
   }
 };
 
+/* ---------- pulse shapes ----------
+   'packet': a few optical cycles under a Gaussian envelope (the carrier
+   period follows the wavelength, so a 400 nm pump wiggles faster than
+   an 800 nm probe); 'gauss': a smooth bell-shaped bump; 'bar': the
+   older rounded bar. Returns points [along, across] relative to the
+   pulse centre, clipped to the segment (u = centre position on it). */
+B.PULSE_SHAPES = [['packet', 'Wave packet'], ['gauss', 'Gaussian'], ['bar', 'Bar']];
+B.pulseShape = doc => (doc.animation && doc.animation.pulseShape) || 'packet';
+B.pulseOutline = (shape, seg, u, w) => {
+  const lp = U.clamp(0.9 * (seg.lambda || 800) / 800, 0.35, 1.6);
+  const A = Math.max(0.55, w * 1.3);
+  const sig = shape === 'gauss' ? Math.max(0.9, w * 1.1) * 1.2 : 1.25 * lp, half = 2.6 * sig;
+  const inside = s => u + s >= 0 && u + s <= seg.len;
+  const env = s => Math.exp(-s * s / (2 * sig * sig));
+  const step = shape === 'gauss' ? half / 14 : lp / 12;
+  const xs = []; for (let s = -half; s <= half + 1e-9; s += step) if (inside(s)) xs.push(s);
+  if (xs.length < 2) return null;
+  if (shape === 'gauss') {
+    const top = xs.map(s => [s, A * 1.1 * env(s)]), bot = xs.slice().reverse().map(s => [s, -A * 1.1 * env(s)]);
+    const core = xs.map(s => [s, A * 0.45 * env(s)]), coreB = xs.slice().reverse().map(s => [s, -A * 0.45 * env(s)]);
+    return { fill: top.concat(bot), core: core.concat(coreB), A };
+  }
+  return { line: xs.map(s => [s, A * env(s) * Math.cos(2 * Math.PI * s / lp)]), A };
+};
+
 /* Animated light: CW beams get travelling highlights, pulsed
    beams get discrete wave packets. Phase follows the cumulative
    optical path, so light visibly flows around corners. */
@@ -263,7 +288,27 @@ B.flow2D = (trace, doc, t, lineW, motion) => {
     if (!pulsed && !an.flow) continue;
     const col = B.color(doc, seg), d = V.norm(V.sub(seg.b, seg.a));
     const wMid = lineW || Math.max(0.25, 2 * B.hw(seg, seg.len / 2));
-    if (pulsed) {
+    const shape = B.pulseShape(doc);
+    if (pulsed && shape !== 'bar') {
+      const spacing = 14, nrm = [-d[1], d[0]];
+      const P = q => { const c = V.add(V.add(seg.a, V.mul(d, q[0])), V.mul(nrm, q[1])); return n(c[0]) + ' ' + n(c[1]); };
+      let u = ((v * t - seg.s0) % spacing + spacing) % spacing;
+      for (; u < seg.len; u += spacing) {
+        const w = Math.max(0.3, lineW || 2 * B.hw(seg, u));
+        const o = B.pulseOutline(shape, seg, u, w);
+        if (!o) continue;
+        const sh = q => [q[0] + u, q[1]];
+        if (o.fill) {
+          s += `<path d="M ${o.fill.map(q => P(sh(q))).join(' L ')} Z" fill="${col}" fill-opacity="0.45" stroke="${col}" stroke-width="${n(Math.max(0.08, o.A * 0.08))}" stroke-linejoin="round"/>`;
+          s += `<path d="M ${o.core.map(q => P(sh(q))).join(' L ')} Z" fill="${dark ? '#ffffff' : U.lighten(col, 0.55)}" fill-opacity="0.9" stroke="none"/>`;
+        } else {
+          const dd = 'M ' + o.line.map(q => P(sh(q))).join(' L ');
+          s += `<path d="${dd}" fill="none" stroke="${col}" stroke-opacity="0.28" stroke-width="${n(o.A * 0.7)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          s += `<path d="${dd}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.12, o.A * 0.22))}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          if (dark) s += `<path d="${dd}" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="${n(Math.max(0.05, o.A * 0.08))}" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }
+      }
+    } else if (pulsed) {
       const spacing = 14, plen = Math.max(1.6, wMid * 2.2);
       let u = ((v * t - seg.s0) % spacing + spacing) % spacing;
       for (; u < seg.len; u += spacing) {

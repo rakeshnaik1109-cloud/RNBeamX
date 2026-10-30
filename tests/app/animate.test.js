@@ -90,6 +90,19 @@ module.exports = async ({ base, getBrowser, H }) => {
   });
   H.check('Animate dialog: 20 cards, missing parts greyed, Apply plays it', dlg.cards === 20 && dlg.off > 0 && dlg.playing && dlg.mode === '3d' && !dlg.open, dlg);
 
+  // pulse shapes: wave packet (default), Gaussian, bar; the packet's carrier follows the wavelength
+  const ps = await page.evaluate(() => {
+    const d = RNBX.templates.list.find(t => t.id === 'pumpprobe').build(); d.animation.pulses = true; RNBX.setDocument(RNBX.normalizeDocument(d));
+    const doc = RNBX.state.doc, svg = shape => { doc.animation.pulseShape = shape; return RNBX.render.build(doc, { time: 0.7, motion: true }).svg; };
+    const out = { def: RNBX.beams.pulseShape(RNBX.newDocument()), packet: svg('packet'), gauss: svg('gauss'), bar: svg('bar') };
+    const seg = l => ({ lambda: l, len: 100 });
+    const crests = l => { const o = RNBX.beams.pulseOutline('packet', seg(l), 50, 0.7).line; let c = 0; for (let i = 1; i < o.length - 1; i++) if (o[i][1] > o[i - 1][1] && o[i][1] >= o[i + 1][1] && o[i][1] > 0.05) c++; return c / (o[o.length - 1][0] - o[0][0]); };
+    doc.style.mode = '3d'; doc.animation.pulseShape = 'gauss'; const s3 = RNBX.render.build(doc, { time: 0.7, motion: true }).svg;
+    return { def: out.def, differ: new Set([out.packet, out.gauss, out.bar]).size === 3, clean: [out.packet, out.gauss, s3].every(x => !/NaN|undefined/.test(x)), filled: /fill-opacity="0.45"/.test(out.gauss), dens: [crests(400), crests(800)] };
+  });
+  H.check('pulse shapes: wave packet is the default; packet, Gaussian and bar each draw differently (2D and 3D)', ps.def === 'packet' && ps.differ && ps.clean && ps.filled, ps);
+  H.check('wave packet: a 400 nm pump has a faster carrier than an 800 nm probe', ps.dens[0] > ps.dens[1] * 1.5, ps.dens);
+
   // GIF export makes a valid looping GIF
   const gif = await page.evaluate(async () => {
     RNBX.setDocument(RNBX.templates.list.find(t => t.id === 'michelson').build());

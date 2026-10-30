@@ -123,8 +123,9 @@ add({ id: 'flow', group: 'Light', name: 'Light flow', icon: 'flow', desc: 'Light
   params: [{ key: 'speed', label: 'Speed', type: 'number', unit: 'mm/s', min: 1, max: 500, step: 1, def: d => d.animation.flowSpeed || 25 }, dur],
   apply(doc, t, o) { const an = doc.animation, ch = [{ kind: 'flag', key: 'flow', was: !!an.flow }]; an.flow = true; an.flowSpeed = o.speed; return ch; } });
 add({ id: 'pulses', group: 'Light', name: 'Pulse train', icon: 'pulse', desc: 'Short pulses travel through the setup (ultrafast look).',
-  params: [{ key: 'speed', label: 'Speed', type: 'number', unit: 'mm/s', min: 1, max: 500, step: 1, def: d => d.animation.flowSpeed || 25 }, dur],
-  apply(doc, t, o) { const an = doc.animation, ch = [{ kind: 'flag', key: 'pulses', was: !!an.pulses }]; an.pulses = true; an.flowSpeed = o.speed; return ch; } });
+  params: [{ key: 'speed', label: 'Speed', type: 'number', unit: 'mm/s', min: 1, max: 500, step: 1, def: d => d.animation.flowSpeed || 25 },
+    { key: 'shape', label: 'Pulse shape', type: 'select', options: RNBX.beams.PULSE_SHAPES, def: d => RNBX.beams.pulseShape(d) }, dur],
+  apply(doc, t, o) { const an = doc.animation, ch = [{ kind: 'flag', key: 'pulses', was: !!an.pulses }]; an.pulses = true; an.flowSpeed = o.speed; if (o.shape) an.pulseShape = o.shape; return ch; } });
 add({ id: 'switchon', group: 'Light', name: 'Switch on', icon: 'on', desc: 'The beam grows out of the source and runs through the setup.',
   ok: d => d.objects.some(o => lib.get(o.type) && lib.get(o.type).source),
   params: [{ key: 'grow', label: 'Growing time', type: 'number', unit: 's', min: 0.5, max: 60, step: 0.5, def: () => 3 }, dur],

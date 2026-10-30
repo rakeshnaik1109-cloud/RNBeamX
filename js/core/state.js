@@ -92,7 +92,7 @@ RNBX.newDocument = (presetId = 'nature-2') => {
     style: RNBX.defaultStyle(),
     view3d: RNBX.defaultView3d(),
     objects: [],
-    animation: { duration: 6, fps: 30, loop: true, flow: false, flowSpeed: 25, pulses: false, tracks: {}, camera: [] },
+    animation: { duration: 6, fps: 30, loop: true, flow: false, flowSpeed: 25, pulses: false, pulseShape: 'packet', tracks: {}, camera: [] },
   };
 };
 

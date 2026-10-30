@@ -423,6 +423,25 @@ R3.scene = (doc, trace, S, opt = {}) => {
       if ((!pulsed && !an.flow) || seg.len < 0.05 || seg.ghost) continue;
       const col = RNBX.beams.color(doc, seg), spacing = pulsed ? 14 : 7.7, plen = pulsed ? 2 : 2.2;
       let u = ((v * opt.time - seg.s0) % spacing + spacing) % spacing;
+      const shape = RNBX.beams.pulseShape(doc);
+      if (pulsed && shape !== 'bar') {
+        // wave packet / Gaussian drawn in the vertical plane through the beam (sideways on vertical beams)
+        const across = seg.vertical ? [1, 0, 0] : [0, 0, 1];
+        const dark3 = RNBX.isDarkPage(doc.page);
+        for (; u < seg.len; u += spacing) {
+          const w = Math.max(0.3, 2 * RNBX.beams.hw(seg, u));
+          const o = RNBX.beams.pulseOutline(shape, seg, u, w);
+          if (!o) continue;
+          const P = q => { const c = at(seg, u + q[0]); const sp = cam.p(c[0] + across[0] * q[1], c[1] + across[1] * q[1], c[2] + across[2] * q[1]); return sp; };
+          const c0 = cam.p(...at(seg, u));
+          const path = pts => pts.map(q => { const sp = P(q); return n(sp[0]) + ' ' + n(sp[1]); }).join(' L ');
+          let g;
+          if (o.fill) g = `<path d="M ${path(o.fill)} Z" fill="${col}" fill-opacity="0.45" stroke="${col}" stroke-width="${n(Math.max(0.08, o.A * 0.08 * k))}" stroke-linejoin="round"/><path d="M ${path(o.core)} Z" fill="${dark3 ? '#ffffff' : U.lighten(col, 0.55)}" fill-opacity="0.9"/>`;
+          else { const dd = 'M ' + path(o.line); g = `<path d="${dd}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="${n(o.A * 0.7 * k)}" stroke-linecap="round" stroke-linejoin="round"/><path d="${dd}" fill="none" stroke="${col}" stroke-width="${n(Math.max(0.12, o.A * 0.22 * k))}" stroke-linecap="round" stroke-linejoin="round"/><path d="${dd}" fill="none" stroke="#ffffff" stroke-opacity="${dark3 ? 0.85 : 0.5}" stroke-width="${n(Math.max(0.05, o.A * 0.07 * k))}" stroke-linecap="round" stroke-linejoin="round"/>`; }
+          items.push({ z: c0[2] + 0.02, svg: g });
+        }
+        continue;
+      }
       for (; u < seg.len; u += spacing) {
         const a = Math.max(0, u - plen / 2), b = Math.min(seg.len, u + plen / 2);
         const A = at(seg, a), Bq = at(seg, b);

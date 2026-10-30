@@ -44,6 +44,8 @@ T.build = () => {
     chk('loop', 'Loop'),
     chk('flow', 'Light flow', 'Animate light travelling along every beam'),
     chk('pulses', 'Pulses', 'Draw all beams as travelling pulses'),
+    el('label', { title: 'How pulses are drawn: a wave packet (optical cycles under a Gaussian envelope), a smooth Gaussian bump, or a bar' }, 'Pulse',
+      el('select', { onchange: e => { RNBX.history.checkpoint(); an.pulseShape = e.target.value; RNBX.changed(); } }, RNBX.beams.PULSE_SHAPES.map(([v, t]) => el('option', { value: v, text: t, selected: RNBX.beams.pulseShape(S.doc) === v })))),
     num('flowSpeed', 'Speed', 1, 500, 1),
     el('button', { class: 'btn small primary', type: 'button', text: 'Animate…', title: 'One-click animations (A)', onclick: () => RNBX.animateUI.open() }),
     el('label', { title: 'Record: with this on, any change you make (move, rotate, edit a setting) is saved as a step at the current time. Change the time, change the part again: it animates between the two.' },

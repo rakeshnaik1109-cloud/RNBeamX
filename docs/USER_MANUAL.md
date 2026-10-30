@@ -402,6 +402,12 @@ the *Animate* list.
 | Light | **Light flow** · **Pulse train** · **Switch on** (the beam grows out of the source) · **Wavelength sweep** · **Laser on / off** |
 | Optics | **Rotate wave plate** · **Rotate polariser** · **Mirror / galvo scan** · **Piezo fringes** · **Delay-line scan** · **Focus sweep** · **Shutter open / close** · **AOM frequency sweep** · **Field-angle sweep** (ray bundles) · **Binding / film growth** (SPR analyte index or a coating thickness) |
 
+**Pulse shape** (timeline bar, or the *Pulse train* animation): pulses are drawn as a
+*wave packet* (a few optical cycles under a Gaussian envelope; the carrier follows
+the wavelength, so a 400 nm pump oscillates faster than an 800 nm probe), as a
+smooth *Gaussian* bump, or as the older *bar*. The choice applies in 2D, 3D and
+exported videos and GIFs.
+
 Presets combine (e.g. 3D rotation + light flow, or a galvo scan + build-up): each
 one only changes what it animates. Applied presets are listed at the top of the
 Animate dialog; **×** removes one, **Remove all animation** clears everything. The
