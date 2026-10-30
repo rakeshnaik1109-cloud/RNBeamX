@@ -387,6 +387,10 @@ a.icon-btn { text-decoration: none; }
   .exp-grid { grid-template-columns: 1fr; }
   .help-grid { grid-template-columns: 1fr; }
 }
+.status .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.status .credit a:hover { text-decoration: underline; }
+@media (max-width: 1250px) { .status .credit .who { display: none; } }
+@media (max-width: 760px) { .status .credit { display: none; } }
 
 </style>
 </head>
@@ -467,6 +471,7 @@ a.icon-btn { text-decoration: none; }
     <span id="stCursor">x — · y —</span>
     <span id="stInfo"></span>
     <span class="grow"></span>
+    <span class="credit"><b>RNBeamX</b><span class="who"> — Rakesh Naik &amp; Sachin Kumar Srivastava, IIT Roorkee</span> · <a href="https://doi.org/10.5281/zenodo.23697703" target="_blank" rel="noopener noreferrer" title="Zenodo archive of RNBeamX: cite this">DOI 10.5281/zenodo.23697703</a> · <a href="mailto:rakesh_n@cpqct.iitr.ac.in?subject=RNBeamX%20feedback" title="Suggestions, feedback and help: rakesh_n@cpqct.iitr.ac.in">Feedback &amp; help</a></span>
     <span id="stBeams"></span>
     <span data-visit-counter="/RNBeamX/" hidden title="Visitors to RNBeamX (GoatCounter)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="vertical-align:-2px"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg> <span data-count></span> visitors</span>
     <button class="link" id="btnTimeline" title="Animation timeline (T)">▶ Animation</button>
@@ -12516,6 +12521,7 @@ Dl.help = () => {
       el('div', { class: 'note', html: '<b>How it works.</b> Lasers emit beams that are traced through every component: mirrors reflect, splitters split, lenses focus (paraxial, with focal length ÷ figure scale), wave plates and PBS cubes act on the polarisation (Jones calculus), prisms refract with Sellmeier dispersion, gratings diffract by the grating equation, dichroics and filters act on wavelength, and samples can emit Raman / fluorescence light. Fold mirrors and periscopes take beams off the table; Gaussian beams, Fresnel ghosts, cavities, ring resonators and interference (with piezo-driven fringes) are modelled too. Click any detector to see the power, phase and beam size that reach it.' }),
       el('div', { class: 'note', html: `<b>Companion app.</b> <a href="${RNBX.links.spectrax}" target="_blank" rel="noopener noreferrer">RNSpectraX</a> processes and plots your spectra; press <b>→ RNBeamX</b> under its Export menu to bring a plot into this figure as panel b. · <a href="${RNBX.links.home}" target="_blank" rel="noopener noreferrer">Rakesh Naik — website</a> · <a href="${RNBX.links.guide}" target="_blank" rel="noopener">Illustrated guide</a> · <a href="${RNBX.links.code}" target="_blank" rel="noopener noreferrer">Source</a>` }),
       el('div', { class: 'note', html: `<b>How to cite.</b> Naik, R., &amp; Srivastava, S. K. (2026). <i>RNBeamX (Optical Setup Designer)</i> (Version ${U.esc(RNBX.VERSION.replace(/\.0$/, ''))}) [Computer software]. Zenodo. <a href="${RNBX.links.doi}" target="_blank" rel="noopener noreferrer">${RNBX.links.doi}</a>` }),
+      el('div', { class: 'note', html: `<b>Suggestions, feedback or help:</b> <a href="mailto:rakesh_n@cpqct.iitr.ac.in?subject=RNBeamX%20feedback">rakesh_n@cpqct.iitr.ac.in</a>. Missing a part or a template? Write and it can be added.` }),
       el('div', { class: 'note', html: '<b>Text markup</b> in labels: <code>λ/2</code>, <code>\\lambda</code>, <code>x_2</code>, <code>x^{2+}</code>, <code>*italic*</code>, <code>**bold**</code>, and live values such as <code>f = {f} mm</code>.' }),
       grid,
     ],

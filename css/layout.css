@@ -229,3 +229,7 @@ a.icon-btn { text-decoration: none; }
   .exp-grid { grid-template-columns: 1fr; }
   .help-grid { grid-template-columns: 1fr; }
 }
+.status .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.status .credit a:hover { text-decoration: underline; }
+@media (max-width: 1250px) { .status .credit .who { display: none; } }
+@media (max-width: 760px) { .status .credit { display: none; } }

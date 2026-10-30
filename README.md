@@ -164,6 +164,11 @@ and APA entries.
 
 ---
 
+## Feedback and help
+
+Suggestions, bug reports, missing parts or templates, or help with a figure:
+[rakesh_n@cpqct.iitr.ac.in](mailto:rakesh_n@cpqct.iitr.ac.in?subject=RNBeamX%20feedback).
+
 ## Licence
 
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved. See [LICENSE](LICENSE).
