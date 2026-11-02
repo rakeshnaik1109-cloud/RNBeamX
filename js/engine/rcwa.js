@@ -678,6 +678,14 @@ PT.copies = (L, li, P, n) => {
   });
   return out;
 };
+/* a design's layers may hold repeat groups { group: true, repeat, items: [layers] }: the solver
+   and the drawings see them written out, top → bottom (the copies are the same objects) */
+RC.flatLayers = layers => (layers || []).reduce((a, it) => {
+  if (!it || !it.group) return a.concat(it ? [it] : []);
+  const n = Math.max(1, Math.round(+it.repeat) || 1), inner = RC.flatLayers(it.items);
+  for (let i = 0; i < n; i++) a.push(...inner);
+  return a;
+}, []);
 const mkey = m => JSON.stringify([m.mat || 'air', m.mat === 'custom' ? +m.n : 0, m.mat === 'custom' ? +m.k || 0 : 0]);
 RC.fromPattern = (pat, opt = {}) => {
   const P = Math.max(1, +pat.period || 500), S = U.clamp(Math.round(opt.slices || pat.slices || 12), 2, 60);
@@ -687,7 +695,7 @@ RC.fromPattern = (pat, opt = {}) => {
   if (!idx.has(mkey(bot))) idx.set(mkey(bot), 1);
   const mi = m => { const k = mkey(m); if (!idx.has(k)) idx.set(k, mats.push({ mat: m.mat, n: m.n, k: m.k }) - 1); return idx.get(k); };
   const slices = [];
-  (pat.layers || []).forEach(L => {
+  RC.flatLayers(pat.layers).forEach(L => {
     const h = +L.nm || 0;
     if (!(h > 0)) return;
     const bg = mi(L), shapes = L.shapes || [], flat = shapes.every(PT.isFlat), n = flat ? 1 : S;
@@ -761,7 +769,7 @@ RC.fromPattern2 = (pat, opt = {}) => {
   if (!idx.has(mkey(bot))) idx.set(mkey(bot), 1);
   const mi = m => { const k = mkey(m); if (!idx.has(k)) idx.set(k, mats.push({ mat: m.mat, n: m.n, k: m.k }) - 1); return idx.get(k); };
   const slices = [];
-  (pat.layers || []).forEach(L => {
+  RC.flatLayers(pat.layers).forEach(L => {
     const h = +L.nm || 0; if (!(h > 0)) return;
     if (!(L.shapes || []).length) { slices.push({ d: h, m: mi(L) }); return; }
     const raster = PT2.raster(L, px, py, mi, opt.raster || 192);

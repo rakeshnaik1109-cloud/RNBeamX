@@ -526,6 +526,33 @@ drawn as rows of pillars, holes or rings and keep their linked RCWA panel.
   polariser, gap-plasmon absorber (Au strips / 10 nm SiO₂ / Au, R ≈ 1 % at
   1270 nm), sinusoidal Au grating, blazed Al grating (1200 lines/mm), slanted
   grating, trapezoid Si ridges, two ridges per period, two-level steps.
+**Multilayers with patterned layers.** Any number of layers can be stacked, and
+any of them can be patterned, so a grating can sit on, in or under a multilayer
+(1D and 2D alike). All patterned layers share the cell's period.
+- **Repeat groups.** Tick films in the list and press **Repeat ticked**: they
+  become a group, for example (TiO₂ 62 nm / SiO₂ 103 nm) × 6. Change the number
+  of repeats in the group's header; edit one film and every repeat follows.
+  **Ungroup** writes the repeats out as separate layers. Shapes inside a group are
+  repeated too (stacked gratings).
+- **+ Stack from the Layers tab** adds the films and repeat groups designed in the
+  *Layers* tab under the unit cell, with its substrate. Typical use: design a
+  Bragg mirror or MIM stack in *Layers*, then put a grating on top in *Pattern*.
+- **Coat…** (on a patterned layer) deposits a film over it, written out as
+  ordinary editable layers:
+  - *From above* (evaporation, line of sight): a cap on the tops of the ridges
+    and a film in the bottom of the gaps; side walls stay bare. Ridges keep their
+    shape; this is the geometry behind lift-off.
+  - *Conformal* (ALD, CVD, sputtering): the same thickness on every surface, so
+    ridges grow a shell (holes shrink) and the cap is wider.
+  - *Fill the gaps* (spin coating, planarising): the open parts of the layer
+    become the coating, plus an optional film over the top.
+  Pillars and holes in 2D arrays are grown or shrunk by the coating thickness.
+  Sinusoidal and sawtooth profiles can only be filled.
+- Presets: grating on a Bragg mirror (Bloch surface wave), grating-coupled SPR
+  (Au grating on Au film), grating coupler on a Si₃N₄ waveguide, Au evaporated
+  over SiO₂ ridges (made with the coating helper), and Au nanodisks on a Bragg
+  mirror (2D).
+
 - **Insert into figure** adds a *Patterned structure* (a few periods, or a few
   rows of a 2D array, in the oblique device-sketch view), optionally with a linked RCWA panel and the map.
   Select it and press **Open in Layer Studio** to edit it again (**Update the

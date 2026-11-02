@@ -235,6 +235,11 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-row2 { gap: 2px !important; }
 .studio .st-ghead input.st-gname { width: 100px; flex: 0 1 100px; }
 .studio .st-ghead input.st-rep { width: 56px; flex: 0 0 56px; }
+.st-row.ps-rowck { grid-template-columns: 16px 26px minmax(60px, 1fr) minmax(90px, 1.3fr); }
+.ps-rgroup { border-style: solid; background: transparent; }
+.ps-addrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+.ps-addrow .btn { white-space: normal; line-height: 1.2; min-height: 28px; }
+.ps-rgroup > .st-player { background: var(--panel); }
 .st-chart { display: block; max-width: 100%; height: auto; color: var(--text); background: var(--panel); border-radius: 8px; border: 1px solid var(--line); }
 .st-cross, .st-spec, .st-map { margin-bottom: 8px; }
 @media (max-width: 1100px) { .st-body { grid-template-columns: 1fr; overflow: auto; } .st-col { overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); } }

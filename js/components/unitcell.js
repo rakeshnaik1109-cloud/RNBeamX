@@ -8,6 +8,7 @@
 ═══════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
+const flatL = ls => (window.RNBX.rcwa ? window.RNBX.rcwa.flatLayers(ls) : (ls || []).filter(L => L && !L.group));
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, OB = lib.oblique;
 const PT = () => RNBX.rcwa.pattern;
 
@@ -96,7 +97,7 @@ lib.register({
   },
   /* without RCWA: the layers as flat films of their own (background) material */
   stack: p => {
-    const pat = p.pattern || DEFAULT, films = (pat.layers || []).filter(L => +L.nm > 0).map(L => ({ m: { mat: L.mat, n: L.n, k: L.k }, d: +L.nm }));
+    const pat = p.pattern || DEFAULT, films = flatL(pat.layers).filter(L => +L.nm > 0).map(L => ({ m: { mat: L.mat, n: L.n, k: L.k }, d: +L.nm }));
     const amb = { mat: pat.ambient || 'air', n: pat.ambientN, k: 0 }, sub = pat.substrate || { mat: 'air' };
     return pat.side === 'bottom' ? { inc: sub, layers: films.slice().reverse(), sub: amb } : { inc: amb, layers: films, sub };
   },
@@ -104,10 +105,10 @@ lib.register({
   resizable: false,
   geom(p) {
     const pat = p.pattern || DEFAULT, dim2 = pat.dim === 2, P = Math.max(1, +(dim2 ? pat.px : pat.period) || 400), N = Math.max(1, Math.round(p.periods) || 1);
-    const sx = p.W / (N * P), tot = (pat.layers || []).reduce((a, L) => a + (+L.nm || 0), 0) || 1;
+    const sx = p.W / (N * P), tot = flatL(pat.layers).reduce((a, L) => a + (+L.nm || 0), 0) || 1;
     const vex = +p.vex > 0 ? +p.vex : Math.max(1, Math.min(20, Math.round((p.W * 0.22) / (tot * sx)))), sz = sx * vex;
     const subT = Math.max(2, p.W * 0.16), c = OB.cam(p.ang, p.depthK);
-    const layers = (pat.layers || []).slice().reverse();   // bottom → top
+    const layers = flatL(pat.layers).slice().reverse();   // bottom → top
     let z = subT; const L = layers.map(q => { const r = { q, z0: z, z1: z + (+q.nm || 0) * sz }; z = r.z1; return r; });
     const rows = Math.max(1, Math.round(p.rows) || 4), D = dim2 ? rows * Math.max(1, +pat.py || P) * sx : p.D;
     return { pat, P, N, sx, sz, vex, subT, c, L, top: z, dim2, rows, D };

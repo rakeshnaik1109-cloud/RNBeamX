@@ -254,6 +254,11 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-row2 { gap: 2px !important; }
 .studio .st-ghead input.st-gname { width: 100px; flex: 0 1 100px; }
 .studio .st-ghead input.st-rep { width: 56px; flex: 0 0 56px; }
+.st-row.ps-rowck { grid-template-columns: 16px 26px minmax(60px, 1fr) minmax(90px, 1.3fr); }
+.ps-rgroup { border-style: solid; background: transparent; }
+.ps-addrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+.ps-addrow .btn { white-space: normal; line-height: 1.2; min-height: 28px; }
+.ps-rgroup > .st-player { background: var(--panel); }
 .st-chart { display: block; max-width: 100%; height: auto; color: var(--text); background: var(--panel); border-radius: 8px; border: 1px solid var(--line); }
 .st-cross, .st-spec, .st-map { margin-bottom: 8px; }
 @media (max-width: 1100px) { .st-body { grid-template-columns: 1fr; overflow: auto; } .st-col { overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); } }
@@ -2233,6 +2238,14 @@ PT.copies = (L, li, P, n) => {
   });
   return out;
 };
+/* a design's layers may hold repeat groups { group: true, repeat, items: [layers] }: the solver
+   and the drawings see them written out, top → bottom (the copies are the same objects) */
+RC.flatLayers = layers => (layers || []).reduce((a, it) => {
+  if (!it || !it.group) return a.concat(it ? [it] : []);
+  const n = Math.max(1, Math.round(+it.repeat) || 1), inner = RC.flatLayers(it.items);
+  for (let i = 0; i < n; i++) a.push(...inner);
+  return a;
+}, []);
 const mkey = m => JSON.stringify([m.mat || 'air', m.mat === 'custom' ? +m.n : 0, m.mat === 'custom' ? +m.k || 0 : 0]);
 RC.fromPattern = (pat, opt = {}) => {
   const P = Math.max(1, +pat.period || 500), S = U.clamp(Math.round(opt.slices || pat.slices || 12), 2, 60);
@@ -2242,7 +2255,7 @@ RC.fromPattern = (pat, opt = {}) => {
   if (!idx.has(mkey(bot))) idx.set(mkey(bot), 1);
   const mi = m => { const k = mkey(m); if (!idx.has(k)) idx.set(k, mats.push({ mat: m.mat, n: m.n, k: m.k }) - 1); return idx.get(k); };
   const slices = [];
-  (pat.layers || []).forEach(L => {
+  RC.flatLayers(pat.layers).forEach(L => {
     const h = +L.nm || 0;
     if (!(h > 0)) return;
     const bg = mi(L), shapes = L.shapes || [], flat = shapes.every(PT.isFlat), n = flat ? 1 : S;
@@ -2316,7 +2329,7 @@ RC.fromPattern2 = (pat, opt = {}) => {
   if (!idx.has(mkey(bot))) idx.set(mkey(bot), 1);
   const mi = m => { const k = mkey(m); if (!idx.has(k)) idx.set(k, mats.push({ mat: m.mat, n: m.n, k: m.k }) - 1); return idx.get(k); };
   const slices = [];
-  (pat.layers || []).forEach(L => {
+  RC.flatLayers(pat.layers).forEach(L => {
     const h = +L.nm || 0; if (!(h > 0)) return;
     if (!(L.shapes || []).length) { slices.push({ d: h, m: mi(L) }); return; }
     const raster = PT2.raster(L, px, py, mi, opt.raster || 192);
@@ -7117,6 +7130,7 @@ lib.stackTop = (obj, doc) => { const ch = lib.stackChain(obj, doc); return ch[ch
 ═══════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
+const flatL = ls => (window.RNBX.rcwa ? window.RNBX.rcwa.flatLayers(ls) : (ls || []).filter(L => L && !L.group));
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n, OB = lib.oblique;
 const PT = () => RNBX.rcwa.pattern;
 
@@ -7205,7 +7219,7 @@ lib.register({
   },
   /* without RCWA: the layers as flat films of their own (background) material */
   stack: p => {
-    const pat = p.pattern || DEFAULT, films = (pat.layers || []).filter(L => +L.nm > 0).map(L => ({ m: { mat: L.mat, n: L.n, k: L.k }, d: +L.nm }));
+    const pat = p.pattern || DEFAULT, films = flatL(pat.layers).filter(L => +L.nm > 0).map(L => ({ m: { mat: L.mat, n: L.n, k: L.k }, d: +L.nm }));
     const amb = { mat: pat.ambient || 'air', n: pat.ambientN, k: 0 }, sub = pat.substrate || { mat: 'air' };
     return pat.side === 'bottom' ? { inc: sub, layers: films.slice().reverse(), sub: amb } : { inc: amb, layers: films, sub };
   },
@@ -7213,10 +7227,10 @@ lib.register({
   resizable: false,
   geom(p) {
     const pat = p.pattern || DEFAULT, dim2 = pat.dim === 2, P = Math.max(1, +(dim2 ? pat.px : pat.period) || 400), N = Math.max(1, Math.round(p.periods) || 1);
-    const sx = p.W / (N * P), tot = (pat.layers || []).reduce((a, L) => a + (+L.nm || 0), 0) || 1;
+    const sx = p.W / (N * P), tot = flatL(pat.layers).reduce((a, L) => a + (+L.nm || 0), 0) || 1;
     const vex = +p.vex > 0 ? +p.vex : Math.max(1, Math.min(20, Math.round((p.W * 0.22) / (tot * sx)))), sz = sx * vex;
     const subT = Math.max(2, p.W * 0.16), c = OB.cam(p.ang, p.depthK);
-    const layers = (pat.layers || []).slice().reverse();   // bottom → top
+    const layers = flatL(pat.layers).slice().reverse();   // bottom → top
     let z = subT; const L = layers.map(q => { const r = { q, z0: z, z1: z + (+q.nm || 0) * sz }; z = r.z1; return r; });
     const rows = Math.max(1, Math.round(p.rows) || 4), D = dim2 ? rows * Math.max(1, +pat.py || P) * sx : p.D;
     return { pat, P, N, sx, sz, vex, subT, c, L, top: z, dim2, rows, D };
@@ -16767,6 +16781,7 @@ const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, RC = () => RNBX.rcwa, T
 const col = m => UI().colorOf(m), nm = m => UI().shortName(m);
 const ridge = (mat, x, wb, extra) => Object.assign({ kind: 'trap', x, wb, wt: wb, shift: 0, mat, name: nm(mat), color: col(mat) }, extra || {});
 const film = (mat, t, shapes, extra) => Object.assign({ name: mat === 'air' ? 'Air' : nm(mat), mat, color: mat === 'air' ? '#ffffff' : col(mat), nm: t, shapes: shapes || [] }, extra || {});
+const rgroup = (repeat, items, name) => ({ group: true, repeat, name: name || 'Repeat', items });
 const design = (name, period, layers, extra) => Object.assign({
   name, period, ambient: 'air', ambientN: 1.33, side: 'top', substrate: { mat: 'glass:N-BK7', name: 'Glass', color: '#cfe6f2' }, layers, orders: 15, slices: 12,
   calc: { scan: 'wl', lmin: 400, lmax: 1000, angle: 0, amin: 0, amax: 80, lambda: 633, pol: 'p', show: 'RTA', points: 101 },
@@ -16788,6 +16803,13 @@ const PRESETS = [
   { id: 'trap', name: 'Trapezoid ridges (Si on SiO₂)', make: () => design('Trapezoid grating', 600, [film('air', 220, [ridge('Si', 300, 360, { wt: 220 })])], { substrate: { mat: 'SiO2', name: 'SiO₂', color: col('SiO2') } }) },
   { id: 'two', name: 'Two ridges per period', make: () => design('Two-ridge cell', 600, [film('air', 200, [ridge('TiO2', 150, 160), ridge('TiO2', 420, 70)])]) },
   { id: 'step', name: 'Two-level (stepped) grating', make: () => design('Stepped grating', 600, [film('air', 120, [ridge('SiO2', 225, 150)], { name: 'Upper step' }), film('air', 120, [ridge('SiO2', 300, 300)], { name: 'Lower step' })]) },
+  { id: 'bsw', name: 'Grating on a Bragg mirror (Bloch surface wave)', make: () => design('Grating on a Bragg mirror', 500, [film('air', 40, [ridge('TiO2', 250, 250)], { name: 'Grating' }), film('SiO2', 60, [], { name: 'Top layer' }), rgroup(6, [film('TiO2', 62), film('SiO2', 103)], 'Pair')],
+    Object.assign(calc({ lmin: 450, lmax: 800, pol: 's', points: 201 }), { probe: { nm: 600, angle: 0, pol: 's' }, map: { show: 'R', pol: 's', lmin: 450, lmax: 800, amin: 0, amax: 30, res: 'low' } })) },
+  { id: 'gcspr', name: 'Grating-coupled SPR (Au grating on Au film)', make: () => design('Grating-coupled SPR', 600, [film('air', 30, [ridge('Au', 300, 300)], { name: 'Au grating' }), film('Au', 100, [], { name: 'Au film' })],
+    Object.assign(calc({ scan: 'angle', amin: 0, amax: 30, lambda: 633, pol: 'p', points: 151 }), { orders: 20, probe: { nm: 633, angle: 3, pol: 'p' }, map: { show: 'R', pol: 'p', lmin: 500, lmax: 900, amin: 0, amax: 30, res: 'low' } })) },
+  { id: 'coupler', name: 'Grating coupler on a Si₃N₄ waveguide', make: () => design('Waveguide grating coupler', 450, [film('air', 60, [ridge('Si3N4', 225, 225)], { name: 'Grating' }), film('Si3N4', 200, [], { name: 'Waveguide' })],
+    Object.assign({ substrate: { mat: 'SiO2', name: 'SiO₂', color: col('SiO2') } }, calc({ scan: 'angle', amin: 0, amax: 40, lambda: 633, pol: 's', points: 161 }), { probe: { nm: 633, angle: 10, pol: 's' }, map: { show: 'R', pol: 's', lmin: 500, lmax: 800, amin: 0, amax: 40, res: 'low' } })) },
+  { id: 'coated', name: 'Au evaporated over SiO₂ ridges (coating helper)', make: () => { const dd = design('Au-coated ridges', 500, [film('air', 120, [ridge('SiO2', 250, 220, { wt: 180 })], { name: 'Ridges' })], Object.assign(calc({ lmin: 450, lmax: 1000, pol: 'p' }), { orders: 20, probe: { nm: 700, angle: 0, pol: 'p' } })); PS.coat(dd, dd.layers[0], { mode: 'top', mat: 'Au', t: 40 }); return dd; } },
 ];
 /* 2D arrays (crossed gratings): rectangular cell px × py, shapes with vertical walls */
 const shape2 = (kind, mat, o) => Object.assign({ kind, x: 0, y: 0, mat, name: nm(mat), color: col(mat) }, o);
@@ -16808,9 +16830,16 @@ PRESETS.push(
     { calc: { scan: 'wl', lmin: 600, lmax: 1600, angle: 0, amin: 0, amax: 40, lambda: 633, pol: 'p', show: 'RTA', points: 41 }, probe: { nm: 1100, angle: 0, pol: 'p' } }) },
   { id: 'squares', dim: 2, name: 'Square Ag nanopatches', make: () => design2('Ag nanopatches', 300, 300, [film('air', 50, [shape2('rect', 'Ag', { x: 150, y: 150, wx: 120, wy: 120 })], { name: 'Patches' })], { probe: { nm: 600, angle: 0, pol: 'p' } }) },
   { id: 'rings', dim: 2, name: 'Si nanoring array', make: () => design2('Si rings', 500, 500, [film('air', 150, [shape2('ring', 'Si', { x: 250, y: 250, r: 180, rin: 100 })], { name: 'Rings' })], { substrate: { mat: 'SiO2', name: 'SiO₂', color: col('SiO2') }, probe: { nm: 700, angle: 0, pol: 'p' } }) },
+  { id: 'diskdbr', dim: 2, name: 'Au nanodisks on a Bragg mirror', make: () => design2('Au disks on a Bragg mirror', 300, 300, [film('air', 30, [shape2('disk', 'Au', { x: 150, y: 150, rx: 60, ry: 60 })], { name: 'Disks' }), film('SiO2', 20, [], { name: 'Spacer' }), rgroup(5, [film('TiO2', 62), film('SiO2', 103)], 'Pair')],
+    { calc: { scan: 'wl', lmin: 450, lmax: 900, angle: 0, amin: 0, amax: 40, lambda: 633, pol: 'p', show: 'RTA', points: 41 }, probe: { nm: 650, angle: 0, pol: 'p' } }) },
 );
 PS.PRESETS = PRESETS;
 const is2 = (dd = d) => dd && dd.dim === 2;
+/* the layers written out (repeat groups expanded; copies are the same objects), and the distinct ones */
+const FL = (dd = d) => RC().flatLayers(dd.layers);
+const uniqL = (dd = d) => [...new Set(FL(dd))];
+const canon = li => { const f = FL(); return f[li] ? f.indexOf(f[li]) : li; };
+const sameL = (a, b) => { const f = FL(); return !!f[a] && f[a] === f[b]; };
 
 /* ---------- state ---------- */
 let d = null, target = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, sel = { li: 0, si: 0 };
@@ -16903,13 +16932,107 @@ function convertDim(to) {
   if (to === 2) {
     const P = d.period;
     d.dim = 2; d.px = P; d.py = P; d.mx = 3; d.my = 3; d.phi = 0;
-    d.layers.forEach(L => { L.shapes = (L.shapes || []).map(sh => shape2('rect', sh.mat, { x: sh.x, y: P / 2, wx: sh.kind === 'trap' ? +sh.wb || P / 2 : P / 2, wy: P * 0.999, name: sh.name, color: sh.color, n: sh.n, k: sh.k })); });
+    uniqL().forEach(L => { L.shapes = (L.shapes || []).map(sh => shape2('rect', sh.mat, { x: sh.x, y: P / 2, wx: sh.kind === 'trap' ? +sh.wb || P / 2 : P / 2, wy: P * 0.999, name: sh.name, color: sh.color, n: sh.n, k: sh.k })); });
     d.calc.points = Math.min(d.calc.points, 41); d.view = Object.assign({ periods: 2, vex: 0, cutY: P / 2, plane: 'xz', fieldZ: null, log: false }, d.view, { cutY: P / 2 });
   } else {
     d.dim = 1; d.period = d.px;
-    d.layers.forEach(L => { L.shapes = (L.shapes || []).filter(sh => sh.kind === 'rect' || sh.kind === 'disk').map(sh => ridge(sh.mat, sh.x, sh.kind === 'rect' ? sh.wx : 2 * (sh.rx || 50), { name: sh.name, color: sh.color, n: sh.n, k: sh.k })); });
+    uniqL().forEach(L => { L.shapes = (L.shapes || []).filter(sh => sh.kind === 'rect' || sh.kind === 'disk').map(sh => ridge(sh.mat, sh.x, sh.kind === 'rect' ? sh.wx : 2 * (sh.rx || 50), { name: sh.name, color: sh.color, n: sh.n, k: sh.k })); });
   }
   sel = { li: 0, si: 0 }; specRes = null; mapRes = null; fieldRes = null;
+}
+
+/* ---------- repeat groups, the Layers-tab stack, coatings ---------- */
+/* a group written out as separate (independent) layers */
+const ungroup = g => { const out = []; for (let k = 0; k < Math.max(1, Math.round(+g.repeat) || 1); k++) out.push(...U.deepClone(RC().flatLayers(g.items))); return out; };
+/* Layers-tab items → Pattern layers: films get no shapes; nested groups are written out inside their outer group */
+PS.fromFilms = items => (items || []).map(it => it.group
+  ? { group: true, repeat: Math.max(1, Math.round(+it.repeat) || 1), name: it.name || 'Repeat', items: RC().flatLayers(PS.fromFilms(it.items)).map(L => U.deepClone(L)) }
+  : film(it.mat, +it.nm || 0, [], { name: it.name || (it.mat === 'air' ? 'Air' : nm(it.mat)), color: it.color || col(it.mat), n: it.n, k: it.k }));
+function importFilms() {
+  const fd = ST().design && ST().design();
+  if (!fd || !(fd.items || []).length) { RNBX.toast('The Layers tab has no films yet', 'error'); return; }
+  change(() => {
+    d.layers.push(...PS.fromFilms(U.deepClone(fd.items)));
+    if (fd.substrate) d.substrate = { mat: fd.substrate.mat, name: fd.substrate.name || nm(fd.substrate.mat), color: fd.substrate.color || col(fd.substrate.mat), n: fd.substrate.n, k: fd.substrate.k };
+  }, null, 'list');
+  RNBX.toast(`Added “${fd.name || 'the stack'}” from the Layers tab under the unit cell (substrate: ${d.substrate.name})`);
+}
+
+/* Coat a patterned layer. mode:
+   'conformal' — the film grows the same thickness on every surface (tops, side walls, the bottoms of the gaps);
+   'top'       — line-of-sight deposition from above (evaporation): tops and gap bottoms only, side walls bare;
+   'fill'      — the gaps are filled up to the top of the layer (spin-coat, planarise), plus an optional film over it.
+   Shapes are ridges / pillars (solid in an open background) or holes (open in a solid film); 'open' is air or the
+   medium above. Returns a message, or throws when the layer cannot be coated that way. */
+PS.coat = (dd, L, o) => {
+  const t = Math.max(0, +o.t || 0), M = o.mat, two = is2(dd), i = dd.layers.indexOf(L), H = +L.nm || 0;
+  if (i < 0) throw new Error('Only a layer outside a repeat group can be coated (ungroup it first)');
+  const open = m => m === 'air' || m === dd.ambient, bgOpen = open(L.mat);
+  const C = (sh, extra) => Object.assign(U.deepClone(sh), { mat: M, name: nm(M), color: col(M) }, extra || {});
+  const curved = (L.shapes || []).some(sh => sh.kind === 'sine' || sh.kind === 'saw');
+  const coatFilm = () => film(M, t, [], { name: nm(M) + ' coating' });
+  if (o.mode === 'fill' || curved) {
+    if (o.mode !== 'fill') throw new Error('Sinusoidal and sawtooth profiles can only be filled (choose “Fill the gaps”)');
+    if (bgOpen) { L.mat = M; L.color = col(M); L.name = (L.name || 'Layer') + ' + ' + nm(M); }
+    L.shapes.forEach(sh => { if (open(sh.mat)) Object.assign(sh, { mat: M, name: nm(M), color: col(M) }); });
+    if (t > 0) dd.layers.splice(i, 0, coatFilm());
+    return t > 0 ? `Gaps filled with ${nm(M)} and ${t} nm over the top` : `Gaps filled with ${nm(M)}`;
+  }
+  if (!(t > 0)) throw new Error('Give the coating a thickness');
+  // grow (δ > 0) or shrink a shape's outline by δ
+  const grow = (sh, dl) => {
+    const g = U.deepClone(sh), p2 = v => Math.max(0, v);
+    if (two) {
+      if (g.kind === 'disk') { g.rx = p2((g.rx || g.r || 0) + dl); g.ry = p2((g.ry || g.rx || 0) + dl); }
+      else if (g.kind === 'rect') { g.wx = p2(g.wx + 2 * dl); g.wy = p2(g.wy + 2 * dl); }
+      else if (g.kind === 'ring') { g.r = p2(g.r + dl); g.rin = p2((g.rin || 0) - dl); }
+      else if (g.kind === 'cross') { g.L = p2(g.L + 2 * dl); g.w = p2(g.w + 2 * dl); }
+    } else { g.wb = p2((+g.wb || 0) + 2 * dl); g.wt = p2((g.wt == null ? +g.wb : +g.wt) + 2 * dl); }
+    return g;
+  };
+  const topOf = sh => (two ? U.deepClone(sh) : Object.assign(U.deepClone(sh), { x: +sh.x + (+sh.shift || 0), wb: sh.wt == null ? +sh.wb : +sh.wt, wt: sh.wt == null ? +sh.wb : +sh.wt, shift: 0 }));
+  const exposed = sh => open(sh.mat) !== bgOpen;   // a ridge in an open layer, or a hole in a solid film
+  // 1D: split a trapezoid at height fraction u from the bottom
+  const lowerPart = (sh, u) => { if (two) return U.deepClone(sh); const wb = +sh.wb || 0, wt = sh.wt == null ? wb : +sh.wt, s = +sh.shift || 0; return Object.assign(U.deepClone(sh), { wt: U.round(wb + (wt - wb) * u, 2), shift: U.round(s * u, 2) }); };
+  const upperPart = (sh, u) => { if (two) return U.deepClone(sh); const wb = +sh.wb || 0, wt = sh.wt == null ? wb : +sh.wt, s = +sh.shift || 0; return Object.assign(U.deepClone(sh), { x: U.round(+sh.x + s * u, 2), wb: U.round(wb + (wt - wb) * u, 2), shift: U.round(s * (1 - u), 2) }); };
+  const tb = Math.min(t, H), u = H > 0 ? tb / H : 1;
+  // the bottom of the gaps: everything open becomes coating
+  const lower = Object.assign(U.deepClone(L), { nm: tb, name: (L.name || 'Layer') + ' (coated base)' });
+  if (bgOpen) Object.assign(lower, { mat: M, color: col(M) });
+  lower.shapes = L.shapes.map(sh => (open(sh.mat) ? C(lowerPart(sh, u)) : lowerPart(sh, u)));
+  // the rest of the layer: side walls coated when conformal
+  const upper = Object.assign(U.deepClone(L), { nm: H - tb });
+  upper.shapes = [];
+  L.shapes.forEach(sh => {
+    const up = upperPart(sh, u);
+    if (o.mode === 'conformal' && exposed(sh)) {
+      if (open(sh.mat)) upper.shapes.push(C(up), grow(up, -t));      // hole: wall coating, then the narrower hole
+      else upper.shapes.push(C(grow(up, t)), up);                     // ridge: a coating shell, then the ridge
+    } else upper.shapes.push(up);
+  });
+  // the cap over the top surfaces
+  const cap = film(bgOpen ? L.mat : M, t, [], { name: nm(M) + ' on top', color: bgOpen ? L.color : col(M) });
+  L.shapes.forEach(sh => {
+    if (!exposed(sh)) return;
+    const tp = topOf(sh), g = o.mode === 'conformal' ? grow(tp, open(sh.mat) ? -t : t) : tp;
+    cap.shapes.push(open(sh.mat) ? Object.assign(g, { mat: sh.mat, name: sh.name, color: sh.color }) : C(g));
+  });
+  dd.layers.splice(i, 1, ...[cap].concat(H - tb > 0 ? [upper] : [], [lower]));
+  return `${t} nm of ${nm(M)} ${o.mode === 'conformal' ? 'on every surface' : 'deposited from above'}: ${H - tb > 0 ? 3 : 2} layers replace “${L.name || 'the layer'}”`;
+};
+function coatDialog(L) {
+  const o = { mode: 'top', mat: 'Au', t: 30 };
+  const modeSel = el('select', { onchange: () => { o.mode = modeSel.value; } }, [['top', 'From above (evaporation, line of sight)'], ['conformal', 'Conformal (every surface: ALD, CVD, sputtering)'], ['fill', 'Fill the gaps (spin-coat, planarise)']].map(q => el('option', { value: q[0], text: q[1] })));
+  const matS = el('select', { onchange: () => { o.mat = matS.value; } }, TF().options().map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] }))); matS.value = o.mat;
+  const tI = el('input', { type: 'number', min: 0, step: 1, value: o.t, oninput: () => { o.t = Math.max(0, +tI.value || 0); } });
+  const body = el('div', {},
+    el('label', { class: 'field' }, el('span', { text: 'How it is deposited' }), modeSel),
+    el('label', { class: 'field' }, el('span', { text: 'Material' }), matS),
+    el('label', { class: 'field' }, el('span', { text: 'Thickness (nm)' }), tI),
+    el('div', { class: 'hint', text: 'The coating is written as ordinary layers (a cap over the tops, a coated base in the gaps, and for a conformal coat a shell on the side walls), so you can edit them afterwards. With “Fill the gaps” the thickness is an extra film over the top (0 for none). Side walls are treated as vertical when coating from above.' }));
+  const m = D.modal({ title: 'Coat “' + (L.name || 'layer') + '”', sub: is2() ? 'Pillars and holes are grown or shrunk by the coating thickness' : 'Ridges keep their slope; the side-wall shell follows it', body, foot: [
+    el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: () => m.close() }),
+    el('button', { class: 'btn primary', type: 'button', text: 'Coat', onclick: () => { try { let msg = ''; change(() => { msg = PS.coat(d, L, o); sel = { li: 0, si: 0 }; }, null, 'list'); m.close(); RNBX.toast(msg); } catch (e) { RNBX.toast(e.message || String(e), 'error'); } } })] });
 }
 
 /* ---------- the layer list ---------- */
@@ -16960,37 +17083,72 @@ function shapeCard2(L, li, sh, si) {
 }
 const nkRow = (o, k) => el('div', { class: 'st-row2' }, el('span', { text: 'n' }), num(() => o.n == null ? 1.5 : o.n, v => { o.n = v; }, { step: 0.001, key: k + 'n' }), el('span', { text: 'k' }), num(() => o.k || 0, v => { o.k = Math.max(0, v); }, { step: 0.001, min: 0, key: k + 'kk' }));
 const markSel = () => { if (!views.list) return; views.list.querySelectorAll('.st-shape').forEach(c => c.classList.toggle('sel', +c.dataset.li === sel.li && +c.dataset.si === sel.si)); };
+/* top-level films ticked for a repeat group */
+let ticked = new Set();
+function layerCard(L, arr, i, li, inGroup) {
+  const k = 'L' + li + '-';
+  const c = el('input', { type: 'color', value: (L.color || '#ffffff').slice(0, 7), title: 'Colour of the film', oninput: () => change(() => { L.color = c.value; }, k + 'c') });
+  const nmI = el('input', { type: 'text', value: L.name || '', title: 'Name', oninput: () => change(() => { L.name = nmI.value; }, k + 'n') });
+  const mat = matSel(() => L.mat, v => { if (L.name === nm(L.mat) || L.name === 'Air' || !L.name) L.name = v === 'air' ? 'Air' : nm(v); if ((L.color || '').toLowerCase() === (L.mat === 'air' ? '#ffffff' : col(L.mat))) L.color = v === 'air' ? '#ffffff' : col(v); L.mat = v; }, k + 'm');
+  mat.title = 'Material of the film around the shapes';
+  const chk = inGroup ? null : el('input', { type: 'checkbox', title: 'Tick films, then press “Repeat ticked” to make a repeat group', checked: ticked.has(L), onchange: () => { chk.checked ? ticked.add(L) : ticked.delete(L); grpBtnState(); } });
+  const addBtns = is2() ? [['disk', '+ disk'], ['rect', '+ rect'], ['ring', '+ ring'], ['cross', '+ cross']].map(([kd, t]) => el('button', { class: 'btn small ghost', type: 'button', text: t, onclick: () => change(() => {
+    const a = Math.min(d.px, d.py), m = L.mat === 'air' ? 'TiO2' : 'air', o = { x: d.px / 2, y: d.py / 2 };
+    Object.assign(o, kd === 'disk' ? { rx: a / 4, ry: a / 4 } : kd === 'rect' ? { wx: a / 2, wy: a / 2 } : kd === 'ring' ? { r: a / 3, rin: a / 6 } : { L: a * 0.7, w: a / 8 });
+    L.shapes.push(shape2(kd, m, Object.assign(o, m === 'air' ? { name: 'Hole', color: '#ffffff' } : {}))); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') })) : [
+    el('button', { class: 'btn small ghost', type: 'button', text: '+ ridge', title: 'Add a ridge (rectangle, trapezoid or slanted)', onclick: () => change(() => { L.shapes.push(ridge(L.mat === 'TiO2' ? 'SiO2' : 'TiO2', d.period / 2, d.period / 2)); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') }),
+    el('button', { class: 'btn small ghost', type: 'button', text: '+ sine', onclick: () => change(() => { L.shapes.push({ kind: 'sine', x: d.period / 2, mat: 'Au', name: 'Au', color: col('Au') }); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') }),
+    el('button', { class: 'btn small ghost', type: 'button', text: '+ saw', onclick: () => change(() => { L.shapes.push({ kind: 'saw', x: 0, dir: 1, mat: 'Al', name: 'Al', color: col('Al') }); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') })];
+  const coatBtn = (L.shapes || []).length && !inGroup ? el('button', { class: 'btn small ghost', type: 'button', text: 'Coat…', title: 'Deposit a film over this patterned layer: conformal, from above (evaporation) or filling the gaps', onclick: () => coatDialog(L) }) : null;
+  const box = el('div', { class: 'st-group st-player' },
+    el('div', { class: chk ? 'st-row ps-rowck' : 'st-row' }, chk, c, nmI, mat),
+    el('div', { class: 'st-row2' }, num(() => L.nm, v => { L.nm = Math.max(0, v); }, { min: 0, key: k + 't', title: 'Height of the layer (nm)' }), el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }), el('span', { class: 'st-grow' }),
+      ...addBtns, coatBtn,
+      D.iconBtn('up', 'Move up', () => change(() => moveIn(arr, i, -1), null, 'list')),
+      D.iconBtn('down', 'Move down', () => change(() => moveIn(arr, i, 1), null, 'list')),
+      el('button', { class: 'icon-btn', type: 'button', text: '⧉', title: 'Duplicate the layer', onclick: () => change(() => arr.splice(i + 1, 0, U.deepClone(L)), null, 'list') }),
+      D.iconBtn('trash', 'Remove the layer', () => change(() => { arr.splice(i, 1); ticked.delete(L); sel = { li: 0, si: 0 }; }, null, 'list'))));
+  if (L.mat === 'custom') box.append(nkRow(L, k));
+  (L.shapes || []).forEach((sh, si) => box.append(shapeCard(L, li, sh, si)));
+  if (!(L.shapes || []).length) box.append(el('div', { class: 'hint', style: { margin: '4px 2px' }, text: 'A flat film (no shapes).' }));
+  return box;
+}
+let grpBtn = null;
+const grpBtnState = () => { if (grpBtn) grpBtn.disabled = !ticked.size; };
 function buildList() {
   const host = views.list; if (!host) return; host.innerHTML = '';
+  const f = FL();
+  ticked = new Set([...ticked].filter(L => d.layers.includes(L)));
   host.append(el('div', { class: 'st-cap', text: 'Medium above: ' + TF().name(d.ambient) }));
-  d.layers.forEach((L, li) => {
-    const k = 'L' + li + '-';
-    const c = el('input', { type: 'color', value: (L.color || '#ffffff').slice(0, 7), title: 'Colour of the film', oninput: () => change(() => { L.color = c.value; }, k + 'c') });
-    const nmI = el('input', { type: 'text', value: L.name || '', title: 'Name', oninput: () => change(() => { L.name = nmI.value; }, k + 'n') });
-    const mat = matSel(() => L.mat, v => { if (L.name === nm(L.mat) || L.name === 'Air' || !L.name) L.name = v === 'air' ? 'Air' : nm(v); if ((L.color || '').toLowerCase() === (L.mat === 'air' ? '#ffffff' : col(L.mat))) L.color = v === 'air' ? '#ffffff' : col(v); L.mat = v; }, k + 'm');
-    mat.title = 'Material of the film around the shapes';
-    const box = el('div', { class: 'st-group st-player' },
-      el('div', { class: 'st-row' }, c, nmI, mat),
-      el('div', { class: 'st-row2' }, num(() => L.nm, v => { L.nm = Math.max(0, v); }, { min: 0, key: k + 't', title: 'Height of the layer (nm)' }), el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }), el('span', { class: 'st-grow' }),
-        ...(is2() ? [['disk', '+ disk'], ['rect', '+ rect'], ['ring', '+ ring'], ['cross', '+ cross']].map(([kd, t]) => el('button', { class: 'btn small ghost', type: 'button', text: t, onclick: () => change(() => {
-          const a = Math.min(d.px, d.py), m = L.mat === 'air' ? 'TiO2' : 'air', o = { x: d.px / 2, y: d.py / 2 };
-          Object.assign(o, kd === 'disk' ? { rx: a / 4, ry: a / 4 } : kd === 'rect' ? { wx: a / 2, wy: a / 2 } : kd === 'ring' ? { r: a / 3, rin: a / 6 } : { L: a * 0.7, w: a / 8 });
-          L.shapes.push(shape2(kd, m, Object.assign(o, m === 'air' ? { name: 'Hole', color: '#ffffff' } : {}))); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') })) : [
-        el('button', { class: 'btn small ghost', type: 'button', text: '+ ridge', title: 'Add a ridge (rectangle, trapezoid or slanted)', onclick: () => change(() => { L.shapes.push(ridge(L.mat === 'TiO2' ? 'SiO2' : 'TiO2', d.period / 2, d.period / 2)); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') }),
-        el('button', { class: 'btn small ghost', type: 'button', text: '+ sine', onclick: () => change(() => { L.shapes.push({ kind: 'sine', x: d.period / 2, mat: 'Au', name: 'Au', color: col('Au') }); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') }),
-        el('button', { class: 'btn small ghost', type: 'button', text: '+ saw', onclick: () => change(() => { L.shapes.push({ kind: 'saw', x: 0, dir: 1, mat: 'Al', name: 'Al', color: col('Al') }); sel = { li, si: L.shapes.length - 1 }; }, null, 'list') })]),
-        D.iconBtn('up', 'Move up', () => change(() => moveIn(d.layers, li, -1), null, 'list')),
-        D.iconBtn('down', 'Move down', () => change(() => moveIn(d.layers, li, 1), null, 'list')),
-        el('button', { class: 'icon-btn', type: 'button', text: '⧉', title: 'Duplicate the layer', onclick: () => change(() => d.layers.splice(li + 1, 0, U.deepClone(L)), null, 'list') }),
-        D.iconBtn('trash', 'Remove the layer', () => change(() => { d.layers.splice(li, 1); sel = { li: 0, si: 0 }; }, null, 'list'))));
-    if (L.mat === 'custom') box.append(nkRow(L, k));
-    (L.shapes || []).forEach((sh, si) => box.append(shapeCard(L, li, sh, si)));
-    if (!(L.shapes || []).length) box.append(el('div', { class: 'hint', style: { margin: '4px 2px' }, text: 'A flat film (no shapes).' }));
+  d.layers.forEach((it, i) => {
+    if (!it.group) { host.append(layerCard(it, d.layers, i, f.indexOf(it), false)); return; }
+    const gk = 'G' + i + '-', inner = RC().flatLayers(it.items), per = inner.reduce((a, L) => a + (+L.nm || 0), 0);
+    const gname = el('input', { type: 'text', class: 'st-gname', value: it.name || '', title: 'Name of the group', oninput: () => change(() => { it.name = gname.value; }, gk + 'n') });
+    const rep = num(() => it.repeat, v => { it.repeat = U.clamp(Math.round(v), 1, 60); }, { min: 1, max: 60, key: gk + 'r', what: 'list', title: 'How many times the group repeats' });
+    rep.classList.add('st-rep');
+    const box = el('div', { class: 'st-group ps-rgroup' },
+      el('div', { class: 'st-ghead' }, gname, el('span', { text: '×', title: 'repeats' }), rep, el('span', { class: 'hint', style: { margin: 0 }, text: UI().f1(per, 0) + ' nm each, ' + UI().f1(per * Math.max(1, Math.round(it.repeat) || 1), 0) + ' nm in all' }), el('span', { class: 'st-grow' }),
+        D.iconBtn('up', 'Move the group up', () => change(() => moveIn(d.layers, i, -1), null, 'list')),
+        D.iconBtn('down', 'Move the group down', () => change(() => moveIn(d.layers, i, 1), null, 'list')),
+        el('button', { class: 'btn small ghost', type: 'button', text: 'Ungroup', title: 'Write the repeats out as separate layers', onclick: () => change(() => d.layers.splice(i, 1, ...ungroup(it)), null, 'list') }),
+        D.iconBtn('trash', 'Remove the group', () => change(() => { d.layers.splice(i, 1); sel = { li: 0, si: 0 }; }, null, 'list'))));
+    it.items.forEach((L, j) => box.append(layerCard(L, it.items, j, f.indexOf(L), true)));
+    if (!it.items.length) box.append(el('div', { class: 'hint', text: 'Empty group.' }));
     host.append(box);
   });
-  host.append(el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', margin: '6px 0' } },
+  grpBtn = el('button', { class: 'btn small', type: 'button', text: 'Repeat ticked', title: 'Put the ticked films (one after another in the list) in a group that repeats N times', disabled: !ticked.size, onclick: () => change(() => {
+    const idx = [...ticked].map(L => d.layers.indexOf(L)).filter(x => x >= 0).sort((a, b) => a - b);
+    if (!idx.length) return;
+    const a = idx[0], b = idx[idx.length - 1];
+    if (d.layers.slice(a, b + 1).some(x => x.group)) { RNBX.toast('A repeat group cannot contain another group: untick across the group, or ungroup it first', 'error'); return; }
+    d.layers.splice(a, b - a + 1, { group: true, repeat: 4, name: 'Period', items: d.layers.slice(a, b + 1) });
+    ticked.clear();
+  }, null, 'list') });
+  host.append(el('div', { class: 'ps-addrow' },
     el('button', { class: 'btn small primary', type: 'button', text: '+ Patterned layer on top', onclick: () => change(() => { d.layers.unshift(film('air', 100, [is2() ? shape2('disk', 'TiO2', { x: d.px / 2, y: d.py / 2, rx: Math.min(d.px, d.py) / 4, ry: Math.min(d.px, d.py) / 4 }) : ridge('TiO2', d.period / 2, d.period / 2)])); sel = { li: 0, si: 0 }; }, null, 'list') }),
-    el('button', { class: 'btn small', type: 'button', text: '+ Film at the bottom', onclick: () => change(() => d.layers.push(film('SiO2', 100)), null, 'list') })));
+    el('button', { class: 'btn small', type: 'button', text: '+ Film at the bottom', onclick: () => change(() => d.layers.push(film('SiO2', 100)), null, 'list') }),
+    grpBtn,
+    el('button', { class: 'btn small', type: 'button', text: '+ Stack from the Layers tab', title: 'Add the films (and repeat groups) designed in the Layers tab under this unit cell, with its substrate', onclick: importFilms })));
   const s = d.substrate;
   const sc = el('input', { type: 'color', value: (s.color || '#cccccc').slice(0, 7), oninput: () => change(() => { s.color = sc.value; }, 'subc') });
   const sn = el('input', { type: 'text', value: s.name || '', oninput: () => change(() => { s.name = sn.value; }, 'subn') });
@@ -17147,8 +17305,8 @@ function drawOrders() {
 const INFERNO = ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'].map(U.hexToRgb);
 const hot = v => { const t = U.clamp(v, 0, 1) * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(t)), u = t - i, a = INFERNO[i], b = INFERNO[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
 /* layers in the order the light meets them (z = 0 at the illuminated surface) */
-const lightLayers = () => (d.side === 'bottom' ? d.layers.slice().reverse() : d.layers);
-const totalNm = () => d.layers.reduce((a, L) => a + (+L.nm || 0), 0);
+const lightLayers = () => (d.side === 'bottom' ? FL().reverse() : FL());
+const totalNm = () => FL().reduce((a, L) => a + (+L.nm || 0), 0);
 const fieldPad = () => U.clamp(0.35 * totalNm(), 40, 250);
 const defaultZ = () => { let z = 0; for (const L of lightLayers()) { if ((L.shapes || []).length) return z + (+L.nm || 0) / 2; z += +L.nm || 0; } return totalNm() / 2; };
 function fieldControls() {
@@ -17309,14 +17467,14 @@ function drawMap() {
 /* ---------- the cross-section, with handles ---------- */
 let geomCache = null;
 function layout(w) {
-  const N = d.view.periods || 3, P = d.period, tot = d.layers.reduce((a, L) => a + (+L.nm || 0), 0) || 1;
+  const N = d.view.periods || 3, P = d.period, tot = FL().reduce((a, L) => a + (+L.nm || 0), 0) || 1;
   const L = 12, R = w - 12, sx = (R - L) / (N * P);
   let vex = +d.view.vex || 0;
   if (!vex) vex = Math.max(1, Math.min(20, Math.ceil(110 / (tot * sx))));
   let sz = sx * vex;
   if (tot * sz > 340) sz = 340 / tot;
   const amb = 30, sub = 40, top = 10 + amb, Hs = tot * sz, h = Math.round(top + Hs + sub + 26);
-  let y = top; const lay = d.layers.map(Lr => { const r = { y0: y, y1: y + (+Lr.nm || 0) * sz }; y = r.y1; return r; });
+  let y = top; const lay = FL().map(Lr => { const r = { y0: y, y1: y + (+Lr.nm || 0) * sz }; y = r.y1; return r; });
   return { N, P, L, R, sx, sz, vex: sz / sx, top, Hs, h, lay, sub, amb };
 }
 function drawCross() {
@@ -17329,11 +17487,11 @@ function drawCross() {
   s += `<rect x="${g.L}" y="${g.top + g.Hs}" width="${g.R - g.L}" height="${g.sub}" fill="${d.substrate.color || '#cfe6f2'}" fill-opacity="${d.substrate.mat === 'air' ? 0.3 : 0.75}" stroke="#00000033" stroke-width="0.5"/>`;
   s += `<text x="${g.L + 4}" y="${g.top - g.amb + 13}" fill="#333">${U.esc(TF().name(d.ambient))}</text><text x="${g.L + 4}" y="${g.top + g.Hs + 15}" fill="#333">${U.esc(d.substrate.name || TF().name(d.substrate.mat))}</text>`;
   const polys = [];
-  d.layers.forEach((Lr, li) => {
+  FL().forEach((Lr, li) => {
     const ly = g.lay[li], hpx = ly.y1 - ly.y0;
     s += `<rect x="${g.L}" y="${ly.y0}" width="${g.R - g.L}" height="${Math.max(0.5, hpx)}" fill="${Lr.mat === 'air' ? ambCol : (Lr.color || UI().colorOf(Lr.mat))}" fill-opacity="${Lr.mat === 'air' ? 0.6 : 1}" stroke="#00000033" stroke-width="0.5"/>`;
     RC().pattern.copies(Lr, li, g.P, g.N).forEach(cp => {
-      const pts = cp.pts.map(q => [X(q[0]), ly.y1 - q[1] * g.sz]), isSel = sel.li === li && sel.si === cp.si;
+      const pts = cp.pts.map(q => [X(q[0]), ly.y1 - q[1] * g.sz]), isSel = sameL(sel.li, li) && sel.si === cp.si;
       polys.push({ li, si: cp.si, pts });
       const fill = cp.sh.mat === 'air' ? ambCol : (cp.sh.color || UI().colorOf(cp.sh.mat));
       s += `<path d="M ${pts.map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' L ')} Z" fill="${fill}" stroke="${isSel ? 'var(--accent)' : '#00000088'}" stroke-width="${isSel ? 1.8 : 0.7}"/>`;
@@ -17363,7 +17521,7 @@ function drawCross() {
   svg.onpointerdown = onDown;
 }
 function handles(g, kc) {
-  const L = d.layers[sel.li]; if (!L) return [];
+  const L = FL()[sel.li]; if (!L) return [];
   const ly = g.lay[sel.li], X = x => g.L + x * g.sx, Y = z => ly.y1 - z * g.sz, h = +L.nm || 0, out = [{ type: 'h', x: g.R - 18, y: ly.y0 }];
   const sh = (L.shapes || [])[sel.si];
   if (!sh || sh.kind !== 'trap') return out;
@@ -17380,12 +17538,12 @@ function onDown(e) {
   if (hd) mode = hd.type;
   else {
     const hit = gc.polys.slice().reverse().find(q => inside([px, py], q.pts));
-    if (hit) { sel = { li: hit.li, si: hit.si }; mode = 'move'; }
-    else { const li = gc.g.lay.findIndex(l => py >= l.y0 && py <= l.y1); if (li >= 0) { sel = { li, si: -1 }; } markSel(); drawCross(); return; }
+    if (hit) { sel = { li: canon(hit.li), si: hit.si }; mode = 'move'; }
+    else { const li = gc.g.lay.findIndex(l => py >= l.y0 && py <= l.y1); if (li >= 0) { sel = { li: canon(li), si: -1 }; } markSel(); drawCross(); return; }
   }
   e.preventDefault();
   markSel();
-  const L = d.layers[sel.li], sh = (L.shapes || [])[sel.si], g = gc.g;
+  const L = FL()[sel.li], sh = (L.shapes || [])[sel.si], g = gc.g;
   const start = { px, py, x: sh ? +sh.x : 0, wb: sh ? +sh.wb : 0, wt: sh ? (sh.wt == null ? +sh.wb : +sh.wt) : 0, shift: sh ? +sh.shift || 0 : 0, h: +L.nm || 0 };
   step('drag' + Date.now());
   const move = ev => {
@@ -17407,8 +17565,8 @@ let topCache = null;
 const wrapX = x => ((x % d.px) + d.px) % d.px, wrapY = y => ((y % d.py) + d.py) % d.py;
 function drawTop() {
   const host = views.cross; if (!host) return;
-  if (!d.layers[sel.li]) sel = { li: Math.max(0, d.layers.findIndex(L => (L.shapes || []).length)), si: 0 };
-  const L = d.layers[sel.li] || d.layers[0]; if (!L) { host.innerHTML = ''; return; }
+  if (!FL()[sel.li]) sel = { li: Math.max(0, FL().findIndex(L => (L.shapes || []).length)), si: 0 };
+  const L = FL()[sel.li] || FL()[0]; if (!L) { host.innerHTML = ''; return; }
   const w = Math.max(300, host.clientWidth || 460), x0 = -d.px / 2, y0 = -d.py / 2, ex = 2 * d.px, ey = 2 * d.py;
   const sc = Math.min((w - 24) / ex, 330 / ey), h = Math.round(ey * sc) + 34, ox = (w - ex * sc) / 2, oy = 8;
   const X = x => ox + (x - x0) * sc, Y = y => oy + (y - y0) * sc;
@@ -17486,7 +17644,7 @@ function drawSide() {
   s += `<rect x="${g.L}" y="${g.top - g.amb}" width="${g.R - g.L}" height="${g.amb}" fill="${ambCol}" fill-opacity="0.6"/>`;
   s += `<rect x="${g.L}" y="${g.top + g.Hs}" width="${g.R - g.L}" height="${g.sub}" fill="${d.substrate.color || '#cfe6f2'}" fill-opacity="0.75" stroke="#00000033" stroke-width="0.5"/>`;
   s += `<text x="${g.L + 4}" y="${g.top - g.amb + 13}" fill="#333">${U.esc(TF().name(d.ambient))}</text><text x="${g.L + 4}" y="${g.top + g.Hs + 15}" fill="#333">${U.esc(d.substrate.name || TF().name(d.substrate.mat))}</text>`;
-  d.layers.forEach((Lr, li) => {
+  FL().forEach((Lr, li) => {
     const ly = g.lay[li], n = Math.round(g.R - g.L);
     const colAt = x => { const xm = wrapX(x); let c = Lr.mat === 'air' ? ambCol : (Lr.color || UI().colorOf(Lr.mat)); (Lr.shapes || []).forEach(sh => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (RC().pattern2.inside(sh, xm + a * d.px, y + b * d.py)) c = sh.mat === 'air' ? ambCol : (sh.color || UI().colorOf(sh.mat)); }); return c; };
     let start = 0, cur = colAt(0);
@@ -17494,14 +17652,14 @@ function drawSide() {
       const c = i < n ? colAt(i / g.sx) : null;
       if (c !== cur) { s += `<rect x="${g.L + start}" y="${ly.y0}" width="${i - start}" height="${Math.max(0.5, ly.y1 - ly.y0)}" fill="${cur}" stroke="${cur}" stroke-width="0.3"/>`; start = i; cur = c; }
     }
-    s += `<rect x="${g.L}" y="${ly.y0}" width="${g.R - g.L}" height="${Math.max(0.5, ly.y1 - ly.y0)}" fill="none" stroke="${sel.li === li ? 'var(--accent)' : '#00000044'}" stroke-width="${sel.li === li ? 1.4 : 0.5}"/>`;
+    s += `<rect x="${g.L}" y="${ly.y0}" width="${g.R - g.L}" height="${Math.max(0.5, ly.y1 - ly.y0)}" fill="none" stroke="${sameL(sel.li, li) ? 'var(--accent)' : '#00000044'}" stroke-width="${sameL(sel.li, li) ? 1.4 : 0.5}"/>`;
     if (ly.y1 - ly.y0 >= 11) s += `<text x="${g.R - 4}" y="${(ly.y0 + ly.y1) / 2 + 4}" text-anchor="end" fill="#111" font-weight="700" stroke="#ffffff" stroke-width="3" paint-order="stroke">${U.esc((Lr.name || '') + '  ' + UI().f1(Lr.nm, 0) + ' nm')}</text>`;
   });
   for (let k = 0; k <= g.N; k++) s += `<line x1="${X(k * d.px)}" y1="${g.top - g.amb}" x2="${X(k * d.px)}" y2="${g.top + g.Hs + g.sub}" stroke="#00000055" stroke-dasharray="3 3" stroke-width="0.8"/>`;
   s += `<text x="${g.R}" y="${g.h - 6}" text-anchor="end" fill="#666">cut at y = ${UI().f1(y, 0)} nm · ${g.vex > 1.05 || g.vex < 0.95 ? 'heights ×' + UI().f1(g.vex, g.vex < 2 ? 1 : 0) : 'true proportions'} · click a layer to edit it in the top view</text>`;
   host.innerHTML = s + '</svg>';
   const svg = host.querySelector('svg');
-  svg.onclick = e => { const b = svg.getBoundingClientRect(), py = (e.clientY - b.top) * w / b.width, li = g.lay.findIndex(l => py >= l.y0 && py <= l.y1); if (li >= 0 && li !== sel.li) { sel = { li, si: 0 }; markSel(); drawTop(); drawSide(); } };
+  svg.onclick = e => { const b = svg.getBoundingClientRect(), py = (e.clientY - b.top) * w / b.width, li = g.lay.findIndex(l => py >= l.y0 && py <= l.y1); if (li >= 0 && !sameL(li, sel.li)) { sel = { li: canon(li), si: 0 }; markSel(); drawTop(); drawSide(); } };
 }
 
 /* ---------- files ---------- */
