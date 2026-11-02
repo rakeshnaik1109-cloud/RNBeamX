@@ -308,6 +308,106 @@ RC.eps = (m, nm) => { const q = RNBX.thinfilm.nk(m, nm); return [q.n * q.n - q.k
 /* geometry → problem at one wavelength */
 RC.problemAt = (geo, nm) => ({ period: geo.period, slices: geo.slices, orders: geo.orders, inc: 0, sub: 1, eps: geo.mats.map(m => RC.eps(m, nm)) });
 
+/* ---------- unit cells (Layer Studio ▸ Pattern) ----------
+   pat: { period (nm), ambient, ambientN, side, substrate: { mat, n, k },
+          layers (top → bottom): [{ mat, n, k, nm, shapes: [shape] }] }
+   A layer is a film of its own material (the background) with shapes in it:
+     trap  { x, wb, wt, shift } — rectangle, trapezoid or slanted ridge
+           (bottom width wb, top width wt, top centre moved by shift)
+     sine  { x }                — sinusoidal surface, crest at x, depth = layer
+     saw   { x, dir }           — blazed sawtooth, one tooth per period
+   Each shape has its own material. Later shapes cover earlier ones. */
+const PT = RC.pattern = {};
+/* where a shape is solid at height u (0 = bottom of its layer, 1 = top): [l, r] in nm, or null */
+PT.span = (sh, u, P) => {
+  if (sh.kind === 'sine') { const c = U.clamp(2 * u - 1, -1, 1), hw = P * Math.acos(c) / (2 * Math.PI); return hw > 1e-9 ? [sh.x - hw, sh.x + hw] : null; }
+  if (sh.kind === 'saw') return sh.dir === -1 ? (u < 1 ? [sh.x, sh.x + (1 - u) * P] : null) : (u < 1 ? [sh.x + u * P, sh.x + P] : null);
+  const w = (+sh.wb || 0) + ((sh.wt == null ? +sh.wb : +sh.wt) - (+sh.wb || 0)) * u, c = +sh.x + (+sh.shift || 0) * u;
+  return w > 1e-9 ? [c - w / 2, c + w / 2] : null;
+};
+PT.isFlat = sh => sh.kind !== 'sine' && sh.kind !== 'saw' && (sh.wt == null || Math.abs(+sh.wt - +sh.wb) < 1e-9) && !(+sh.shift);
+/* runs [{ a, b, m }] (fractions of the period) of one slice */
+PT.runs = (bg, items, P) => {
+  // items: [{ l, r, m }] in nm, painted in order over the background bg
+  const segs = [];
+  items.forEach(it => {
+    let w = it.r - it.l;
+    if (!(w > 1e-9)) return;
+    if (w >= P - 1e-9) { segs.push({ l: 0, r: P, m: it.m }); return; }
+    const l = ((it.l % P) + P) % P, r = l + w;
+    if (r <= P + 1e-9) segs.push({ l, r: Math.min(P, r), m: it.m }); else { segs.push({ l, r: P, m: it.m }); segs.push({ l: 0, r: r - P, m: it.m }); }
+  });
+  const cuts = [...new Set([0, P].concat(...segs.map(q => [q.l, q.r])).map(v => U.round(v, 9)))].sort((a, b) => a - b);
+  const runs = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    if (b - a < 1e-9) continue;
+    const mid = (a + b) / 2;
+    let m = bg; segs.forEach(q => { if (mid > q.l && mid < q.r) m = q.m; });
+    const last = runs[runs.length - 1];
+    if (last && last.m === m) last.b = b / P; else runs.push({ a: a / P, b: b / P, m });
+  }
+  return runs;
+};
+/* outline of one copy of a shape (nm; x along the period, z up from the bottom of its layer) */
+PT.poly = (sh, h, P) => {
+  if (sh.kind === 'sine') { const out = []; for (let i = 0; i <= 48; i++) { const x = sh.x - P / 2 + P * i / 48; out.push([x, h * (0.5 + 0.5 * Math.cos(2 * Math.PI * (x - sh.x) / P))]); } return out; }
+  if (sh.kind === 'saw') return sh.dir === -1 ? [[sh.x, 0], [sh.x, h], [sh.x + P, 0]] : [[sh.x, 0], [sh.x + P, h], [sh.x + P, 0]];
+  const wb = +sh.wb || 0, wt = sh.wt == null ? wb : +sh.wt, s = +sh.shift || 0, x = +sh.x;
+  return [[x - wb / 2, 0], [x + wb / 2, 0], [x + s + wt / 2, h], [x + s - wt / 2, h]];
+};
+/* keep the part of a polygon with a ≤ x ≤ b */
+PT.clipX = (poly, a, b) => {
+  const cut = (pts, inside, at) => {
+    const out = [];
+    pts.forEach((p, i) => {
+      const q = pts[(i + 1) % pts.length], pi = inside(p), qi = inside(q);
+      if (pi) out.push(p);
+      if (pi !== qi) { const t = (at - p[0]) / (q[0] - p[0]); out.push([at, p[1] + (q[1] - p[1]) * t]); }
+    });
+    return out;
+  };
+  let r = cut(poly, p => p[0] >= a, a);
+  if (r.length) r = cut(r, p => p[0] <= b, b);
+  return r.length >= 3 ? r : null;
+};
+/* every copy of every shape over n periods: [{ li, si, k, pts }] with pts in nm, z from the layer bottom */
+PT.copies = (L, li, P, n) => {
+  const out = [];
+  (L.shapes || []).forEach((sh, si) => {
+    const base = PT.poly(sh, +L.nm || 0, P);
+    for (let k = -2; k <= n + 1; k++) { const c = PT.clipX(base.map(q => [q[0] + k * P, q[1]]), 0, n * P); if (c) out.push({ li, si, k, pts: c, sh }); }
+  });
+  return out;
+};
+const mkey = m => JSON.stringify([m.mat || 'air', m.mat === 'custom' ? +m.n : 0, m.mat === 'custom' ? +m.k || 0 : 0]);
+RC.fromPattern = (pat, opt = {}) => {
+  const P = Math.max(1, +pat.period || 500), S = U.clamp(Math.round(opt.slices || pat.slices || 12), 2, 60);
+  const amb = { mat: pat.ambient || 'air', n: pat.ambientN, k: 0 }, sub = pat.substrate || { mat: 'air' };
+  const top = pat.side === 'bottom' ? sub : amb, bot = pat.side === 'bottom' ? amb : sub;
+  const mats = [top, bot], idx = new Map([[mkey(top), 0]]);
+  if (!idx.has(mkey(bot))) idx.set(mkey(bot), 1);
+  const mi = m => { const k = mkey(m); if (!idx.has(k)) idx.set(k, mats.push({ mat: m.mat, n: m.n, k: m.k }) - 1); return idx.get(k); };
+  const slices = [];
+  (pat.layers || []).forEach(L => {
+    const h = +L.nm || 0;
+    if (!(h > 0)) return;
+    const bg = mi(L), shapes = L.shapes || [], flat = shapes.every(PT.isFlat), n = flat ? 1 : S;
+    for (let j = 0; j < n; j++) {
+      const u = flat ? 0.5 : 1 - (j + 0.5) / n;   // top slice first
+      const runs = PT.runs(bg, shapes.map(sh => { const sp = PT.span(sh, u, P); return sp ? { l: sp[0], r: sp[1], m: mi(sh) } : null; }).filter(Boolean), P);
+      const prev = slices[slices.length - 1], d = h / n;
+      if (prev && JSON.stringify(prev.runs) === JSON.stringify(runs)) prev.d += d; else slices.push({ d, runs });
+    }
+  });
+  const geo = { period: P, orders: U.clamp(Math.round(opt.orders || pat.orders || 15), 1, 60), mats, slices };
+  if (pat.side === 'bottom') geo.slices = geo.slices.slice().reverse();
+  return geo;
+};
+/* angle of diffraction order m (degrees) into a medium of index n, or null if evanescent;
+   same sign convention as the solver: kx = n_inc sin θ − m λ / Λ */
+RC.orderAngle = (nInc, theta, m, lam, P, n) => { const s = (nInc * Math.sin(theta * Math.PI / 180) - m * lam / P) / n; return Math.abs(s) <= 1 ? Math.asin(s) * 180 / Math.PI : null; };
+
 /* scan: synchronous (tests, workers unavailable) */
 RC.scanSync = (geo, calc) => {
   const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, calc || {});
@@ -328,10 +428,7 @@ RC.scanSync = (geo, calc) => {
 /* ---------- background scans in a Web Worker ---------- */
 let worker = null, workerFailed = false, jobSeq = 0;
 const jobs = new Map();
-const getWorker = () => {
-  if (worker || workerFailed) return worker;
-  try {
-    const src = `const core = (${rcwaCore.toString()})();
+const workerSrc = () => `const core = (${rcwaCore.toString()})();
 onmessage = ev => {
   const { id, items, period, slices, orders, pol } = ev.data, out = [];
   for (let i = 0; i < items.length; i++) {
@@ -343,7 +440,10 @@ onmessage = ev => {
     if (i % 4 === 3 || i === items.length - 1) postMessage({ id, done: i + 1, total: items.length, part: out.splice(0) });
   }
 };`;
-    worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+const getWorker = () => {
+  if (worker || workerFailed) return worker;
+  try {
+    worker = new Worker(URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' })));
     worker.onmessage = ev => {
       const j = jobs.get(ev.data.id); if (!j) return;
       j.vals.push(...ev.data.part); j.progress = ev.data.done / ev.data.total;
@@ -396,5 +496,41 @@ RC.cached = (geo, calc, onUpdate) => {
     setTimeout(step, 0);
   }
   return { pending: true, progress: 0, calc: c };
+};
+
+/* any set of (λ, θ) points in the background: RC.batch(geo, [{ lam, th }], pol, onProgress)
+   → { promise (resolves to [[R, T]…]), cancel } */
+/* (each batch has a worker of its own, so a superseded calculation can be stopped at once) */
+let workerUrl = null;
+RC.batch = (geo, pts, pol, onProgress) => {
+  const items = pts.map(q => ({ lam: q.lam, th: q.th, eps: geo.mats.map(m => RC.eps(m, q.lam)) }));
+  let cancelled = false, w = null;
+  const promise = new Promise(resolve => {
+    if (!workerFailed) { try { workerUrl = workerUrl || URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' })); w = new Worker(workerUrl); } catch (e) { w = null; } }
+    if (w) {
+      const id = ++jobSeq, vals = [];
+      w.onmessage = ev => {
+        if (cancelled) return;
+        vals.push(...ev.data.part);
+        if (ev.data.done === ev.data.total) { w.terminate(); w = null; resolve(vals); } else if (onProgress) onProgress(ev.data.done / ev.data.total);
+      };
+      w.postMessage({ id, items, period: geo.period, slices: geo.slices, orders: geo.orders, pol });
+    } else {
+      const vals = []; let i = 0;
+      const step = () => {
+        if (cancelled) return;
+        const t0 = Date.now();
+        while (i < items.length && Date.now() - t0 < 30) {
+          const it = items[i++], pb = { period: geo.period, slices: geo.slices, orders: geo.orders, inc: 0, sub: 1, eps: it.eps };
+          let r; if (pol === 'avg') { const a = core.solve(pb, it.lam, it.th, 's'), b = core.solve(pb, it.lam, it.th, 'p'); r = { R: (a.R + b.R) / 2, T: (a.T + b.T) / 2 }; } else r = core.solve(pb, it.lam, it.th, pol);
+          vals.push([r.R, r.T]);
+        }
+        if (onProgress) onProgress(i / items.length);
+        if (i < items.length) setTimeout(step, 0); else resolve(vals);
+      };
+      setTimeout(step, 0);
+    }
+  });
+  return { promise, cancel: () => { cancelled = true; if (w) { w.terminate(); w = null; } } };
 };
 })();

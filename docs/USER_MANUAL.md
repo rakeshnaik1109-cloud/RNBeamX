@@ -469,6 +469,42 @@ The calculation is the same exact transfer-matrix method as *Optical response*
 (planar, isotropic films; measured n, k from refractiveindex.info). Gratings and
 patterned layers are not part of the Studio yet.
 
+### Pattern: periodic structures (one unit cell)
+
+The **Pattern** tab of Layer Studio designs gratings and metasurfaces that are
+periodic in one direction, and calculates them rigorously (RCWA, the Fourier
+modal method with Li's rule for TM).
+
+- **Unit cell** (left). Set the period Λ, the medium above, the substrate and the
+  layers from the top down. Each layer is a film of its own material (air for
+  free-standing lines) with shapes in it: a **ridge** (rectangle, trapezoid with a
+  different top width, or slanted by moving its top sideways), a **sinusoid** or a
+  **sawtooth** (blazed, either direction). A shape has its own material; a shape
+  of air in a solid film is a groove. Shapes that cross the cell edge wrap round.
+  *Orders ±N* sets the number of diffraction orders kept; *Profile slices* how
+  finely sloped and curved profiles are cut into flat slices.
+- **Cross-section** (middle). Several periods, to scale or with heights
+  stretched. Drag a shape to move it; drag its round handles to change the
+  bottom and top widths, the square one to slant it, the triangle to change the
+  height of its layer.
+- **Diffraction orders**: the efficiency of every reflected and transmitted order
+  at one wavelength, angle and polarisation, with its angle from the grating
+  equation n sin θₘ = n₁ sin θ + m λ / Λ.
+- **Optical response**: R, T and A against wavelength or angle, calculated in the
+  background. **Check convergence** compares with 1.5× the orders (metal edges
+  need many). Click the curve to see the orders there.
+- **Wavelength × angle map** on request (*Calculate map*): each point is a full
+  grating calculation, so it takes from a few seconds to about a minute.
+- **Start from**: lamellar grating, guided-mode resonance filter, Al wire-grid
+  polariser, gap-plasmon absorber (Au strips / 10 nm SiO₂ / Au, R ≈ 1 % at
+  1270 nm), sinusoidal Au grating, blazed Al grating (1200 lines/mm), slanted
+  grating, trapezoid Si ridges, two ridges per period, two-level steps.
+- **Insert into figure** adds a *Patterned structure* (a few periods in the
+  oblique device-sketch view), optionally with a linked RCWA panel and the map.
+  Select it and press **Open in Layer Studio** to edit it again (**Update the
+  structure**). **Save / Open…** keep `.rnbxpattern.json` files; **CSV** writes the
+  spectrum and the orders.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,

@@ -140,8 +140,12 @@ const change = (fn, key, structural) => { step(key); fn(); save(); structural ? 
 
 /* ---------- open / close ---------- */
 ST.isOpen = () => !!root;
-ST.open = (obj) => {
+ST.mode = 'layers';
+const PS = () => RNBX.patternStudio;
+ST.open = (obj, mode) => {
   if (root) ST.close();
+  if (obj && obj.type === 'ucell') { ST.mode = 'pattern'; PS().load(obj); obj = null; } else if (obj && obj.type === 'layers') ST.mode = 'layers'; else if (mode) ST.mode = mode;
+  if (ST.mode === 'pattern' && PS() && !PS().loaded()) PS().load(null);
   target = obj && obj.type === 'layers' ? obj : null;
   d = target ? ST.fromProps(target.props) : (d || load() || PRESETS.find(p => p.id === 'mim').make());
   undo = []; redo = []; sel = new Set();
@@ -151,14 +155,15 @@ ST.open = (obj) => {
   render();
   U.track('studio-open');
 };
-ST.close = () => { if (!root) return; save(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
+ST.close = () => { if (!root) return; save(); if (PS()) PS().closed(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
 ST.design = () => d;
 ST.setDesign = v => { step(); d = v; save(); if (root) render(); };
 const onKey = e => {
   if (!root) return;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.stopPropagation(); (e.shiftKey ? doRedo : doUndo)(); return; }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); e.stopPropagation(); doRedo(); return; }
+  const un = ST.mode === 'pattern' ? PS().undo : doUndo, re = ST.mode === 'pattern' ? PS().redo : doRedo;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.stopPropagation(); (e.shiftKey ? re : un)(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); e.stopPropagation(); re(); return; }
   if (e.key === 'Escape' && !document.querySelector('.modal-back')) { e.stopPropagation(); ST.close(); return; }
   // the figure's own shortcuts stay off while the studio is open
   if (!document.querySelector('.modal-back')) e.stopPropagation();
@@ -168,14 +173,20 @@ const doRedo = () => { if (!redo.length) return; undo.push(JSON.stringify(d)); d
 
 /* ---------- layout ---------- */
 let views = {};
+/* Layers | Pattern switch in the header */
+ST.tabs = () => el('div', { class: 'seg st-tabs', role: 'tablist' }, [['layers', 'Layers'], ['pattern', 'Pattern']].map(([m, t]) =>
+  el('button', { type: 'button', class: ST.mode === m ? 'active' : '', 'aria-selected': String(ST.mode === m), title: m === 'layers' ? 'Flat films and multilayers' : 'Periodic structures: gratings, metasurfaces (one unit cell)', text: t,
+    onclick: () => { if (ST.mode === m) return; ST.mode = m; if (m === 'pattern' && !PS().loaded()) PS().load(null); render(); } })));
+ST.rerender = () => render();
 function render() {
   if (!root) return;
   root.innerHTML = '';
+  if (ST.mode === 'pattern' && PS()) { root.setAttribute('aria-label', 'Layer Studio · Pattern'); PS().render(root); return; }
   const presetBtn = el('button', { class: 'btn small', type: 'button', text: 'Start from ▾', onclick: ev => { const r = ev.currentTarget.getBoundingClientRect(); D.menu([{ title: 'Designs' }].concat(PRESETS.map(p => ({ label: p.name, action: () => { step(); d = p.make(); sel = new Set(); save(); render(); } }))), r.left, r.bottom + 4, ev.currentTarget); } });
   const name = el('input', { type: 'text', class: 'st-name', value: d.name || '', title: 'Name of the design', oninput: () => change(() => { d.name = name.value; }, 'name') });
   const head = el('div', { class: 'st-head' },
     el('div', { class: 'st-title' }, el('b', { text: 'Layer Studio' }), el('span', { class: 'st-sub', text: target ? 'editing a stack in the figure' : 'thin films and multilayers' })),
-    name, presetBtn,
+    ST.tabs(), name, presetBtn,
     D.iconBtn('undo', 'Undo (Ctrl+Z)', doUndo), D.iconBtn('redo', 'Redo (Ctrl+Y)', doRedo),
     el('button', { class: 'btn small ghost', type: 'button', text: 'Open…', title: 'Open a saved design (.rnbxlayers.json)', onclick: openFile }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'Save', title: 'Save this design as a file', onclick: saveFile }),
@@ -515,5 +526,6 @@ function insertDialog() {
   const m = D.modal({ title: target ? 'Update the stack in the figure' : 'Insert into the figure', sub: d.name || '', body, foot });
 }
 
-ST.init = () => { const b = D.$('#btnStudio'); if (b) b.onclick = () => ST.open(S.selection.map(id => RNBX.getObj(id)).find(o => o && o.type === 'layers')); };
+ST.ui = { chart, ticks, niceStep, fmt, f1, cmap, colorOf, shortName, quiet, QCOL, QNAME, mapChart: (res, w, h, cross) => mapChart(res, w, h, cross) };
+ST.init = () => { const b = D.$('#btnStudio'); if (b) b.onclick = () => ST.open(S.selection.map(id => RNBX.getObj(id)).find(o => o && (o.type === 'layers' || o.type === 'ucell'))); };
 })();

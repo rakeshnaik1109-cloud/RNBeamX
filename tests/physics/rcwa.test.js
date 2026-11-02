@@ -34,4 +34,28 @@ module.exports = async ({ H }) => {
   H.check('the plasmon absorbs strongly in TM', best.A > 0.5, best.A.toFixed(3));
   spp.eps = [eps(1), eps(1.5), eps(a.n, a.k)];
   H.check('and not in TE', solve(spp, best.lam, 0, 's').A < 0.05);
+
+  // unit cells from Layer Studio ▸ Pattern
+  const RC = RNBX.rcwa, TFm = RNBX.thinfilm;
+  const at = (pat, lam, th, pol, o) => RC.core.solve(RC.problemAt(RC.fromPattern(pat, o), lam), lam, th, pol);
+  const full = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 120, shapes: [{ kind: 'trap', x: 200, wb: 400, wt: 400, mat: 'TiO2' }] }] };
+  H.near('a shape filling the whole period is a flat film (RCWA = transfer matrix)', at(full, 600, 20, 'p').R, TFm.solve({ inc: { mat: 'air' }, layers: [{ m: { mat: 'TiO2' }, d: 120 }], sub: { mat: 'glass:N-BK7' } }, 600, 20, 'p').R, 1e-9);
+  const wrap = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 150, shapes: [{ kind: 'trap', x: 0, wb: 200, mat: 'TiO2' }] }] }, cen = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 150, shapes: [{ kind: 'trap', x: 200, wb: 200, mat: 'TiO2' }] }] };
+  H.near('a ridge across the cell edge wraps round (same R as a centred ridge)', at(wrap, 650, 0, 's').R, at(cen, 650, 0, 's').R, 1e-9);
+  const gmr = { period: 380, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 60, shapes: [{ kind: 'trap', x: 190, wb: 190, mat: 'TiO2' }] }, { mat: 'TiO2', nm: 100, shapes: [] }] };
+  const g1 = at(gmr, 640, 10, 'p');
+  H.near('lossless unit cell conserves energy (R + T = 1)', g1.R + g1.T, 1, 1e-6);
+  let peak = 0; for (let l = 700; l <= 725; l += 0.5) peak = Math.max(peak, at(gmr, l, 0, 's').R);
+  H.check('guided-mode resonance filter reflects almost all light at its resonance', peak > 0.98, peak.toFixed(4));
+  const wg = { period: 140, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, orders: 20, layers: [{ mat: 'air', nm: 150, shapes: [{ kind: 'trap', x: 70, wb: 70, mat: 'Al' }] }] };
+  H.check('wire-grid polariser: TM passes, TE is blocked', at(wg, 600, 0, 'p').T > 0.7 && at(wg, 600, 0, 's').T < 0.01, { TM: at(wg, 600, 0, 'p').T, TE: at(wg, 600, 0, 's').T });
+  const sl = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 300, shapes: [{ kind: 'trap', x: 150, wb: 200, wt: 200, shift: 150, mat: 'TiO2' }] }] };
+  const so = at(sl, 550, 0, "s"), top1 = so.Tn.reduce((a, b) => (b.eff > a.eff ? b : a));
+  H.check('slanted grating sends most light into one first order', Math.abs(top1.m) === 1 && top1.eff > 0.7, so.Tn);
+  const gap = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, orders: 20, layers: [{ mat: 'air', nm: 30, shapes: [{ kind: 'trap', x: 200, wb: 150, mat: 'Au' }] }, { mat: 'SiO2', nm: 10, shapes: [] }, { mat: 'Au', nm: 100, shapes: [] }] };
+  let gmin = 1, glam = 0; for (let l = 1240; l <= 1300; l += 2) { const r = at(gap, l, 0, "p").R; if (r < gmin) { gmin = r; glam = l; } }
+  H.check('gap-plasmon absorber (Au strips / 10 nm SiO₂ / Au): near-perfect TM absorption', gmin < 0.03 && at(gap, glam, 0, 's').R > 0.9, { R: gmin, lam: glam });
+  const sine = { period: 600, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, slices: 16, layers: [{ mat: 'air', nm: 60, shapes: [{ kind: 'sine', x: 300, mat: 'Au' }] }, { mat: 'Au', nm: 150, shapes: [] }] };
+  H.check('sinusoidal and sawtooth profiles are sliced into steps', RC.fromPattern(sine).slices.length >= 10 && RC.fromPattern({ period: 833, layers: [{ mat: 'air', nm: 300, shapes: [{ kind: 'saw', x: 0, dir: 1, mat: 'Al' }] }], substrate: { mat: 'Al' } }, { slices: 12 }).slices.length === 12);
+  H.near('grating equation: first order at 30° for λ = Λ/2', RC.orderAngle(1, 0, -1, 500, 1000, 1), 30, 1e-9);
 };

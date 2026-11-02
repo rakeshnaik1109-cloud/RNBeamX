@@ -238,3 +238,12 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-chart { display: block; max-width: 100%; height: auto; color: var(--text); background: var(--panel); border-radius: 8px; border: 1px solid var(--line); }
 .st-cross, .st-spec, .st-map { margin-bottom: 8px; }
 @media (max-width: 1100px) { .st-body { grid-template-columns: 1fr; overflow: auto; } .st-col { overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); } }
+.st-tabs { margin-right: 4px; }
+.st-player { background: var(--panel-2); border-style: solid; border-color: var(--line-2); }
+.st-shape { border: 1px solid var(--line); border-radius: 8px; padding: 5px; margin: 5px 0 0 10px; background: var(--panel); cursor: pointer; }
+.st-shape.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.studio .st-shape .st-row2 input[type=number] { width: 62px; flex: 0 0 62px; }
+.st-shape .st-row { grid-template-columns: 26px minmax(80px, 1fr) minmax(90px, 1.2fr); }
+.st-tab { border-collapse: collapse; margin: 6px 0; font-size: 11.5px; }
+.st-tab th, .st-tab td { padding: 1px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.ps-cross { cursor: default; user-select: none; }
