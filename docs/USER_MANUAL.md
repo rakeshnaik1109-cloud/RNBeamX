@@ -532,6 +532,44 @@ drawn as rows of pillars, holes or rings and keep their linked RCWA panel.
   structure**). **Save / Open…** keep `.rnbxpattern.json` files; **CSV** writes the
   spectrum and the orders.
 
+## 5b5. Part Builder: design your own component
+
+**Studio ▸ Part** draws a component of your own and makes it work with the light
+like the built-in parts. Select a *Built part* in the figure and press **Open in
+the Part Builder** to change it.
+
+- **Body.** Combine *rectangles* (with rounded corners), *ellipses*, *polygons*
+  (click points in the drawing; click the first point, double-click or press Enter
+  to close) and *lens profiles* (diameter, centre thickness, radii R₁ and R₂: +
+  convex, − concave, 0 flat). Each shape is **added** to the body or **cut away**
+  from it, in order, so housings with bores, windows with holes or lenses with
+  flats are easy. Shapes can be moved and turned.
+- **Thin surfaces**: flat, spherical (radius and aperture) and parabolic (focal
+  length, aperture and off-axis offset) surfaces acting as a mirror, a beam
+  splitter (reflectance R), an absorber, or drawing only.
+- **What the body does to light**: glass of a real material (Sellmeier data) or a
+  custom index, opaque (absorbs), mirror (every face reflects) or nothing. The
+  **Faces** list names every face (e.g. *Lens profile 1 · front surface*); give a
+  face its own job: mirror coating, blackened, beam-splitter coating. Click a face
+  in the drawing to find it in the list.
+- **Light sources**: beams that leave the part (position, direction, wavelength,
+  power, diameter), for lasers or LEDs of your own.
+- **Test beam**: parallel rays or a fan from a point, at any angle, height and
+  wavelength, traced through the part as you edit, with where the rays meet.
+- **3D**: extruded (a block of the chosen height) or turned about the axis (lenses,
+  balls, cones); finish (glass, metal, matte, mirror), colour and opacity.
+- **Start from**: plano-convex, biconvex and plano-concave lenses, ball lens,
+  axicon, right-angle prism, cube beam splitter, light pipe, off-axis parabola,
+  concave mirror, roof mirror, housing with a bore, laser head.
+- **Insert into figure**, **To My components** (the parts list, this browser) and
+  **Save** / **Open…** (`.rnbxpart.json`, to share).
+
+Curved faces are traced as smooth surfaces: the outline is made of short facets,
+but the normal at a hit follows the true curve, so a built lens focuses like a
+real one (a plano-convex lens gives the textbook back focal length f − t/n, a
+spherical mirror focuses at R/2, an off-axis parabola sends every ray through its
+focus).
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,

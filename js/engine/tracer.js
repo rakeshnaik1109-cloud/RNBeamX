@@ -61,7 +61,7 @@ function buildScene(doc) {
         }
       } else {
         list.forEach((s, k) => {
-          if (s.poly) {
+          if (s.poly && !s.rings) {
             const pts = s.poly.map(p => U.toWorld(obj, p));
             const key = obj.id + ':' + k;
             const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
@@ -73,10 +73,31 @@ function buildScene(doc) {
               if (V.dot(n, V.sub(mid, [cx, cy])) < 0) n = V.mul(n, -1);   // outward
               surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz, film: s.film && s.film.edge === i ? s.film.stack : null });
             }
+          } else if (s.rings) {
+            // a glass body of any shape (Part Builder): outer outlines and holes share one
+            // "inside"; normals point out of the glass, whatever the outline's shape;
+            // faces can carry their own behaviour (a mirror coating, a blackened face)
+            const key = obj.id + ':' + k, rings = s.rings.map(r => r.map(p => U.toWorld(obj, p)));
+            const inGlass = q => { let c = false; rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > q[1]) !== (r[j][1] > q[1]) && q[0] < (r[j][0] - r[i][0]) * (q[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) c = !c; }); return c; };
+            rings.forEach((pts, ri) => {
+              for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], b = pts[(i + 1) % pts.length], L = V.dist(a, b);
+                if (L < 1e-9) continue;
+                const t = V.norm(V.sub(b, a)), mid = V.mul(V.add(a, b), 0.5);
+                let n = V.perp(t);
+                if (inGlass(V.add(mid, V.mul(n, Math.min(1e-3, L * 0.05))))) n = V.mul(n, -1);
+                const ek = s.edgeKinds && s.edgeKinds[ri] && s.edgeKinds[ri][i], nn = s.normals && s.normals[ri] && s.normals[ri][i];
+                const sm = nn && nn[0] && nn[1] ? { nA: U.dirToWorld(obj, nn[0]), nB: U.dirToWorld(obj, nn[1]) } : {};
+                if (ek) surfaces.push(Object.assign({}, ek, sm, { obj, a, b, t, n, c: mid, scale, z, hz, within: key }));
+                else surfaces.push(Object.assign({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz }, sm));
+              }
+            });
           } else {
             const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
             const t = V.norm(V.sub(b, a));
             const sf = Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz });
+            if (s.nA && s.nB) { sf.nA = U.dirToWorld(obj, s.nA); sf.nB = U.dirToWorld(obj, s.nB); }
+            if (s.withinIdx != null) sf.within = obj.id + ':' + s.withinIdx;   // a surface inside a glass body of the same part
             // spherical surface of a real lens: exact circle, limited to the arc between a and b
             if (s.arc) Object.assign(sf, { arcC: U.toWorld(obj, s.arc.c), arcR: s.arc.R * (obj.scale || 1), arcM: U.toWorld(obj, s.arc.m) });
             if (s.kind === 'iface') sf.ax = V.norm(U.dirToWorld(obj, [1, 0]));
@@ -209,6 +230,13 @@ RNBX.trace = function trace(doc) {
   const interact = (ray, s, hit, base, out, ctx) => {
     const vert = ctx.vertical;
     const d = ray.d;
+    if (s.nA && s.nB && !vert) {
+      // a facet of a smooth curved surface: normal interpolated between its ends
+      const u = U.clamp(V.dot(V.sub(hit, s.a), s.t) / (V.dist(s.a, s.b) || 1), 0, 1);
+      let nn = V.norm(V.add(V.mul(s.nA, 1 - u), V.mul(s.nB, u)));
+      if (V.dot(nn, s.n) < 0) nn = V.mul(nn, -1);
+      s = Object.assign({}, s, { n: nn });
+    }
     const refl = () => vert ? { vz: -ray.vz } : { d: V.reflect(d, s.n) };
     const cosi = vert ? 1 : Math.abs(V.dot(d, s.n));
     const w = base.w;
@@ -561,7 +589,7 @@ RNBX.trace = function trace(doc) {
     for (let i = 0; i < surfaces.length; i++) {
       if (i === ray.last) continue;
       const s = surfaces[i];
-      if (ray.inside) { if (s.poly !== ray.inside) continue; }
+      if (ray.inside) { if (s.poly !== ray.inside && s.within !== ray.inside) continue; }   // inside glass: its faces, and surfaces inside it
       if (ray.ignore && ray.ignore === s.obj.id) continue;
       if (ray.vlast && ray.vlast === s.obj.id) continue;
       if (Math.abs((ray.z || 0) - s.z) > s.hz) continue;          // passes above / below

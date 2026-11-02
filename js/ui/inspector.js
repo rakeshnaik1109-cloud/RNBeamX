@@ -466,6 +466,8 @@ function objectPanel(obj) {
   root.push(el('div', { class: 'insp-title' },
     el('div', { class: 'thumb', html: D.thumb(obj.type, obj.props, mode) }),
     el('div', {}, el('b', { text: obj.kindName || def.name }), el('small', { text: def.category + (obj.locked ? ' · locked' : '') }))));
+  if (obj.type === 'built' && RNBX.studio) root.push(el('div', { class: 'row', style: { margin: '6px 0 10px' } },
+    el('button', { class: 'btn small primary', type: 'button', text: 'Open in the Part Builder', title: 'Change its shapes, faces, light sources and 3D body', onclick: () => RNBX.studio.open(obj) })));
   const ro = readout(obj);
   const params = def.params.filter(p => !p.show || p.show(obj.props));
   const set = objSetter([obj]);

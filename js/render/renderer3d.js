@@ -241,6 +241,7 @@ R3.objectFaces = (obj, doc) => {
       case 'cyl': faces = cylX(part.x[0], part.x[1], part.r[0], part.r[1], part.cy || 0, part.cz == null ? bh : part.cz); r0max = Math.max(r0max, part.r[0], part.r[1]); break;
       case 'vcyl': faces = vcyl(part.cx, part.cy, part.r, part.z[0], part.z[1], 28); break;
       case 'disk3': faces = diskAxis(part.c, part.nrm, part.r, part.t || 1); r0max = Math.max(r0max, part.r); break;
+      case 'faces': faces = part.faces; break;   // ready-made faces (Part Builder bodies)
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }

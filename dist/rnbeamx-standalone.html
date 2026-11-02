@@ -267,6 +267,17 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-tab th, .st-tab td { padding: 1px 8px; text-align: right; border-bottom: 1px solid var(--line); }
 .ps-cross { cursor: default; user-select: none; }
 
+/* Part Builder */
+.pb-svg { cursor: crosshair; user-select: none; background: var(--panel); }
+.pb-faces { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; max-height: 260px; overflow: auto; }
+.pb-face { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; font-size: 12px; }
+.pb-face > span:first-child { flex: 1; min-width: 0; }
+.pb-face select { max-width: 170px; }
+.studio .pb-face input[type=number] { width: 58px; }
+.pb-face.sel { border-color: var(--accent); background: var(--accent-soft); }
+.pb-3dview svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.pb-3d input[type=range] { flex: 1; }
+
 </style>
 <style>
 /* css/layout.css */
@@ -2544,7 +2555,7 @@ function buildScene(doc) {
         }
       } else {
         list.forEach((s, k) => {
-          if (s.poly) {
+          if (s.poly && !s.rings) {
             const pts = s.poly.map(p => U.toWorld(obj, p));
             const key = obj.id + ':' + k;
             const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
@@ -2556,10 +2567,31 @@ function buildScene(doc) {
               if (V.dot(n, V.sub(mid, [cx, cy])) < 0) n = V.mul(n, -1);   // outward
               surfaces.push({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz, film: s.film && s.film.edge === i ? s.film.stack : null });
             }
+          } else if (s.rings) {
+            // a glass body of any shape (Part Builder): outer outlines and holes share one
+            // "inside"; normals point out of the glass, whatever the outline's shape;
+            // faces can carry their own behaviour (a mirror coating, a blackened face)
+            const key = obj.id + ':' + k, rings = s.rings.map(r => r.map(p => U.toWorld(obj, p)));
+            const inGlass = q => { let c = false; rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > q[1]) !== (r[j][1] > q[1]) && q[0] < (r[j][0] - r[i][0]) * (q[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) c = !c; }); return c; };
+            rings.forEach((pts, ri) => {
+              for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], b = pts[(i + 1) % pts.length], L = V.dist(a, b);
+                if (L < 1e-9) continue;
+                const t = V.norm(V.sub(b, a)), mid = V.mul(V.add(a, b), 0.5);
+                let n = V.perp(t);
+                if (inGlass(V.add(mid, V.mul(n, Math.min(1e-3, L * 0.05))))) n = V.mul(n, -1);
+                const ek = s.edgeKinds && s.edgeKinds[ri] && s.edgeKinds[ri][i], nn = s.normals && s.normals[ri] && s.normals[ri][i];
+                const sm = nn && nn[0] && nn[1] ? { nA: U.dirToWorld(obj, nn[0]), nB: U.dirToWorld(obj, nn[1]) } : {};
+                if (ek) surfaces.push(Object.assign({}, ek, sm, { obj, a, b, t, n, c: mid, scale, z, hz, within: key }));
+                else surfaces.push(Object.assign({ obj, kind: 'refract', a, b, t, n, c: mid, poly: key, mat: s.mat, nCustom: s.n, scale, z, hz }, sm));
+              }
+            });
           } else {
             const a = U.toWorld(obj, s.a), b = U.toWorld(obj, s.b);
             const t = V.norm(V.sub(b, a));
             const sf = Object.assign({}, s, { obj, a, b, t, n: V.perp(t), c: V.mul(V.add(a, b), 0.5), scale, z, hz });
+            if (s.nA && s.nB) { sf.nA = U.dirToWorld(obj, s.nA); sf.nB = U.dirToWorld(obj, s.nB); }
+            if (s.withinIdx != null) sf.within = obj.id + ':' + s.withinIdx;   // a surface inside a glass body of the same part
             // spherical surface of a real lens: exact circle, limited to the arc between a and b
             if (s.arc) Object.assign(sf, { arcC: U.toWorld(obj, s.arc.c), arcR: s.arc.R * (obj.scale || 1), arcM: U.toWorld(obj, s.arc.m) });
             if (s.kind === 'iface') sf.ax = V.norm(U.dirToWorld(obj, [1, 0]));
@@ -2692,6 +2724,13 @@ RNBX.trace = function trace(doc) {
   const interact = (ray, s, hit, base, out, ctx) => {
     const vert = ctx.vertical;
     const d = ray.d;
+    if (s.nA && s.nB && !vert) {
+      // a facet of a smooth curved surface: normal interpolated between its ends
+      const u = U.clamp(V.dot(V.sub(hit, s.a), s.t) / (V.dist(s.a, s.b) || 1), 0, 1);
+      let nn = V.norm(V.add(V.mul(s.nA, 1 - u), V.mul(s.nB, u)));
+      if (V.dot(nn, s.n) < 0) nn = V.mul(nn, -1);
+      s = Object.assign({}, s, { n: nn });
+    }
     const refl = () => vert ? { vz: -ray.vz } : { d: V.reflect(d, s.n) };
     const cosi = vert ? 1 : Math.abs(V.dot(d, s.n));
     const w = base.w;
@@ -3044,7 +3083,7 @@ RNBX.trace = function trace(doc) {
     for (let i = 0; i < surfaces.length; i++) {
       if (i === ray.last) continue;
       const s = surfaces[i];
-      if (ray.inside) { if (s.poly !== ray.inside) continue; }
+      if (ray.inside) { if (s.poly !== ray.inside && s.within !== ray.inside) continue; }   // inside glass: its faces, and surfaces inside it
       if (ray.ignore && ray.ignore === s.obj.id) continue;
       if (ray.vlast && ray.vlast === s.obj.id) continue;
       if (Math.abs((ray.z || 0) - s.z) > s.hz) continue;          // passes above / below
@@ -7239,6 +7278,316 @@ lib.register({
 
 </script>
 <script>
+/* js/components/built.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — components/built.js
+   Parts made in Layer Studio ▸ Part (the Part Builder).
+
+   A design (props.design, mm, in the part's own frame where light
+   travels along +x) is:
+     shapes  — closed shapes combined in order, each added to or cut
+               from the body: rect (w, h, r), ellipse (rx, ry), polygon
+               (pts), lens (D, tc, R1, R2: + convex, − concave, 0 flat),
+               each with x, y, rot
+     curves  — thin open surfaces: line (L), arc (spherical, R, A),
+               parabola (f, A, offset); role mirror / splitter / absorber
+     body    — what the body does: glass (mat or n), opaque (absorbs),
+               mirror (all faces reflect) or none (drawing only);
+               faces { "shapeId:face": role } override single faces
+     sources — beams that leave the part: x, y, angle, λ, power, width
+     d3      — 3D: extrude (height) or revolve (round parts)
+     look    — colour, finish (glass, metal, matte, mirror), opacity
+
+   The outline comes from signed distance functions combined with
+   min / max (add / cut) and contoured by marching squares, so any
+   combination is valid; every edge knows which face of which shape
+   it belongs to.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, H = lib.H, n = H.n;
+const G = RNBX.partGeo = {};
+
+/* ---------- signed distance of one shape (negative inside) ---------- */
+const local = (sh, x, y) => { const a = -(sh.rot || 0) * Math.PI / 180, dx = x - (sh.x || 0), dy = y - (sh.y || 0); return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)]; };
+const segDist = (px, py, ax, ay, bx, by) => { const vx = bx - ax, vy = by - ay, t = U.clamp(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1), 0, 1); return Math.hypot(px - ax - t * vx, py - ay - t * vy); };
+G.sdf = (sh, x, y) => {
+  const [u, v] = local(sh, x, y);
+  if (sh.kind === 'rect') {
+    const r = Math.min(+sh.r || 0, sh.w / 2, sh.h / 2), qx = Math.abs(u) - sh.w / 2 + r, qy = Math.abs(v) - sh.h / 2 + r;
+    const d = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+    return { d, f: qx > qy ? (u > 0 ? 'right' : 'left') : (v > 0 ? 'bottom' : 'top') };
+  }
+  if (sh.kind === 'ellipse') { const rx = Math.max(1e-3, sh.rx), ry = Math.max(1e-3, sh.ry), k = Math.hypot(u / rx, v / ry); return { d: (k - 1) * Math.min(rx, ry), f: 'rim' }; }
+  if (sh.kind === 'polygon') {
+    const p = sh.pts || []; let d = Infinity, f = 0, c = false;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const e = segDist(u, v, p[j][0], p[j][1], p[i][0], p[i][1]); if (e < d) { d = e; f = j; }
+      if ((p[i][1] > v) !== (p[j][1] > v) && u < (p[j][0] - p[i][0]) * (v - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) c = !c;
+    }
+    return { d: c ? -d : d, f: 'e' + f };
+  }
+  if (sh.kind === 'lens') {
+    const tc = Math.max(0.05, +sh.tc || 3), D = Math.max(0.1, +sh.D || 10), R1 = +sh.R1 || 0, R2 = +sh.R2 || 0;
+    const front = R1 > 0 ? Math.hypot(u - (-tc / 2 + R1), v) - R1 : R1 < 0 ? -R1 - Math.hypot(u - (-tc / 2 + R1), v) : -tc / 2 - u;
+    const back = R2 > 0 ? Math.hypot(u - (tc / 2 - R2), v) - R2 : R2 < 0 ? -R2 - Math.hypot(u - (tc / 2 - R2), v) : u - tc / 2;
+    const rim = Math.abs(v) - D / 2;
+    if (front >= back && front >= rim) return { d: front, f: 'front' };
+    return back >= rim ? { d: back, f: 'back' } : { d: rim, f: 'rim' };
+  }
+  return { d: 1e9, f: '' };
+};
+/* outward unit normal of face f ("shapeId:face") at a point: gradient of that shape's distance */
+G.normal = (shapes, f, p) => {
+  const id = f.split(':')[0], sh = shapes.find(q => q.id === id); if (!sh) return null;
+  const e = 1e-4, g = (x, y) => G.sdf(sh, x, y).d;
+  let gx = (g(p[0] + e, p[1]) - g(p[0] - e, p[1])) / (2 * e), gy = (g(p[0], p[1] + e) - g(p[0], p[1] - e)) / (2 * e);
+  if (sh.op === 'cut') { gx = -gx; gy = -gy; }
+  const l = Math.hypot(gx, gy); return l > 1e-9 ? [gx / l, gy / l] : null;
+};
+/* all shapes, in order: add = union, cut = difference */
+G.eval = (shapes, x, y) => {
+  let d = 1e9, f = '';
+  shapes.forEach(sh => {
+    const r = G.sdf(sh, x, y);
+    if (sh.op === 'cut') { if (-r.d > d) { d = -r.d; f = sh.id + ':' + r.f; } }
+    else if (r.d < d) { d = r.d; f = sh.id + ':' + r.f; }
+  });
+  return { d, f };
+};
+G.shapeBox = sh => {
+  const ext = sh.kind === 'rect' ? [sh.w / 2, sh.h / 2] : sh.kind === 'ellipse' ? [sh.rx, sh.ry] : sh.kind === 'lens' ? [(+sh.tc || 3) / 2 + (sh.D || 10) / 2, (sh.D || 10) / 2]
+    : [Math.max(...(sh.pts || [[0, 0]]).map(p => Math.abs(p[0]))), Math.max(...(sh.pts || [[0, 0]]).map(p => Math.abs(p[1])))];
+  const r = Math.hypot(ext[0], ext[1]) + 0.5;
+  return [(sh.x || 0) - r, (sh.y || 0) - r, (sh.x || 0) + r, (sh.y || 0) + r];
+};
+
+/* ---------- marching squares → closed outlines with face labels ---------- */
+const rdp = (pts, tol) => {
+  if (pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const st = [[0, pts.length - 1]];
+  while (st.length) {
+    const [a, b] = st.pop(); let best = -1, bi = -1;
+    for (let i = a + 1; i < b; i++) { const e = segDist(pts[i][0], pts[i][1], pts[a][0], pts[a][1], pts[b][0], pts[b][1]); if (e > best) { best = e; bi = i; } }
+    if (best > tol) { keep[bi] = 1; st.push([a, bi], [bi, b]); }
+  }
+  return pts.filter((p, i) => keep[i]);
+};
+const cache = new Map();
+G.outline = shapes => {
+  const adds = (shapes || []).filter(s => s.op !== 'cut');
+  if (!adds.length) return { rings: [], box: [-1, -1, 1, 1] };
+  const key = JSON.stringify(shapes);
+  if (cache.has(key)) return cache.get(key);
+  const bs = adds.map(G.shapeBox), x0 = Math.min(...bs.map(b => b[0])) - 1, y0 = Math.min(...bs.map(b => b[1])) - 1, x1 = Math.max(...bs.map(b => b[2])) + 1, y1 = Math.max(...bs.map(b => b[3])) + 1;
+  const h = Math.max((Math.max(x1 - x0, y1 - y0)) / 420, 0.004), nx = Math.ceil((x1 - x0) / h) + 1, ny = Math.ceil((y1 - y0) / h) + 1;
+  const v = new Float64Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) v[j * nx + i] = G.eval(shapes, x0 + i * h, y0 + j * h).d;
+  const P = new Map(), adj = new Map();
+  const pt = (k, ax, ay, va, bx, by, vb) => { if (!P.has(k)) { const t = va / (va - vb); P.set(k, [ax + (bx - ax) * t, ay + (by - ay) * t]); } return k; };
+  const link = (a, b) => { (adj.get(a) || adj.set(a, []).get(a)).push(b); (adj.get(b) || adj.set(b, []).get(b)).push(a); };
+  for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = v[j * nx + i], b = v[j * nx + i + 1], c = v[(j + 1) * nx + i + 1], d = v[(j + 1) * nx + i];
+    const ia = a < 0, ib = b < 0, ic = c < 0, id = d < 0;
+    if (ia === ib && ib === ic && ic === id) continue;
+    const X = x0 + i * h, Y = y0 + j * h, E = [];
+    if (ia !== ib) E[0] = pt('h' + i + ',' + j, X, Y, a, X + h, Y, b);
+    if (ib !== ic) E[1] = pt('v' + (i + 1) + ',' + j, X + h, Y, b, X + h, Y + h, c);
+    if (ic !== id) E[2] = pt('h' + i + ',' + (j + 1), X + h, Y + h, c, X, Y + h, d);
+    if (id !== ia) E[3] = pt('v' + i + ',' + j, X, Y + h, d, X, Y, a);
+    const es = E.map((k, q) => (k ? q : -1)).filter(q => q >= 0);
+    if (es.length === 2) link(E[es[0]], E[es[1]]);
+    else if (es.length === 4) {
+      const cen = (a + b + c + d) / 4 < 0;
+      if (cen === ia) { link(E[0], E[1]); link(E[2], E[3]); } else { link(E[0], E[3]); link(E[1], E[2]); }
+    }
+  }
+  // walk the loops
+  const seen = new Set(), loops = [];
+  adj.forEach((nb, start) => {
+    if (seen.has(start)) return;
+    const loop = []; let prev = null, cur = start;
+    while (cur != null && !seen.has(cur)) { seen.add(cur); loop.push(P.get(cur)); const nx2 = adj.get(cur).find(q => q !== prev && !seen.has(q)); prev = cur; cur = nx2; }
+    if (loop.length >= 3) loops.push(loop);
+  });
+  // simplify, keeping corners where the face changes
+  const tol = h * 0.06;
+  const rings = loops.map(loop => {
+    const faces = loop.map((p, i) => { const q = loop[(i + 1) % loop.length]; return G.eval(shapes, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2).f; });
+    let breaks = []; faces.forEach((f, i) => { if (f !== faces[(i - 1 + faces.length) % faces.length]) breaks.push(i); });
+    if (!breaks.length) { let far = 0, fd = -1; loop.forEach((p, i) => { const e = Math.hypot(p[0] - loop[0][0], p[1] - loop[0][1]); if (e > fd) { fd = e; far = i; } }); breaks = [0, far]; }
+    const out = [], of = [];
+    breaks.forEach((b, k) => {
+      const e = breaks[(k + 1) % breaks.length], chain = [];
+      for (let i = b; ; i = (i + 1) % loop.length) { chain.push(loop[i]); if (i === e) break; if (chain.length > loop.length + 1) break; }
+      const simp = rdp(chain, tol);
+      simp.slice(0, -1).forEach((p, i) => { out.push(p); const q = simp[i + 1]; of.push(G.eval(shapes, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2).f); });
+    });
+    // exact normals at both ends of every edge, from the shape the edge belongs to,
+    // so curved faces refract and reflect as smooth surfaces
+    const pts = out.map(p => [U.round(p[0], 5), U.round(p[1], 5)]);
+    const nrm = pts.map((p, i) => { const f = of[i], q = pts[(i + 1) % pts.length]; return [G.normal(shapes, f, p), G.normal(shapes, f, q)]; });
+    return { pts, faces: of, nrm };
+  }).filter(r => r.pts.length >= 3);
+  // holes: rings inside an odd number of other rings
+  const inside = (q, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > q[1]) !== (r[j][1] > q[1]) && q[0] < (r[j][0] - r[i][0]) * (q[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) c = !c; return c; };
+  rings.forEach((r, i) => { r.hole = rings.filter((o, j) => j !== i && inside(r.pts[0], o.pts)).length % 2 === 1; });
+  const all = rings.flatMap(r => r.pts), box = all.length ? [Math.min(...all.map(p => p[0])), Math.min(...all.map(p => p[1])), Math.max(...all.map(p => p[0])), Math.max(...all.map(p => p[1]))] : [-1, -1, 1, 1];
+  const res = { rings, box, h };
+  if (cache.size > 60) cache.delete(cache.keys().next().value);
+  cache.set(key, res);
+  return res;
+};
+/* the faces of the outline: { key, label, len } (for the face list) */
+G.faces = res => {
+  const m = new Map();
+  res.rings.forEach(r => r.pts.forEach((p, i) => { const q = r.pts[(i + 1) % r.pts.length], k = r.faces[i]; m.set(k, (m.get(k) || 0) + Math.hypot(q[0] - p[0], q[1] - p[1])); }));
+  return [...m.entries()].filter(e => e[1] > 1e-3).map(([key, len]) => ({ key, len }));
+};
+
+/* ---------- thin curves: polylines in the part frame ---------- */
+G.curvePts = c => {
+  const out = [], tr = (u, v) => { const a = (c.rot || 0) * Math.PI / 180; return [(c.x || 0) + u * Math.cos(a) - v * Math.sin(a), (c.y || 0) + u * Math.sin(a) + v * Math.cos(a)]; };
+  if (c.kind === 'line') { out.push(tr(0, -c.L / 2), tr(0, c.L / 2)); return out; }
+  if (c.kind === 'arc') {
+    const R = +c.R || 50, A = Math.min(Math.abs(R) * 1.98, +c.A || 10), pm = Math.asin(A / 2 / Math.abs(R)), N = Math.max(24, Math.ceil(A / 0.15));
+    for (let i = 0; i <= N; i++) { const p = -pm + 2 * pm * i / N; out.push(tr(-R + R * Math.cos(p), Math.abs(R) * Math.sin(p))); }
+    return out;
+  }
+  if (c.kind === 'parabola') {
+    const f = Math.max(0.1, +c.f || 25), A = +c.A || 10, o = +c.offset || 0, N = Math.max(24, Math.ceil(A / 0.15));
+    for (let i = 0; i <= N; i++) { const y = o - A / 2 + A * i / N; out.push(tr(-y * y / (4 * f), y)); }
+    return out;
+  }
+  return out;
+};
+const ROLE = { mirror: { kind: 'mirror', R: 1 }, absorb: { kind: 'absorb' }, pass: { kind: 'pass' } };
+const roleOf = (r, R) => (r === 'splitter' ? { kind: 'splitter', R: R == null ? 0.5 : R } : ROLE[r] || null);
+
+/* ---------- the part's optics ---------- */
+G.optics = ds => {
+  const res = G.outline(ds.shapes), b = ds.body || {}, out = [], faces = b.faces || {};
+  if (b.kind === 'glass' && res.rings.length) {
+    const edgeKinds = res.rings.map(r => r.faces.map(f => { const o = faces[f]; return o && o !== 'glass' ? roleOf(o, (b.faceR || {})[f]) : null; }));
+    out.push({ rings: res.rings.map(r => r.pts), normals: res.rings.map(r => r.nrm), mat: b.mat === 'custom' ? 'custom' : b.mat || 'N-BK7', n: +b.n || 1.5, edgeKinds });
+  } else if ((b.kind === 'opaque' || b.kind === 'mirror') && res.rings.length) {
+    const dflt = b.kind === 'mirror' ? 'mirror' : 'absorb';
+    res.rings.forEach(r => r.pts.forEach((p, i) => { const q = r.pts[(i + 1) % r.pts.length], k = roleOf(faces[r.faces[i]] && faces[r.faces[i]] !== 'glass' ? faces[r.faces[i]] : dflt, (b.faceR || {})[r.faces[i]]); if (k) out.push(Object.assign({ a: p, b: q, nA: r.nrm[i][0], nB: r.nrm[i][1] }, k)); }));
+  }
+  const glassAt = b.kind === 'glass' && res.rings.length ? 0 : null;   // curves inside the glass are seen from inside it too
+  (ds.curves || []).forEach(c => {
+    const k = roleOf(c.role || 'mirror', c.R); if (!k) return;
+    const pts = G.curvePts(c), nv = i => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dy / l, -dx / l]; };
+    for (let i = 0; i < pts.length - 1; i++) out.push(Object.assign({ a: pts[i], b: pts[i + 1], nA: nv(i), nB: nv(i + 1), withinIdx: glassAt }, k));
+  });
+  return out;
+};
+
+/* ---------- 3D ---------- */
+const capWithHoles = (outer, holes) => {
+  // join every hole to the outline by a zero-width slit, so the cap is one polygon
+  let poly = outer.slice();
+  holes.forEach(hole => {
+    let bi = 0, bj = 0, bd = Infinity;
+    hole.forEach((p, i) => poly.forEach((q, j) => { const d = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2; if (d < bd) { bd = d; bi = i; bj = j; } }));
+    const h2 = hole.slice(bi).concat(hole.slice(0, bi + 1));
+    poly = poly.slice(0, bj + 1).concat(h2, [poly[bj]], poly.slice(bj + 1));
+  });
+  return poly;
+};
+G.solid = (ds, bh) => {
+  const res = G.outline(ds.shapes), d3 = ds.d3 || {}, hh = Math.max(0.1, +d3.h || 10) / 2, z0 = bh - hh, z1 = bh + hh, look = ds.look || {}, faces = [];
+  const inside = (q, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > q[1]) !== (r[j][1] > q[1]) && q[0] < (r[j][0] - r[i][0]) * (q[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) c = !c; return c; };
+  if (d3.mode === 'revolve') {
+    // the half with y ≥ 0, turned about the x axis
+    const K = 32;
+    res.rings.forEach(r => {
+      const pts = r.pts;
+      for (let i = 0; i < pts.length; i++) {
+        let a = pts[i], b = pts[(i + 1) % pts.length];
+        if (a[1] < 0 && b[1] < 0) continue;
+        if (a[1] < 0 || b[1] < 0) { const t = a[1] / (a[1] - b[1]), m = [a[0] + (b[0] - a[0]) * t, 0]; if (a[1] < 0) a = m; else b = m; }
+        if (Math.abs(a[1]) < 1e-6 && Math.abs(b[1]) < 1e-6) continue;
+        for (let k = 0; k < K; k++) {
+          const p1 = 2 * Math.PI * k / K, p2 = 2 * Math.PI * (k + 1) / K, at = (q, p) => [q[0], q[1] * Math.cos(p), bh + q[1] * Math.sin(p)];
+          faces.push([at(a, p1), at(b, p1), at(b, p2), at(a, p2)]);
+        }
+      }
+    });
+  } else {
+    res.rings.forEach(r => r.pts.forEach((p, i) => { const q = r.pts[(i + 1) % r.pts.length]; faces.push([[p[0], p[1], z0], [q[0], q[1], z0], [q[0], q[1], z1], [p[0], p[1], z1]]); }));
+    res.rings.filter(r => !r.hole).forEach(o => {
+      const holes = res.rings.filter(r => r.hole && inside(r.pts[0], o.pts)).map(r => r.pts);
+      const cap = capWithHoles(o.pts, holes);
+      faces.push(cap.map(p => [p[0], p[1], z1]), cap.map(p => [p[0], p[1], z0]).reverse());
+    });
+  }
+  const fin = look.finish || (ds.body && ds.body.kind === 'glass' ? 'glass' : 'matte'), col = look.color;
+  const mat = fin === 'glass' ? (col ? { color: col, alpha: look.alpha == null ? 0.35 : look.alpha, spec: 0.6 } : 'glass') : fin === 'mirror' ? 'mirror' : fin === 'metal' ? { color: col || '#b9bec6', spec: 0.8 } : { color: col || '#4b525c' };
+  const parts = faces.length ? [{ kind: 'faces', faces, mat }] : [];
+  (ds.curves || []).forEach(c => {
+    const pts = G.curvePts(c), t = Math.max(0.2, +c.t || 1), m2 = c.role === 'absorb' ? { color: '#22252a' } : c.role === 'splitter' ? 'glass' : 'mirror';
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = dy / l * t, ny = -dx / l * t;
+      parts.push({ kind: 'faces', faces: [[[a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1]], [[a[0] + nx, a[1] + ny, z0], [b[0] + nx, b[1] + ny, z0], [b[0] + nx, b[1] + ny, z1], [a[0] + nx, a[1] + ny, z1]],
+        [[a[0], a[1], z1], [b[0], b[1], z1], [b[0] + nx, b[1] + ny, z1], [a[0] + nx, a[1] + ny, z1]]], mat: m2 });
+    }
+  });
+  return parts;
+};
+
+/* ---------- the component ---------- */
+const DEFAULT = {
+  name: 'Plano-convex lens',
+  shapes: [{ id: 's1', kind: 'lens', op: 'add', x: 0, y: 0, rot: 0, D: 20, tc: 5, R1: 25, R2: 0 }],
+  curves: [], sources: [],
+  body: { kind: 'glass', mat: 'N-BK7', n: 1.5, faces: {} },
+  d3: { mode: 'revolve', h: 20 }, look: { finish: 'glass', color: '', alpha: 0.35 },
+};
+G.DEFAULT = DEFAULT;
+lib.register({
+  type: 'built', name: 'Built part', category: 'Samples & mechanics', abbr: 'BP', labelTemplate: '',
+  keywords: 'part builder custom shape own component lens prism mirror housing glass body extrude revolve',
+  defaults: { design: DEFAULT, title: 'Built part' },
+  params: [{ key: 'title', label: 'Name', type: 'text' }],
+  hint: 'Made in Layer Studio ▸ Part: select it and press “Open in the Part Builder” to change it.',
+  snap: 'perp', labelPos: [0, 9], mount: true,
+  bbox: p => { const r = G.outline((p.design || DEFAULT).shapes), b = r.box.slice(); (p.design.curves || []).forEach(c => G.curvePts(c).forEach(q => { b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]); })); return [b[0] - 0.3, b[1] - 0.3, b[2] + 0.3, b[3] + 0.3]; },
+  draw(p, S) {
+    const ds = p.design || DEFAULT, res = G.outline(ds.shapes), look = ds.look || {}, b = ds.body || {}, lw = n(S.lw);
+    const fin = look.finish || (b.kind === 'glass' ? 'glass' : 'matte');
+    const fill = fin === 'glass' ? (look.color ? look.color : S.fill('glass')) : fin === 'mirror' ? S.fill('mirror') : (look.color || (fin === 'metal' ? '#b9bec6' : '#4b525c'));
+    const path = res.rings.map(r => 'M ' + r.pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ') + ' Z').join(' ');
+    let s = path ? `<path d="${path}" fill="${fill}" fill-rule="evenodd" ${fin === 'glass' && look.color ? `fill-opacity="${look.alpha == null ? 0.35 : look.alpha}"` : ''} stroke="${S.ink}" stroke-width="${lw}" stroke-linejoin="round"/>` : '';
+    // coated faces
+    const faces = b.faces || {};
+    res.rings.forEach(r => r.pts.forEach((q, i) => {
+      const role = faces[r.faces[i]]; if (!role || role === 'glass') return;
+      const t = r.pts[(i + 1) % r.pts.length];
+      s += `<line x1="${n(q[0])}" y1="${n(q[1])}" x2="${n(t[0])}" y2="${n(t[1])}" stroke="${role === 'mirror' ? '#8c96a3' : role === 'absorb' ? '#16181c' : '#6d8fb3'}" stroke-width="${n(S.lw * 3)}" stroke-linecap="round" ${role === 'splitter' ? `stroke-dasharray="${n(S.lw * 3)} ${n(S.lw * 2)}"` : ''}/>`;
+    }));
+    // thin surfaces, with the back of a mirror hatched
+    (ds.curves || []).forEach(c => {
+      const pts = G.curvePts(c), dd = 'M ' + pts.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ');
+      const col = c.role === 'absorb' ? '#16181c' : c.role === 'splitter' ? '#6d8fb3' : c.role === 'pass' ? '#9aa1ab' : '#5d6670';
+      s += `<path d="${dd}" fill="none" stroke="${col}" stroke-width="${n(S.lw * 2.6)}" stroke-linecap="round" ${c.role === 'splitter' ? `stroke-dasharray="${n(S.lw * 3)} ${n(S.lw * 2)}"` : ''}/>`;
+      if (c.role === 'mirror' || !c.role) {
+        const step = Math.max(1, Math.round(pts.length / 12)), t = Math.max(0.4, +c.t || 1);
+        for (let i = 0; i < pts.length - 1; i += step) { const a = pts[i], q = pts[Math.min(pts.length - 1, i + 1)], dx = q[0] - a[0], dy = q[1] - a[1], l = Math.hypot(dx, dy) || 1; s += `<line x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(a[0] + dy / l * t + dx / l * t * 0.6)}" y2="${n(a[1] - dx / l * t + dy / l * t * 0.6)}" stroke="${S.ink}" stroke-width="${n(S.lw * 0.6)}"/>`; }
+      }
+    });
+    return s || H.text(S, 0, 0, 'Empty part', { size: S.fs, color: '#6b7280' });
+  },
+  optics: p => G.optics(p.design || DEFAULT),
+  source: p => ((p.design || DEFAULT).sources || []).map(q => { const a = (q.angle || 0) * Math.PI / 180, P = +q.power || 1;
+    return { o: [q.x || 0, q.y || 0], d: [Math.cos(a), Math.sin(a)], lambda: +q.lambda || 633, P, E: RNBX.optics.scaleJ(RNBX.optics.jones('H'), Math.sqrt(P)), w: (+q.width || 0.7) / 2, dw: Math.tan((+q.div || 0) * Math.PI / 180) }; }),
+  solid: (p, bh) => G.solid(p.design || DEFAULT, bh),
+});
+})();
+
+</script>
+<script>
 /* js/components/shapes.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — components/shapes.js
@@ -9333,6 +9682,7 @@ R3.objectFaces = (obj, doc) => {
       case 'cyl': faces = cylX(part.x[0], part.x[1], part.r[0], part.r[1], part.cy || 0, part.cz == null ? bh : part.cz); r0max = Math.max(r0max, part.r[0], part.r[1]); break;
       case 'vcyl': faces = vcyl(part.cx, part.cy, part.r, part.z[0], part.z[1], 28); break;
       case 'disk3': faces = diskAxis(part.c, part.nrm, part.r, part.t || 1); r0max = Math.max(r0max, part.r); break;
+      case 'faces': faces = part.faces; break;   // ready-made faces (Part Builder bodies)
       case 'poly': faces = extrude(part.pts, part.z[0], part.z[1]); r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2); break;
       default: faces = boxFaces(part.x, part.y, part.z); if (part.z[0] > 0.5) r0max = Math.max(r0max, (part.z[1] - part.z[0]) / 2);
     }
@@ -13178,6 +13528,8 @@ function objectPanel(obj) {
   root.push(el('div', { class: 'insp-title' },
     el('div', { class: 'thumb', html: D.thumb(obj.type, obj.props, mode) }),
     el('div', {}, el('b', { text: obj.kindName || def.name }), el('small', { text: def.category + (obj.locked ? ' · locked' : '') }))));
+  if (obj.type === 'built' && RNBX.studio) root.push(el('div', { class: 'row', style: { margin: '6px 0 10px' } },
+    el('button', { class: 'btn small primary', type: 'button', text: 'Open in the Part Builder', title: 'Change its shapes, faces, light sources and 3D body', onclick: () => RNBX.studio.open(obj) })));
   const ro = readout(obj);
   const params = def.params.filter(p => !p.show || p.show(obj.props));
   const set = objSetter([obj]);
@@ -14205,11 +14557,13 @@ const change = (fn, key, structural) => { step(key); fn(); save(); structural ? 
 /* ---------- open / close ---------- */
 ST.isOpen = () => !!root;
 ST.mode = 'layers';
-const PS = () => RNBX.patternStudio;
+const PS = () => RNBX.patternStudio, PB = () => RNBX.partBuilder;
+/* the workspace behind each tab other than Layers */
+const WS = m => (m === 'pattern' ? PS() : m === 'part' ? PB() : null);
 ST.open = (obj, mode) => {
   if (root) ST.close();
-  if (obj && obj.type === 'ucell') { ST.mode = 'pattern'; PS().load(obj); obj = null; } else if (obj && obj.type === 'layers') ST.mode = 'layers'; else if (mode) ST.mode = mode;
-  if (ST.mode === 'pattern' && PS() && !PS().loaded()) PS().load(null);
+  if (obj && obj.type === 'ucell') { ST.mode = 'pattern'; PS().load(obj); obj = null; } else if (obj && obj.type === 'built') { ST.mode = 'part'; PB().load(obj); obj = null; } else if (obj && obj.type === 'layers') ST.mode = 'layers'; else if (mode) ST.mode = mode;
+  if (WS(ST.mode) && !WS(ST.mode).loaded()) WS(ST.mode).load(null);
   target = obj && obj.type === 'layers' ? obj : null;
   d = target ? ST.fromProps(target.props) : (d || load() || PRESETS.find(p => p.id === 'mim').make());
   undo = []; redo = []; sel = new Set();
@@ -14219,13 +14573,14 @@ ST.open = (obj, mode) => {
   render();
   U.track('studio-open');
 };
-ST.close = () => { if (!root) return; save(); if (PS()) PS().closed(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
+ST.close = () => { if (!root) return; save(); if (PS()) PS().closed(); if (PB()) PB().closed(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
 ST.design = () => d;
 ST.setDesign = v => { step(); d = v; save(); if (root) render(); };
 const onKey = e => {
   if (!root) return;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
-  const un = ST.mode === 'pattern' ? PS().undo : doUndo, re = ST.mode === 'pattern' ? PS().redo : doRedo;
+  const ws = WS(ST.mode), un = ws ? ws.undo : doUndo, re = ws ? ws.redo : doRedo;
+  if (ws && ws.key && ws.key(e, typing)) { e.stopPropagation(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.stopPropagation(); (e.shiftKey ? re : un)(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); e.stopPropagation(); re(); return; }
   if (e.key === 'Escape' && !document.querySelector('.modal-back')) { e.stopPropagation(); ST.close(); return; }
@@ -14238,14 +14593,14 @@ const doRedo = () => { if (!redo.length) return; undo.push(JSON.stringify(d)); d
 /* ---------- layout ---------- */
 let views = {};
 /* Layers | Pattern switch in the header */
-ST.tabs = () => el('div', { class: 'seg st-tabs', role: 'tablist' }, [['layers', 'Layers'], ['pattern', 'Pattern']].map(([m, t]) =>
-  el('button', { type: 'button', class: ST.mode === m ? 'active' : '', 'aria-selected': String(ST.mode === m), title: m === 'layers' ? 'Flat films and multilayers' : 'Periodic structures: gratings, metasurfaces (one unit cell)', text: t,
-    onclick: () => { if (ST.mode === m) return; ST.mode = m; if (m === 'pattern' && !PS().loaded()) PS().load(null); render(); } })));
+ST.tabs = () => el('div', { class: 'seg st-tabs', role: 'tablist' }, [['layers', 'Layers'], ['pattern', 'Pattern'], ['part', 'Part']].map(([m, t]) =>
+  el('button', { type: 'button', class: ST.mode === m ? 'active' : '', 'aria-selected': String(ST.mode === m), title: m === 'layers' ? 'Flat films and multilayers' : m === 'pattern' ? 'Periodic structures: gratings, metasurfaces (one unit cell)' : 'Part Builder: draw your own component, give its faces an optical job, use it in the figure', text: t,
+    onclick: () => { if (ST.mode === m) return; ST.mode = m; if (WS(m) && !WS(m).loaded()) WS(m).load(null); render(); } })));
 ST.rerender = () => render();
 function render() {
   if (!root) return;
   root.innerHTML = '';
-  if (ST.mode === 'pattern' && PS()) { root.setAttribute('aria-label', 'Layer Studio · Pattern'); PS().render(root); return; }
+  if (WS(ST.mode)) { root.setAttribute('aria-label', 'Layer Studio · ' + ST.mode); WS(ST.mode).render(root); return; }
   const presetBtn = el('button', { class: 'btn small', type: 'button', text: 'Start from ▾', onclick: ev => { const r = ev.currentTarget.getBoundingClientRect(); D.menu([{ title: 'Designs' }].concat(PRESETS.map(p => ({ label: p.name, action: () => { step(); d = p.make(); sel = new Set(); save(); render(); } }))), r.left, r.bottom + 4, ev.currentTarget); } });
   const name = el('input', { type: 'text', class: 'st-name', value: d.name || '', title: 'Name of the design', oninput: () => change(() => { d.name = name.value; }, 'name') });
   const head = el('div', { class: 'st-head' },
@@ -14591,7 +14946,7 @@ function insertDialog() {
 }
 
 ST.ui = { chart, ticks, niceStep, fmt, f1, cmap, colorOf, shortName, quiet, QCOL, QNAME, mapChart: (res, w, h, cross) => mapChart(res, w, h, cross) };
-ST.init = () => { const b = D.$('#btnStudio'); if (b) b.onclick = () => ST.open(S.selection.map(id => RNBX.getObj(id)).find(o => o && (o.type === 'layers' || o.type === 'ucell'))); };
+ST.init = () => { const b = D.$('#btnStudio'); if (b) b.onclick = () => ST.open(S.selection.map(id => RNBX.getObj(id)).find(o => o && (o.type === 'layers' || o.type === 'ucell' || o.type === 'built'))); };
 })();
 
 </script>
@@ -15436,6 +15791,497 @@ function insertDialog() {
 
 </script>
 <script>
+/* js/ui/partbuilder.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/partbuilder.js
+   Layer Studio ▸ Part: the Part Builder.
+
+   Draw a component from shapes (rectangle, ellipse, polygon, lens
+   profile) that are added to or cut from the body, and thin
+   surfaces (line, spherical arc, off-axis parabola). Say what the
+   body does to light (glass of any material, opaque, mirror) and
+   give single faces their own job (mirror coating, blackened,
+   beam splitter). Beam sources make it a light source. A test
+   beam runs through it as you edit, with where the rays meet;
+   a 3D preview shows the body (extruded or turned). Insert it, save
+   it to My components, or share it as a file.
+   The geometry and optics live in components/built.js.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el;
+const PB = RNBX.partBuilder = {};
+const KEY = 'rnbx-part-v1';
+const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, G = () => RNBX.partGeo;
+
+/* ---------- designs ---------- */
+let sid = 0;
+const nid = (p = 's') => p + Date.now().toString(36) + (sid++);
+const base = (name, shapes, extra) => Object.assign({
+  name, shapes, curves: [], sources: [],
+  body: { kind: 'glass', mat: 'N-BK7', n: 1.5, faces: {}, faceR: {} },
+  d3: { mode: 'extrude', h: 12 }, look: { finish: '', color: '', alpha: 0.35 },
+  test: { on: true, mode: 'parallel', h: 10, rays: 9, tilt: 0, lambda: 587.56, offset: 0 },
+}, extra || {});
+const sh = (kind, o) => Object.assign({ id: nid(), kind, op: 'add', x: 0, y: 0, rot: 0 }, o);
+const cv = (kind, o) => Object.assign({ id: nid('c'), kind, x: 0, y: 0, rot: 0, role: 'mirror', R: 0.5, t: 1.2 }, o);
+const PRESETS = [
+  { id: 'pcx', name: 'Plano-convex lens', make: () => base('Plano-convex lens', [sh('lens', { D: 20, tc: 5, R1: 25, R2: 0 })], { d3: { mode: 'revolve', h: 20 } }) },
+  { id: 'bicx', name: 'Biconvex lens', make: () => base('Biconvex lens', [sh('lens', { D: 25, tc: 6, R1: 40, R2: 40 })], { d3: { mode: 'revolve', h: 25 }, test: { on: true, mode: 'parallel', h: 18, rays: 11, tilt: 0, lambda: 587.56, offset: 0 } }) },
+  { id: 'ncx', name: 'Plano-concave lens', make: () => base('Plano-concave lens', [sh('lens', { D: 20, tc: 2.5, R1: -30, R2: 0 })], { d3: { mode: 'revolve', h: 20 } }) },
+  { id: 'ball', name: 'Ball lens', make: () => base('Ball lens', [sh('ellipse', { rx: 5, ry: 5 })], { d3: { mode: 'revolve', h: 10 }, test: { on: true, mode: 'parallel', h: 6, rays: 9, tilt: 0, lambda: 587.56, offset: 0 } }) },
+  { id: 'axicon', name: 'Axicon (cone lens)', make: () => base('Axicon', [sh('polygon', { pts: [[-2, -10], [-1, -10], [2.2, 0], [-1, 10], [-2, 10]] })], { d3: { mode: 'revolve', h: 20 }, test: { on: true, mode: 'parallel', h: 16, rays: 11, tilt: 0, lambda: 587.56, offset: 0 } }) },
+  { id: 'prism', name: 'Right-angle prism (total internal reflection)', make: () => base('Right-angle prism', [sh('polygon', { pts: [[-6, -6], [-6, 6], [6, 6]] })], { test: { on: true, mode: 'parallel', h: 6, rays: 7, tilt: 0, lambda: 587.56, offset: 1 } }) },
+  { id: 'cube', name: 'Cube beam splitter', make: () => base('Cube beam splitter', [sh('rect', { w: 12, h: 12 })], { curves: [cv('line', { L: 16.97, rot: -45, role: 'splitter', R: 0.5, t: 0.3 })], test: { on: true, mode: 'parallel', h: 4, rays: 5, tilt: 0, lambda: 532, offset: 0 } }) },
+  { id: 'pipe', name: 'Light pipe (guiding by total internal reflection)', make: () => base('Light pipe', [sh('rect', { w: 40, h: 4, r: 0 })], { test: { on: true, mode: 'point', h: 0.2, rays: 9, tilt: 0, lambda: 532, offset: 0, fan: 50 } }) },
+  { id: 'oap', name: 'Off-axis parabolic mirror (90°)', make: () => base('Off-axis parabola', [sh('rect', { x: 2, y: 24, w: 6, h: 16 })], { body: { kind: 'opaque', mat: 'N-BK7', n: 1.5, faces: {}, faceR: {} }, curves: [cv('parabola', { f: 12, A: 14, offset: 24, t: 1.5 })], look: { finish: 'metal', color: '#c4c9d1', alpha: 1 }, test: { on: true, mode: 'parallel', h: 10, rays: 9, tilt: 0, lambda: 633, offset: 24 } }) },
+  { id: 'concave', name: 'Concave mirror (spherical)', make: () => base('Concave mirror', [], { body: { kind: 'none', faces: {}, faceR: {} }, curves: [cv('arc', { R: 50, A: 25, t: 3 })], test: { on: true, mode: 'parallel', h: 18, rays: 9, tilt: 0, lambda: 633, offset: 0 } }) },
+  { id: 'roof', name: 'Roof mirror (two mirrors at 90°)', make: () => base('Roof mirror', [], { body: { kind: 'none', faces: {}, faceR: {} }, curves: [cv('line', { x: -3, y: -3, L: 8.49, rot: -45 }), cv('line', { x: -3, y: 3, L: 8.49, rot: 45 })], test: { on: true, mode: 'parallel', h: 6, rays: 5, tilt: 0, lambda: 633, offset: 2 } }) },
+  { id: 'housing', name: 'Housing with a bore (cut)', make: () => base('Housing', [sh('rect', { w: 24, h: 16, r: 1.5 }), sh('rect', { op: 'cut', w: 26, h: 4 })], { body: { kind: 'opaque', faces: {}, faceR: {} }, look: { finish: 'matte', color: '#3c434c', alpha: 1 }, test: { on: true, mode: 'parallel', h: 10, rays: 9, tilt: 0, lambda: 633, offset: 0 } }) },
+  { id: 'laser', name: 'Laser head (a light source)', make: () => base('Laser head', [sh('rect', { w: 30, h: 10, r: 1.2 })], { body: { kind: 'opaque', faces: {}, faceR: {} }, sources: [{ x: 15.05, y: 0, angle: 0, lambda: 532, power: 5, width: 0.8, div: 0 }], look: { finish: 'matte', color: '#2f3a48', alpha: 1 }, test: { on: false, mode: 'parallel', h: 6, rays: 5, tilt: 0, lambda: 633, offset: 0 } }) },
+];
+PB.PRESETS = PRESETS;
+
+/* ---------- state ---------- */
+let d = null, target = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, sel = null, face = null, drawPts = null, views = {}, view = null, prevT = 0, testRes = null;
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) { /* optional */ } };
+const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); return v && Array.isArray(v.shapes) ? v : null; } catch (e) { return null; } };
+PB.loaded = () => !!d;
+PB.design = () => d;
+PB.load = obj => {
+  target = obj && obj.type === 'built' ? obj : null;
+  d = target ? Object.assign(PRESETS[0].make(), U.deepClone(target.props.design)) : (d || load() || PRESETS[0].make());
+  undo = []; redo = []; sel = d.shapes.length ? { t: 'shape', i: 0 } : null; face = null; drawPts = null; view = null;
+};
+PB.setDesign = v => { step(); d = v; sel = d.shapes.length ? { t: 'shape', i: 0 } : d.curves.length ? { t: 'curve', i: 0 } : null; face = null; drawPts = null; view = null; save(); if (root) PB.render(root); };
+PB.closed = () => { root = null; drawPts = null; };
+const step = key => {
+  const now = Date.now();
+  if (!(key && key === lastKey && now - lastAt < 900)) { undo.push(JSON.stringify(d)); if (undo.length > 150) undo.shift(); redo = []; }
+  lastKey = key || ''; lastAt = now;
+};
+PB.undo = () => { if (!undo.length) return; redo.push(JSON.stringify(d)); d = JSON.parse(undo.pop()); lastKey = ''; save(); PB.render(root); };
+PB.redo = () => { if (!redo.length) return; undo.push(JSON.stringify(d)); d = JSON.parse(redo.pop()); lastKey = ''; save(); PB.render(root); };
+/* keys while drawing a polygon: Enter finishes, Esc cancels, Backspace removes the last point */
+PB.key = (e, typing) => {
+  if (!drawPts || typing) return false;
+  if (e.key === 'Enter') { finishPolygon(); return true; }
+  if (e.key === 'Escape') { drawPts = null; drawEditor(); return true; }
+  if (e.key === 'Backspace') { drawPts.pop(); drawEditor(); e.preventDefault(); return true; }
+  return false;
+};
+/* what: 'list' rebuilds the side panels, 'all' everything, else the views */
+const change = (fn, key, what) => { step(key); fn(); save(); if (what === 'all') PB.render(root); else { if (what === 'list') { buildLeft(); buildRight(); } refresh(); } };
+
+/* ---------- small controls ---------- */
+const fld = (label, input) => el('label', { class: 'st-f' }, el('span', { text: label }), input);
+const num = (get, set, o = {}) => { const i = el('input', { type: 'number', value: get(), step: o.step || 0.1, min: o.min, max: o.max, title: o.title || '', oninput: () => { const v = parseFloat(i.value); if (isFinite(v)) change(() => set(o.min != null ? Math.max(o.min, o.max != null ? Math.min(o.max, v) : v) : v), o.key || 'n' + Math.random(), o.what); } }); return i; };
+const sel1 = (opts, get, set, key, what) => { const s = el('select', { onchange: () => change(() => set(s.value), key, what) }, opts.map(q => el('option', { value: q[0], text: q[1] }))); s.value = String(get()); return s; };
+const lab = t => el('span', { class: 'hint', style: { margin: 0 }, text: t });
+
+/* ---------- layout ---------- */
+PB.render = host => {
+  root = host; if (!root) return;
+  root.innerHTML = '';
+  const presetBtn = el('button', { class: 'btn small', type: 'button', text: 'Start from ▾', onclick: ev => { const r = ev.currentTarget.getBoundingClientRect(); D.menu([{ title: 'Parts' }].concat(PRESETS.map(p => ({ label: p.name, action: () => PB.setDesign(p.make()) }))), r.left, r.bottom + 4, ev.currentTarget); } });
+  const name = el('input', { type: 'text', class: 'st-name', value: d.name || '', title: 'Name of the part', oninput: () => { step('name'); d.name = name.value; save(); } });
+  root.append(el('div', { class: 'st-head' },
+    el('div', { class: 'st-title' }, el('b', { text: 'Layer Studio' }), el('span', { class: 'st-sub', text: target ? 'editing a part in the figure' : 'Part Builder: your own component' })),
+    ST().tabs(), name, presetBtn,
+    D.iconBtn('undo', 'Undo (Ctrl+Z)', PB.undo), D.iconBtn('redo', 'Redo (Ctrl+Y)', PB.redo),
+    el('button', { class: 'btn small ghost', type: 'button', text: 'Open…', title: 'Open a saved part (.rnbxpart.json)', onclick: openFile }),
+    el('button', { class: 'btn small ghost', type: 'button', text: 'Save', title: 'Save this part as a file to share', onclick: saveFile }),
+    el('button', { class: 'btn small ghost', type: 'button', text: 'To My components', title: 'Keep it in the parts list (this browser)', onclick: toLibrary }),
+    el('span', { class: 'st-grow' }),
+    el('button', { class: 'btn primary', type: 'button', text: target ? 'Update the part' : 'Insert into figure', onclick: insert }),
+    D.iconBtn('close', 'Close (Esc): the design is kept for next time', ST().close)));
+  views = { left: el('div'), editor: el('div', { class: 'pb-editor' }), testCtl: el('div'), readout: el('div'), right: el('div'), d3: el('div', { class: 'pb-3d' }) };
+  const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Shapes and surfaces' }), views.left);
+  const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Drawing (mm, light travels →)' }), views.editor, el('h4', { text: 'Test beam' }), views.testCtl, views.readout);
+  const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Body, faces and look' }), views.right, el('h4', { text: '3D' }), views.d3);
+  root.append(el('div', { class: 'st-body' }, left, mid, right));
+  buildLeft(); buildRight(); buildTest(); refresh();
+};
+
+/* ---------- left: shapes, thin surfaces, sources ---------- */
+const KINDS = { rect: 'Rectangle', ellipse: 'Ellipse / circle', polygon: 'Polygon', lens: 'Lens profile' };
+const CKINDS = { line: 'Flat surface', arc: 'Spherical surface', parabola: 'Parabolic surface' };
+const moveIn = (arr, i, dir) => { const j = i + dir; if (j < 0 || j >= arr.length) return; arr.splice(j, 0, arr.splice(i, 1)[0]); };
+const card = (isSel, onSel, ...kids) => { const c = el('div', { class: 'st-shape' + (isSel ? ' sel' : ''), onclick: onSel }, ...kids); return c; };
+function buildLeft() {
+  const host = views.left; if (!host) return; host.innerHTML = '';
+  const add = (t, fn) => el('button', { class: 'btn small', type: 'button', text: t, onclick: fn });
+  host.append(el('div', { class: 'st-cap', text: 'Body: shapes added to or cut from it, in order' }),
+    el('div', { class: 'row', style: { gap: '5px', flexWrap: 'wrap', marginBottom: '6px' } },
+      add('+ Rectangle', () => change(() => { d.shapes.push(sh('rect', { w: 10, h: 8 })); sel = { t: 'shape', i: d.shapes.length - 1 }; }, null, 'list')),
+      add('+ Ellipse', () => change(() => { d.shapes.push(sh('ellipse', { rx: 4, ry: 4 })); sel = { t: 'shape', i: d.shapes.length - 1 }; }, null, 'list')),
+      add('+ Lens', () => change(() => { d.shapes.push(sh('lens', { D: 16, tc: 4, R1: 30, R2: 30 })); sel = { t: 'shape', i: d.shapes.length - 1 }; }, null, 'list')),
+      el('button', { class: 'btn small' + (drawPts ? ' primary' : ''), type: 'button', text: drawPts ? 'Drawing… (Enter)' : '+ Polygon', title: 'Click points in the drawing; click the first point, double-click or press Enter to close; Esc cancels', onclick: () => { drawPts = drawPts ? null : []; buildLeft(); drawEditor(); } })));
+  d.shapes.forEach((s, i) => host.append(shapeCard(s, i)));
+  if (!d.shapes.length) host.append(el('div', { class: 'hint', text: 'No body: add a shape, or use thin surfaces only (a mirror on its own).' }));
+  host.append(el('div', { class: 'st-cap', text: 'Thin surfaces (mirrors, splitters, absorbers)' }),
+    el('div', { class: 'row', style: { gap: '5px', flexWrap: 'wrap', marginBottom: '6px' } },
+      add('+ Flat', () => change(() => { d.curves.push(cv('line', { L: 10 })); sel = { t: 'curve', i: d.curves.length - 1 }; }, null, 'list')),
+      add('+ Spherical', () => change(() => { d.curves.push(cv('arc', { R: 40, A: 15, t: 2 })); sel = { t: 'curve', i: d.curves.length - 1 }; }, null, 'list')),
+      add('+ Parabolic', () => change(() => { d.curves.push(cv('parabola', { f: 20, A: 12, offset: 0, t: 2 })); sel = { t: 'curve', i: d.curves.length - 1 }; }, null, 'list'))));
+  d.curves.forEach((c, i) => host.append(curveCard(c, i)));
+  host.append(el('div', { class: 'st-cap', text: 'Light sources in the part' }),
+    el('div', { class: 'row', style: { gap: '5px', marginBottom: '6px' } }, add('+ Beam', () => change(() => { const b = G().outline(d.shapes).box; d.sources.push({ x: U.round(b[2] + 0.05, 2), y: 0, angle: 0, lambda: 532, power: 5, width: 0.8, div: 0 }); sel = { t: 'source', i: d.sources.length - 1 }; }, null, 'list'))));
+  d.sources.forEach((q, i) => host.append(sourceCard(q, i)));
+  host.append(el('div', { class: 'hint', text: 'Drag a shape in the drawing to move it, its round handles to resize it, the square one to turn it. Click a face (an edge of the body) to give it its own job on the right.' }));
+}
+const opBtns = (o, k) => sel1([['add', 'Add'], ['cut', 'Cut away']], () => o.op || 'add', v => { o.op = v; }, k + 'op', 'list');
+const xyr = (o, k) => [lab('x'), num(() => U.round(o.x, 3), v => { o.x = v; }, { key: k + 'x' }), lab('y'), num(() => U.round(o.y, 3), v => { o.y = v; }, { key: k + 'y' }), lab('turn °'), num(() => U.round(o.rot || 0, 2), v => { o.rot = v; }, { key: k + 'r', step: 1 })];
+const tools = (arr, i, t) => [el('span', { class: 'st-grow' }),
+  D.iconBtn('up', 'Earlier', ev => { if (ev) ev.stopPropagation(); change(() => { moveIn(arr, i, -1); sel = { t, i: Math.max(0, i - 1) }; }, null, 'list'); }),
+  D.iconBtn('down', 'Later', ev => { if (ev) ev.stopPropagation(); change(() => { moveIn(arr, i, 1); sel = { t, i: Math.min(arr.length - 1, i + 1) }; }, null, 'list'); }),
+  el('button', { class: 'icon-btn', type: 'button', text: '⧉', title: 'Duplicate', onclick: ev => { ev.stopPropagation(); change(() => { const c = U.deepClone(arr[i]); if (c.id) c.id = nid(t === 'curve' ? 'c' : 's'); c.x = (c.x || 0) + 2; c.y = (c.y || 0) + 2; arr.splice(i + 1, 0, c); sel = { t, i: i + 1 }; }, null, 'list'); } }),
+  D.iconBtn('trash', 'Remove', ev => { if (ev) ev.stopPropagation(); change(() => { arr.splice(i, 1); sel = null; }, null, 'list'); })];
+function shapeCard(s, i) {
+  const k = 'sh' + s.id, r2 = [];
+  if (s.kind === 'rect') r2.push(lab('w'), num(() => s.w, v => { s.w = Math.max(0.05, v); }, { key: k + 'w', min: 0.05 }), lab('h'), num(() => s.h, v => { s.h = Math.max(0.05, v); }, { key: k + 'h', min: 0.05 }), lab('corner r'), num(() => s.r || 0, v => { s.r = Math.max(0, v); }, { key: k + 'c', min: 0 }));
+  if (s.kind === 'ellipse') r2.push(lab('rx'), num(() => s.rx, v => { s.rx = Math.max(0.05, v); }, { key: k + 'rx', min: 0.05 }), lab('ry'), num(() => s.ry, v => { s.ry = Math.max(0.05, v); }, { key: k + 'ry', min: 0.05 }));
+  if (s.kind === 'lens') r2.push(lab('Ø'), num(() => s.D, v => { s.D = Math.max(0.1, v); }, { key: k + 'D', min: 0.1 }), lab('centre t'), num(() => s.tc, v => { s.tc = Math.max(0.05, v); }, { key: k + 't', min: 0.05 }),
+    lab('R₁'), num(() => s.R1, v => { s.R1 = v; }, { key: k + 'R1', title: 'Front radius: + convex, − concave, 0 flat' }), lab('R₂'), num(() => s.R2, v => { s.R2 = v; }, { key: k + 'R2', title: 'Back radius: + convex, − concave, 0 flat' }));
+  if (s.kind === 'polygon') r2.push(lab(`${(s.pts || []).length} points: drag them in the drawing`));
+  return card(sel && sel.t === 'shape' && sel.i === i, () => { if (sel && sel.t === 'shape' && sel.i === i) return; sel = { t: 'shape', i }; buildLeft(); drawEditor(); },
+    el('div', { class: 'st-row' }, el('b', { text: KINDS[s.kind] || s.kind, style: { gridColumn: 'span 2' } }), opBtns(s, k)),
+    el('div', { class: 'st-row2' }, ...r2), el('div', { class: 'st-row2' }, ...xyr(s, k), ...tools(d.shapes, i, 'shape')));
+}
+function curveCard(c, i) {
+  const k = 'cv' + c.id, r2 = [];
+  if (c.kind === 'line') r2.push(lab('length'), num(() => c.L, v => { c.L = Math.max(0.05, v); }, { key: k + 'L', min: 0.05 }));
+  if (c.kind === 'arc') r2.push(lab('R'), num(() => c.R, v => { c.R = Math.abs(v) < 0.1 ? 0.1 : v; }, { key: k + 'R', title: 'Radius of curvature: + concave towards the light (focusing), − convex' }), lab('aperture'), num(() => c.A, v => { c.A = Math.max(0.05, v); }, { key: k + 'A', min: 0.05 }));
+  if (c.kind === 'parabola') r2.push(lab('focal length'), num(() => c.f, v => { c.f = Math.max(0.1, v); }, { key: k + 'f', min: 0.1 }), lab('aperture'), num(() => c.A, v => { c.A = Math.max(0.05, v); }, { key: k + 'A', min: 0.05 }), lab('off-axis'), num(() => c.offset || 0, v => { c.offset = v; }, { key: k + 'o', title: 'Distance of the aperture centre from the axis (an off-axis parabola focuses to the side)' }));
+  r2.push(lab('substrate'), num(() => c.t || 1, v => { c.t = Math.max(0.1, v); }, { key: k + 'th', min: 0.1, title: 'Drawn thickness behind the surface (mm)' }));
+  const role = sel1([['mirror', 'Mirror'], ['splitter', 'Beam splitter'], ['absorb', 'Absorber'], ['pass', 'Drawing only']], () => c.role || 'mirror', v => { c.role = v; }, k + 'role', 'list');
+  const rr = c.role === 'splitter' ? [lab('R'), num(() => c.R == null ? 0.5 : c.R, v => { c.R = U.clamp(v, 0, 1); }, { key: k + 'Rs', min: 0, max: 1, step: 0.01 })] : [];
+  return card(sel && sel.t === 'curve' && sel.i === i, () => { if (sel && sel.t === 'curve' && sel.i === i) return; sel = { t: 'curve', i }; buildLeft(); drawEditor(); },
+    el('div', { class: 'st-row' }, el('b', { text: CKINDS[c.kind] || c.kind, style: { gridColumn: 'span 2' } }), role),
+    el('div', { class: 'st-row2' }, ...r2, ...rr), el('div', { class: 'st-row2' }, ...xyr(c, k), ...tools(d.curves, i, 'curve')));
+}
+function sourceCard(q, i) {
+  const k = 'src' + i;
+  return card(sel && sel.t === 'source' && sel.i === i, () => { if (sel && sel.t === 'source' && sel.i === i) return; sel = { t: 'source', i }; buildLeft(); drawEditor(); },
+    el('div', { class: 'st-row2' }, el('b', { text: 'Beam' }), lab('λ (nm)'), num(() => q.lambda, v => { q.lambda = U.clamp(v, 150, 20000); }, { key: k + 'l', step: 1 }), lab('power (mW)'), num(() => q.power, v => { q.power = Math.max(0, v); }, { key: k + 'p', min: 0 })),
+    el('div', { class: 'st-row2' }, lab('x'), num(() => q.x, v => { q.x = v; }, { key: k + 'x' }), lab('y'), num(() => q.y, v => { q.y = v; }, { key: k + 'y' }), lab('direction °'), num(() => q.angle, v => { q.angle = v; }, { key: k + 'a', step: 1 }),
+      lab('Ø'), num(() => q.width, v => { q.width = Math.max(0.05, v); }, { key: k + 'w', min: 0.05 }), ...tools(d.sources, i, 'source').slice(3)));
+}
+
+/* ---------- right: body, faces, look, 3D ---------- */
+const FACE_NAMES = { top: 'top', bottom: 'bottom', left: 'left', right: 'right', rim: 'edge', front: 'front surface', back: 'back surface' };
+const faceLabel = key => { const [id, f] = key.split(':'), i = d.shapes.findIndex(s => s.id === id), s = d.shapes[i]; if (!s) return key; return `${KINDS[s.kind] || s.kind} ${i + 1}${s.op === 'cut' ? ' (cut)' : ''} · ${f[0] === 'e' && s.kind === 'polygon' ? 'side ' + (+f.slice(1) + 1) : FACE_NAMES[f] || f}`; };
+function buildRight() {
+  const host = views.right; if (!host) return; host.innerHTML = '';
+  const b = d.body;
+  const kids = [fld('What the body does to light', sel1([['glass', 'Glass (refracts)'], ['opaque', 'Opaque (absorbs)'], ['mirror', 'Mirror (every face reflects)'], ['none', 'Nothing (drawing only)']], () => b.kind, v => { b.kind = v; }, 'bk', 'list'))];
+  if (b.kind === 'glass') {
+    const mats = Object.keys(RNBX.optics.MATERIALS).map(k => [k, RNBX.optics.MATERIALS[k].name]).concat([['custom', 'Custom index n']]);
+    kids.push(fld('Material', sel1(mats, () => b.mat || 'N-BK7', v => { b.mat = v; }, 'bm', 'list')));
+    if (b.mat === 'custom') kids.push(fld('n', num(() => b.n || 1.5, v => { b.n = Math.max(1, v); }, { key: 'bn', min: 1, step: 0.01 })));
+  }
+  host.append(el('div', { class: 'st-grid' }, ...kids));
+  // faces
+  const res = G().outline(d.shapes), faces = G().faces(res);
+  if (b.kind !== 'none' && faces.length) {
+    const dflt = b.kind === 'glass' ? 'glass' : b.kind === 'mirror' ? 'mirror' : 'absorb';
+    const opts = [['', 'As the body (' + ({ glass: 'glass', mirror: 'mirror', absorb: 'absorbs' })[dflt] + ')'], ['mirror', 'Mirror coating'], ['absorb', 'Blackened (absorbs)'], ['splitter', 'Beam-splitter coating']].concat(b.kind !== 'glass' ? [] : [['glass', 'Glass']]);
+    const list = el('div', { class: 'pb-faces' });
+    faces.forEach(f => {
+      const cur = (b.faces || {})[f.key] || '';
+      const s = el('select', { onchange: () => change(() => { b.faces = b.faces || {}; if (s.value) b.faces[f.key] = s.value; else delete b.faces[f.key]; }, 'face' + f.key, 'list') }, opts.map(q => el('option', { value: q[0], text: q[1] })));
+      s.value = cur;
+      const row = el('div', { class: 'pb-face' + (face === f.key ? ' sel' : ''), onmouseenter: () => { face = f.key; drawEditor(); }, onclick: () => { face = f.key; drawEditor(); } }, el('span', { text: faceLabel(f.key) + ` (${UI().f1(f.len, 1)} mm)` }), s);
+      if (cur === 'splitter') row.append(el('span', { class: 'hint', style: { margin: 0 }, text: 'R' }), num(() => (b.faceR || {})[f.key] == null ? 0.5 : b.faceR[f.key], v => { b.faceR = b.faceR || {}; b.faceR[f.key] = U.clamp(v, 0, 1); }, { key: 'fr' + f.key, min: 0, max: 1, step: 0.01 }));
+      list.append(row);
+    });
+    host.append(el('div', { class: 'st-cap', text: 'Faces (click one in the drawing to find it here)' }), list);
+  }
+  const lk = d.look;
+  host.append(el('div', { class: 'st-cap', text: 'Look' }), el('div', { class: 'st-grid' },
+    fld('Finish', sel1([['', 'Automatic'], ['glass', 'Glass'], ['metal', 'Metal'], ['matte', 'Matte'], ['mirror', 'Mirror']], () => lk.finish || '', v => { lk.finish = v; }, 'lf')),
+    fld('Colour', (() => { const c = el('input', { type: 'color', value: (lk.color || '#9aa3ad').slice(0, 7), oninput: () => change(() => { lk.color = c.value; }, 'lc') }); return c; })()),
+    el('button', { class: 'btn small ghost', type: 'button', text: 'Default colour', onclick: () => change(() => { lk.color = ''; }, null, 'list') }),
+    fld('Glass opacity', num(() => lk.alpha == null ? 0.35 : lk.alpha, v => { lk.alpha = U.clamp(v, 0.05, 1); }, { key: 'la', min: 0.05, max: 1, step: 0.05 }))));
+  host.append(el('div', { class: 'st-cap', text: '3D body' }), el('div', { class: 'st-grid' },
+    fld('Shape in 3D', sel1([['extrude', 'Extruded (a prism-like block)'], ['revolve', 'Turned about the axis (round)']], () => d.d3.mode, v => { d.d3.mode = v; }, 'dm')),
+    fld('Height (mm)', num(() => d.d3.h, v => { d.d3.h = Math.max(0.2, v); }, { key: 'dh', min: 0.2, title: 'Extruded parts: height of the block' }))));
+}
+function buildTest() {
+  const host = views.testCtl; if (!host) return; host.innerHTML = '';
+  const t = d.test;
+  host.append(el('div', { class: 'st-grid' },
+    el('label', { class: 'st-f row' }, el('input', { type: 'checkbox', checked: !!t.on, onchange: e => change(() => { t.on = e.target.checked; }, null, 'test') }), el('span', { text: 'On' })),
+    fld('Beam', sel1([['parallel', 'Parallel rays'], ['point', 'From a point']], () => t.mode, v => { t.mode = v; }, 'tm')),
+    fld(t.mode === 'point' ? 'Fan angle (°)' : 'Width (mm)', num(() => (t.mode === 'point' ? t.fan || 20 : t.h), v => { if (t.mode === 'point') t.fan = U.clamp(v, 0.5, 170); else t.h = Math.max(0.1, v); }, { key: 'th', min: 0.1 })),
+    fld('Rays', num(() => t.rays, v => { t.rays = U.clamp(Math.round(v), 1, 41); }, { key: 'tr', min: 1, max: 41, step: 1 })),
+    fld('Angle (°)', num(() => t.tilt, v => { t.tilt = U.clamp(v, -60, 60); }, { key: 'tt', step: 1 })),
+    fld('Height (mm)', num(() => t.offset || 0, v => { t.offset = v; }, { key: 'to', title: 'Shift the beam up or down' })),
+    fld('λ (nm)', num(() => t.lambda, v => { t.lambda = U.clamp(v, 150, 20000); }, { key: 'tl', step: 1 }))));
+}
+
+/* ---------- the test bench: the part alone with a ray bundle ---------- */
+const BENCH = [200, 120];
+function bench(withTest) {
+  const doc = RNBX.newDocument(); doc.page.width = 400; doc.page.height = 240; doc.style.ghosts = 'off';
+  const part = RNBX.createObject('built', BENCH[0], BENCH[1]); part.props.design = U.deepClone(d); part.label = { text: '', dx: 0, dy: 0, show: false };
+  doc.objects = [part];
+  if (withTest && d.test.on) {
+    const box = G().outline(d.shapes).box, cx = Math.min(box[0], ...d.curves.flatMap(c => G().curvePts(c).map(p => p[0]))), t = d.test;
+    const src = RNBX.createObject('raysource', BENCH[0] + Math.min(-12, cx - 14), BENCH[1] + (+t.offset || 0));
+    Object.assign(src.props, { mode: t.mode === 'point' ? 'point' : 'parallel', h: t.mode === 'point' ? 0.3 : t.h, rays: t.rays, fan: t.fan || 20, tilt: t.tilt || 0, lambda: t.lambda, colors: 'single' });
+    src.label = { text: '', dx: 0, dy: 0, show: false };
+    doc.objects.push(src);
+  }
+  return RNBX.normalizeDocument(doc);
+}
+PB.traceTest = () => { const doc = bench(true), tr = RNBX.trace(doc); return { doc, tr }; };
+/* where the rays that leave the part meet (median crossing of neighbouring rays) */
+function focusOf(tr) {
+  const fin = tr.segments.filter(s => !s.vertical && s.end === 'open' && Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) > 5);
+  const xs = [];
+  for (let i = 0; i < fin.length; i++) for (let j = i + 1; j < fin.length; j++) {
+    const a = fin[i], b = fin[j], d1 = [a.b[0] - a.a[0], a.b[1] - a.a[1]], d2 = [b.b[0] - b.a[0], b.b[1] - b.a[1]], den = d1[0] * d2[1] - d1[1] * d2[0];
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((b.a[0] - a.a[0]) * d2[1] - (b.a[1] - a.a[1]) * d2[0]) / den, u = ((b.a[0] - a.a[0]) * d1[1] - (b.a[1] - a.a[1]) * d1[0]) / den;
+    if (t > 0 && u > 0 && t < 1 && u < 1) xs.push([a.a[0] + t * d1[0], a.a[1] + t * d1[1]]);
+  }
+  if (xs.length < 2) return null;
+  const med = k => xs.map(p => p[k]).sort((p, q) => p - q)[Math.floor(xs.length / 2)];
+  const c = [med(0), med(1)], spread = Math.sqrt(xs.reduce((a, p) => a + (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2, 0) / xs.length);
+  return { x: c[0] - BENCH[0], y: c[1] - BENCH[1], spread };
+}
+
+/* ---------- the editor ---------- */
+let edCache = null, refreshT = 0;
+function refresh() { clearTimeout(refreshT); drawEditor(); refreshT = setTimeout(draw3d, 120); }
+const toPart = (o, u, v) => { const a = (o.rot || 0) * Math.PI / 180; return [(o.x || 0) + u * Math.cos(a) - v * Math.sin(a), (o.y || 0) + u * Math.sin(a) + v * Math.cos(a)]; };
+const toLocal = (o, x, y) => { const a = -(o.rot || 0) * Math.PI / 180, dx = x - (o.x || 0), dy = y - (o.y || 0); return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)]; };
+function extentOf(o) { if (o.kind === 'rect') return Math.max(o.w, o.h) / 2; if (o.kind === 'ellipse') return Math.max(o.rx, o.ry); if (o.kind === 'lens') return Math.max(o.D / 2, o.tc / 2); if (o.kind === 'polygon') return Math.max(...(o.pts || [[1, 1]]).map(p => Math.hypot(p[0], p[1]))); if (o.kind === 'line') return o.L / 2; return (o.A || 10) / 2 + Math.abs(o.offset || 0); }
+function handlesOf() {
+  if (!sel) return [];
+  const out = [];
+  if (sel.t === 'shape') {
+    const o = d.shapes[sel.i]; if (!o) return [];
+    const H = (type, u, v, extra) => out.push(Object.assign({ type, p: toPart(o, u, v) }, extra || {}));
+    if (o.kind === 'rect') H('wh', o.w / 2, o.h / 2);
+    if (o.kind === 'ellipse') { H('rx', o.rx, 0); H('ry', 0, o.ry); }
+    if (o.kind === 'lens') { H('D', 0, o.D / 2); H('tc', o.tc / 2, 0); }
+    if (o.kind === 'polygon') (o.pts || []).forEach((q, k) => H('pt', q[0], q[1], { k }));
+    H('rot', 0, -(extentOf(o) + 2.5), { sq: true });
+  } else if (sel.t === 'curve') {
+    const o = d.curves[sel.i]; if (!o) return [];
+    const pts = G().curvePts(o), e = pts[pts.length - 1];
+    out.push({ type: 'cA', p: e });
+    out.push({ type: 'rot', p: toPart(o, -3 - (o.t || 1), 0), sq: true });
+  } else if (sel.t === 'source') {
+    const q = d.sources[sel.i]; if (!q) return [];
+    const a = (q.angle || 0) * Math.PI / 180;
+    out.push({ type: 'dir', p: [q.x + 6 * Math.cos(a), q.y + 6 * Math.sin(a)], sq: true });
+  }
+  return out;
+}
+function drawEditor() {
+  const host = views.editor; if (!host || !d) return;
+  const w = Math.max(320, host.clientWidth || 520), h = Math.round(Math.min(520, Math.max(320, w * 0.72)));
+  const res = G().outline(d.shapes);
+  let tr = null, bdoc = null;
+  try { const r = PB.traceTest(); tr = r.tr; bdoc = r.doc; } catch (e) { tr = null; }
+  testRes = tr;
+  // the view: the part with room around it (kept while editing, refitted on demand)
+  const pts = res.rings.flatMap(r => r.pts).concat(d.curves.flatMap(c => G().curvePts(c)), d.sources.map(q => [q.x, q.y]));
+  if (!view || view.stale) {
+    const b = pts.length ? [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))] : [-10, -10, 10, 10];
+    const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, span = Math.max(20, (b[2] - b[0]) * 1.6, (b[3] - b[1]) * 1.6 * w / h);
+    view = { cx, cy, span };
+  }
+  const k = w / view.span, X = x => w / 2 + (x - view.cx) * k, Y = y => h / 2 + (y - view.cy) * k;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="10.5" class="st-chart pb-svg">`;
+  // grid
+  const step = UI().niceStep(view.span / 10, 1), x0 = view.cx - w / 2 / k, x1 = view.cx + w / 2 / k, y0 = view.cy - h / 2 / k, y1 = view.cy + h / 2 / k;
+  for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) s += `<line x1="${X(x)}" y1="0" x2="${X(x)}" y2="${h}" stroke="${Math.abs(x) < 1e-9 ? '#00000040' : '#0000000f'}"/>`;
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) s += `<line x1="0" y1="${Y(y)}" x2="${w}" y2="${Y(y)}" stroke="${Math.abs(y) < 1e-9 ? '#00000040' : '#0000000f'}"/>`;
+  s += `<text x="6" y="${h - 6}" fill="#777">grid ${UI().fmt(step, step)} mm</text>`;
+  // cut shapes as dashed outlines, so they can be found
+  d.shapes.forEach((o, i) => { if (o.op !== 'cut') return; const r2 = G().outline([Object.assign({}, o, { op: 'add' })]); r2.rings.forEach(r => { s += `<path d="M ${r.pts.map(q => X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join(' L ')} Z" fill="none" stroke="#d62728" stroke-dasharray="4 3" stroke-width="${sel && sel.t === 'shape' && sel.i === i ? 1.6 : 0.8}"/>`; }); });
+  // the part as it will be drawn (from its own component, at this scale)
+  const look = Object.assign({}, d.look), fin = look.finish || (d.body.kind === 'glass' ? 'glass' : 'matte');
+  const fill = fin === 'glass' ? (look.color || '#bfe0f2') : fin === 'mirror' ? '#d7dce2' : (look.color || (fin === 'metal' ? '#b9bec6' : '#4b525c'));
+  const path = res.rings.map(r => 'M ' + r.pts.map(q => X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join(' L ') + ' Z').join(' ');
+  if (path) s += `<path d="${path}" fill="${fill}" fill-opacity="${fin === 'glass' ? 0.55 : 0.9}" fill-rule="evenodd" stroke="#1d1f23" stroke-width="1"/>`;
+  const faces = d.body.faces || {};
+  res.rings.forEach(r => r.pts.forEach((q, i) => {
+    const t = r.pts[(i + 1) % r.pts.length], key = r.faces[i], role = faces[key];
+    if (face === key) s += `<line x1="${X(q[0])}" y1="${Y(q[1])}" x2="${X(t[0])}" y2="${Y(t[1])}" stroke="var(--accent)" stroke-width="5" stroke-opacity="0.55" stroke-linecap="round"/>`;
+    if (role && role !== 'glass') s += `<line x1="${X(q[0])}" y1="${Y(q[1])}" x2="${X(t[0])}" y2="${Y(t[1])}" stroke="${role === 'mirror' ? '#7d8794' : role === 'absorb' ? '#111' : '#3d7ab8'}" stroke-width="3" stroke-linecap="round" ${role === 'splitter' ? 'stroke-dasharray="5 3"' : ''}/>`;
+  }));
+  d.curves.forEach((c, i) => {
+    const cp = G().curvePts(c), col = c.role === 'absorb' ? '#111' : c.role === 'splitter' ? '#3d7ab8' : c.role === 'pass' ? '#9aa1ab' : '#5d6670';
+    s += `<path d="M ${cp.map(q => X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join(' L ')}" fill="none" stroke="${col}" stroke-width="${sel && sel.t === 'curve' && sel.i === i ? 4.5 : 3}" stroke-linecap="round" ${c.role === 'splitter' ? 'stroke-dasharray="6 3"' : ''}/>`;
+  });
+  // rays of the test beam and of the part's own sources
+  if (tr) {
+    let rays = '';
+    tr.segments.forEach(g => { if (g.vertical || g.ghost) return; const a = [g.a[0] - BENCH[0], g.a[1] - BENCH[1]], b = [g.b[0] - BENCH[0], g.b[1] - BENCH[1]]; rays += `<line x1="${X(a[0]).toFixed(1)}" y1="${Y(a[1]).toFixed(1)}" x2="${X(b[0]).toFixed(1)}" y2="${Y(b[1]).toFixed(1)}" stroke="${U.wavelengthColor(g.lambda)}" stroke-opacity="${U.clamp(0.25 + 0.75 * Math.sqrt(g.P / (g.P0 || g.P || 1)), 0.2, 1)}" stroke-width="1.1"/>`; });
+    s += `<g>${rays}</g>`;
+  }
+  d.sources.forEach((q, i) => { const a = (q.angle || 0) * Math.PI / 180; s += `<circle cx="${X(q.x)}" cy="${Y(q.y)}" r="4" fill="#d62728" stroke="#fff"/><line x1="${X(q.x)}" y1="${Y(q.y)}" x2="${X(q.x + 4 * Math.cos(a))}" y2="${Y(q.y + 4 * Math.sin(a))}" stroke="#d62728" stroke-width="2"/>`; });
+  // selection and handles
+  if (sel && sel.t === 'shape' && d.shapes[sel.i] && d.shapes[sel.i].op !== 'cut') { const r2 = G().outline([Object.assign({}, d.shapes[sel.i], { op: 'add' })]); r2.rings.forEach(r => { s += `<path d="M ${r.pts.map(q => X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join(' L ')} Z" fill="none" stroke="var(--accent)" stroke-dasharray="5 3" stroke-width="1.4"/>`; }); }
+  const hs = handlesOf();
+  hs.forEach(hd => { s += hd.sq ? `<rect x="${X(hd.p[0]) - 5}" y="${Y(hd.p[1]) - 5}" width="10" height="10" fill="var(--accent)" stroke="#fff" stroke-width="1.2"/>` : `<circle cx="${X(hd.p[0])}" cy="${Y(hd.p[1])}" r="5.5" fill="var(--accent)" stroke="#fff" stroke-width="1.2"/>`; });
+  if (drawPts) {
+    if (drawPts.length) s += `<path d="M ${drawPts.map(q => X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join(' L ')}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>` + drawPts.map((q, i) => `<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="${i ? 3.5 : 5.5}" fill="${i ? 'var(--accent)' : '#fff'}" stroke="var(--accent)" stroke-width="1.5"/>`).join('');
+    s += `<text x="${w / 2}" y="16" text-anchor="middle" fill="var(--accent)" font-weight="700">Click points; click the first point, double-click or press Enter to close (Esc cancels)</text>`;
+  }
+  s += `<text x="${w - 6}" y="${h - 6}" text-anchor="end" fill="#777">scroll to zoom · drag the background to pan · double-click the background to fit</text>`;
+  host.innerHTML = s + '</svg>';
+  edCache = { X, Y, k, w, h, res, hs };
+  const svg = host.querySelector('svg'); svg.style.touchAction = 'none';
+  svg.onpointerdown = onDown; svg.ondblclick = onDbl;
+  svg.onwheel = e => { e.preventDefault(); const f = e.deltaY > 0 ? 1.15 : 1 / 1.15, b = svg.getBoundingClientRect(), px = (e.clientX - b.left) * w / b.width, py = (e.clientY - b.top) * w / b.width, mx = view.cx + (px - w / 2) / k, my = view.cy + (py - h / 2) / k;
+    view.span *= f; view.cx = mx - (mx - view.cx) * f; view.cy = my - (my - view.cy) * f; drawEditor(); };
+  readout(tr);
+}
+function readout(tr) {
+  const host = views.readout; if (!host) return;
+  const res = G().outline(d.shapes), b = res.box, lines = [];
+  if (res.rings.length) lines.push(`Body ${UI().f1(b[2] - b[0], 2)} × ${UI().f1(b[3] - b[1], 2)} mm, ${G().faces(res).length} faces.`);
+  if (tr && d.test.on) {
+    const f = focusOf(tr);
+    if (f && f.spread < 2) lines.push(`The rays meet at x = ${UI().f1(f.x, 2)} mm, y = ${UI().f1(f.y, 2)} mm (spread ${UI().f1(f.spread, 3)} mm)` + (res.rings.length ? `, ${UI().f1(f.x - b[2], 2)} mm after the back of the part.` : '.'));
+    else if (f) lines.push('The outgoing rays do not meet in one point (spread ' + UI().f1(f.spread, 1) + ' mm).');
+    const lost = Object.values(tr.hits || {}).reduce((a, h) => a + h.P, 0);
+    if (lost > 1e-6) lines.push(`Absorbed in the part: ${UI().f1(lost, 3)} (units of the test beam).`);
+  }
+  host.innerHTML = `<div class="readout">${lines.join('<br>') || 'Add a shape or a surface.'}</div>`;
+}
+function onDbl(e) {
+  if (drawPts) { finishPolygon(); return; }
+  const tgt = e.target; if (tgt.tagName === 'svg' || tgt.tagName === 'line' || tgt.tagName === 'text') { view = null; drawEditor(); }
+}
+function finishPolygon() {
+  const pts = (drawPts || []).filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-3);
+  drawPts = null;
+  if (pts.length < 3) { buildLeft(); drawEditor(); return; }
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  change(() => { d.shapes.push(sh('polygon', { x: U.round(cx, 3), y: U.round(cy, 3), pts: pts.map(p => [U.round(p[0] - cx, 3), U.round(p[1] - cy, 3)]) })); sel = { t: 'shape', i: d.shapes.length - 1 }; }, null, 'list');
+}
+const segD = (px, py, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = U.clamp(((px - a[0]) * vx + (py - a[1]) * vy) / (vx * vx + vy * vy || 1), 0, 1); return Math.hypot(px - a[0] - t * vx, py - a[1] - t * vy); };
+function onDown(e) {
+  const svg = e.currentTarget, b = svg.getBoundingClientRect(), ec = edCache; if (!ec) return;
+  const sc = ec.w / b.width, px = (e.clientX - b.left) * sc, py = (e.clientY - b.top) * sc;
+  const mm = (qx, qy) => [view.cx + (qx - ec.w / 2) / ec.k, view.cy + (qy - ec.h / 2) / ec.k], p0 = mm(px, py);
+  if (drawPts) {
+    const snap = q => [U.round(q[0] * 10) / 10, U.round(q[1] * 10) / 10].map(v => Math.round(v * 10) / 10);
+    if (drawPts.length >= 3 && Math.hypot(ec.X(drawPts[0][0]) - px, ec.Y(drawPts[0][1]) - py) < 8) { finishPolygon(); return; }
+    drawPts.push(snap(p0)); drawEditor(); return;
+  }
+  let mode = null, idx = null;
+  const hd = ec.hs.find(q => Math.hypot(ec.X(q.p[0]) - px, ec.Y(q.p[1]) - py) < 9);
+  if (hd) { mode = hd.type; idx = hd.k; }
+  else {
+    // a face of the body?
+    let best = null, bd = 6 / ec.k;
+    ec.res.rings.forEach(r => r.pts.forEach((q, i) => { const t = r.pts[(i + 1) % r.pts.length], dd = segD(p0[0], p0[1], q, t); if (dd < bd) { bd = dd; best = r.faces[i]; } }));
+    // thin surfaces and sources first, then shapes (topmost last)
+    const ci = d.curves.findIndex(c => { const cp = G().curvePts(c); for (let i = 0; i < cp.length - 1; i++) if (segD(p0[0], p0[1], cp[i], cp[i + 1]) < 6 / ec.k) return true; return false; });
+    const si = d.sources.findIndex(q => Math.hypot(q.x - p0[0], q.y - p0[1]) < 7 / ec.k);
+    let shi = -1; d.shapes.forEach((o, i) => { if (G().sdf(o, p0[0], p0[1]).d < 0) shi = i; });
+    if (si >= 0) { sel = { t: 'source', i: si }; mode = 'move'; }
+    else if (ci >= 0) { sel = { t: 'curve', i: ci }; mode = 'move'; }
+    else if (best && d.body.kind !== 'none') { face = best; const id = best.split(':')[0]; shi = d.shapes.findIndex(o => o.id === id); sel = shi >= 0 ? { t: 'shape', i: shi } : sel; buildLeft(); buildRight(); drawEditor(); const row = root.querySelector('.pb-face.sel'); if (row) row.scrollIntoView({ block: 'nearest' }); return; }
+    else if (shi >= 0) { sel = { t: 'shape', i: shi }; mode = 'move'; }
+    else { mode = 'pan'; }
+    if (mode !== 'pan') { face = null; buildLeft(); }
+  }
+  e.preventDefault();
+  const o = sel ? (sel.t === 'shape' ? d.shapes[sel.i] : sel.t === 'curve' ? d.curves[sel.i] : d.sources[sel.i]) : null;
+  const st = o ? JSON.parse(JSON.stringify(o)) : null, v0 = Object.assign({}, view);
+  if (mode !== 'pan') step('drag' + Date.now());
+  const r3 = v => Math.round(v * 1000) / 1000, snap = v => (e.shiftKey ? v : Math.round(v * 20) / 20);
+  const move = ev => {
+    const p = mm((ev.clientX - b.left) * sc, (ev.clientY - b.top) * sc), dx = p[0] - p0[0], dy = p[1] - p0[1];
+    if (mode === 'pan') { view.cx = v0.cx - (ev.clientX - e.clientX) * sc / ec.k; view.cy = v0.cy - (ev.clientY - e.clientY) * sc / ec.k; drawEditor(); return; }
+    if (!o) return;
+    if (mode === 'move') { o.x = r3(snap(st.x + dx)); o.y = r3(snap(st.y + dy)); }
+    else if (mode === 'rot') { o.rot = Math.round(Math.atan2(p[1] - st.y, p[0] - st.x) * 180 / Math.PI + (sel.t === 'curve' ? 180 : 90)); }
+    else if (mode === 'dir') { o.angle = Math.round(Math.atan2(p[1] - st.y, p[0] - st.x) * 180 / Math.PI); }
+    else {
+      const [u, v] = toLocal(st, p[0], p[1]);
+      if (mode === 'wh') { o.w = r3(Math.max(0.1, snap(2 * Math.abs(u)))); o.h = r3(Math.max(0.1, snap(2 * Math.abs(v)))); }
+      if (mode === 'rx') o.rx = r3(Math.max(0.05, snap(Math.abs(u))));
+      if (mode === 'ry') o.ry = r3(Math.max(0.05, snap(Math.abs(v))));
+      if (mode === 'D') o.D = r3(Math.max(0.1, snap(2 * Math.abs(v))));
+      if (mode === 'tc') o.tc = r3(Math.max(0.05, snap(2 * Math.abs(u))));
+      if (mode === 'pt') o.pts[idx] = [r3(snap(u)), r3(snap(v))];
+      if (mode === 'cA') { if (o.kind === 'line') o.L = r3(Math.max(0.1, snap(2 * Math.abs(v)))); else o.A = r3(Math.max(0.1, snap(2 * Math.abs(v - (o.offset || 0))))); }
+    }
+    save(); drawEditor();
+  };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (mode !== 'pan') { buildLeft(); buildRight(); refresh(); } };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+
+/* ---------- 3D preview ---------- */
+let yaw = -35;
+function draw3d() {
+  const host = views.d3; if (!host || !d) return;
+  const doc = bench(true);
+  doc.style.mode = '3d';
+  const res = G().outline(d.shapes), b = res.box, span = Math.max(20, b[2] - b[0], b[3] - b[1], (d.d3.h || 10)) * 2.2;
+  doc.page.width = Math.round(span * 1.4); doc.page.height = Math.round(span);
+  const dx = doc.page.width / 2 - BENCH[0], dy = doc.page.height / 2 - BENCH[1];
+  doc.objects.forEach(o => { o.x += dx; o.y += dy; });
+  Object.assign(doc.view3d, { yaw, pitch: 26, zoom: 1, panX: 0, panY: 0, table: false, holes: false, posts: false, beamHeight: Math.max(6, (d.d3.h || 10) / 2 + 1) });
+  let svg = '';
+  try { svg = RNBX.render.build(doc).svg; } catch (e) { svg = `<div class="hint">3D preview failed: ${U.esc(e.message)}</div>`; }
+  host.innerHTML = '';
+  const box = el('div', { class: 'pb-3dview', html: svg });
+  const slider = el('input', { type: 'range', min: -180, max: 180, step: 1, value: yaw, oninput: () => { yaw = +slider.value; clearTimeout(prevT); prevT = setTimeout(draw3d, 16); } });
+  host.append(box, el('label', { class: 'st-f row' }, el('span', { text: 'Turn' }), slider));
+}
+
+/* ---------- files, library, figure ---------- */
+function saveFile() { U.download(new Blob([JSON.stringify({ rnbeamx: 'part', version: 1, design: d }, null, 1)], { type: 'application/json' }), U.slug(d.name || 'part') + '.rnbxpart.json'); }
+function openFile() {
+  RNBX.project.pickFile('.json,application/json', f => f.text().then(t => {
+    const j = JSON.parse(t), v = j.design || (j.format === 'rnbeamx-component' && j.type === 'built' ? j.props.design : null) || j;
+    if (!v || !Array.isArray(v.shapes)) throw new Error('This is not a Part Builder design');
+    PB.setDesign(Object.assign(PRESETS[0].make(), v));
+  }).catch(e => RNBX.toast(e.message || String(e), 'error')));
+}
+const asObject = () => { const o = RNBX.createObject('built', 0, 0); o.props.design = U.deepClone(d); o.props.title = d.name || 'Built part'; if (o.label) o.label.text = d.name || ''; return o; };
+function toLibrary() {
+  if (!RNBX.groups || !RNBX.groups.save) return;
+  RNBX.groups.save(asObject(), d.name || 'Built part');
+  RNBX.toast(`“${d.name || 'Built part'}” is in My components (parts list, this browser). Save writes a file to share it.`);
+  U.track('part-library');
+}
+PB.insert = (opt = {}) => {
+  const doc = S.doc, W = doc.page.width, H = doc.page.height;
+  RNBX.history.checkpoint();
+  let obj;
+  if (target && !opt.asNew && doc.objects.includes(target)) { obj = target; obj.props.design = U.deepClone(d); obj.props.title = d.name || obj.props.title; }
+  else {
+    obj = asObject();
+    const boxes = doc.objects.filter(o => RNBX.lib.get(o.type) && !RNBX.lib.get(o.type).connection && o.type !== 'panel').map(o => RNBX.lib.worldBox(o));
+    obj.x = boxes.length ? Math.min(W - 20, Math.max(...boxes.map(q => q[2])) + 20) : W / 2; obj.y = H / 2;
+    doc.objects.push(obj);
+  }
+  RNBX.select([obj.id]); RNBX.changed(); if (RNBX.inspector) RNBX.inspector.build();
+  U.track('part-insert');
+  return obj;
+};
+function insert() {
+  const was = !!target;
+  PB.insert(); ST().close();
+  RNBX.toast(was ? 'Part updated' : 'Part inserted: drag it into place, it works with the light like any other part');
+}
+})();
+
+</script>
+<script>
 /* js/learn/content.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — learn/content.js
@@ -15802,6 +16648,15 @@ E('prism', { group: F0,
     [`${v('V')}<sub>d</sub> = ${fr(v('n') + '<sub>d</sub> − 1', v('n') + '<sub>F</sub> − ' + v('n') + '<sub>C</sub>')}`, 'Abbe number: low V = strong dispersion (BK7 64, SF11 25)']],
   demo: demo(110, 70, a => { a('lamp', 16, 20, 0, { beamWidth: 0.5, count: 7 }, 'White light', [0, 7]); a('prism', 50, 20, 10, { mat: 'N-BK7' }, 'Prism', [0, -9]); a('screen', 96, 58, 41, { d: 12 }, 'Spectrum', [9, -4]); }),
   see: ['grating', 'c-refr', 'rprism'] });
+E('built', { group: F0,
+  one: 'A part you design yourself in Layer Studio ▸ Part: its shape, what each face does to light, and how it looks in 3D.',
+  how: ['Combine rectangles, ellipses, polygons and lens profiles (each added to or cut from the body), and add thin surfaces such as flat, spherical or parabolic mirrors and beam-splitter coatings. Then choose what the body is: glass of a real material (it refracts, with total internal reflection where it applies), opaque, or mirrored, and give single faces their own job: a mirror coating, a blackened face, a partial reflector.',
+    'The ray tracer treats the part exactly like the built-in ones: curved faces refract and reflect as smooth surfaces (the normal follows the true curve), and a test beam in the Part Builder shows where the rays meet. Built-in beam sources make it a light source of your own.'],
+  math: [[`${v('n')}<sub>1</sub> sin ${v('θ')}<sub>1</sub> = ${v('n')}<sub>2</sub> sin ${v('θ')}<sub>2</sub>`, 'Snell’s law at every glass face'],
+    [`${fr('1', v('f'))} = (${v('n')} − 1)(${fr('1', v('R') + '<sub>1</sub>')} − ${fr('1', v('R') + '<sub>2</sub>')})`, 'thin-lens (lensmaker’s) equation for a lens profile'],
+    [`${v('f')} = ${fr(v('R'), '2')}`, 'focal length of a spherical mirror']],
+  demo: demo(110, 50, a => { a('laser', 16, 25, 0, { lambda: 532, beamWidth: 4 }, 'Laser', [0, 7]); a('built', 52, 25, 0, {}, 'Built lens', [0, 13]); a('screen', 100, 25, 0, { d: 20 }); }),
+  see: ['lens', 'c-refr', 'mirror'] });
 E('window', { group: F0,
   one: 'A flat window or plate: transmits light, but shifts a tilted beam sideways and adds a small reflection.',
   how: ['Windows seal vacuum chambers and cryostats, protect optics, or are tilted on purpose to fine-tune a beam’s position. Each uncoated surface reflects about 4 % (a ghost beam). Tilted at Brewster’s angle, p-polarised light passes without any reflection.'],

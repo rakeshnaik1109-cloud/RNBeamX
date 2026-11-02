@@ -247,3 +247,14 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-tab { border-collapse: collapse; margin: 6px 0; font-size: 11.5px; }
 .st-tab th, .st-tab td { padding: 1px 8px; text-align: right; border-bottom: 1px solid var(--line); }
 .ps-cross { cursor: default; user-select: none; }
+
+/* Part Builder */
+.pb-svg { cursor: crosshair; user-select: none; background: var(--panel); }
+.pb-faces { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; max-height: 260px; overflow: auto; }
+.pb-face { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; font-size: 12px; }
+.pb-face > span:first-child { flex: 1; min-width: 0; }
+.pb-face select { max-width: 170px; }
+.studio .pb-face input[type=number] { width: 58px; }
+.pb-face.sel { border-color: var(--accent); background: var(--accent-soft); }
+.pb-3dview svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.pb-3d input[type=range] { flex: 1; }
