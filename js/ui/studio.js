@@ -141,9 +141,9 @@ const change = (fn, key, structural) => { step(key); fn(); save(); structural ? 
 /* ---------- open / close ---------- */
 ST.isOpen = () => !!root;
 ST.mode = 'layers';
-const PS = () => RNBX.patternStudio, PB = () => RNBX.partBuilder;
+const PS = () => RNBX.patternStudio, PB = () => RNBX.partBuilder, PP = () => RNBX.particleStudio;
 /* the workspace behind each tab other than Layers */
-const WS = m => (m === 'pattern' ? PS() : m === 'part' ? PB() : null);
+const WS = m => (m === 'pattern' ? PS() : m === 'part' ? PB() : m === 'particles' ? PP() : null);
 ST.open = (obj, mode) => {
   if (root) ST.close();
   if (obj && obj.type === 'ucell') { ST.mode = 'pattern'; PS().load(obj); obj = null; } else if (obj && obj.type === 'built') { ST.mode = 'part'; PB().load(obj); obj = null; } else if (obj && obj.type === 'layers') ST.mode = 'layers'; else if (mode) ST.mode = mode;
@@ -157,7 +157,7 @@ ST.open = (obj, mode) => {
   render();
   U.track('studio-open');
 };
-ST.close = () => { if (!root) return; save(); if (PS()) PS().closed(); if (PB()) PB().closed(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
+ST.close = () => { if (!root) return; save(); if (PS()) PS().closed(); if (PB()) PB().closed(); if (PP()) PP().closed(); root.remove(); root = null; mapToken++; document.removeEventListener('keydown', onKey, true); };
 ST.design = () => d;
 ST.setDesign = v => { step(); d = v; save(); if (root) render(); };
 const onKey = e => {
@@ -177,8 +177,8 @@ const doRedo = () => { if (!redo.length) return; undo.push(JSON.stringify(d)); d
 /* ---------- layout ---------- */
 let views = {};
 /* Layers | Pattern switch in the header */
-ST.tabs = () => el('div', { class: 'seg st-tabs', role: 'tablist' }, [['layers', 'Layers'], ['pattern', 'Pattern'], ['part', 'Part']].map(([m, t]) =>
-  el('button', { type: 'button', class: ST.mode === m ? 'active' : '', 'aria-selected': String(ST.mode === m), title: m === 'layers' ? 'Flat films and multilayers' : m === 'pattern' ? 'Periodic structures: gratings, metasurfaces (one unit cell)' : 'Part Builder: draw your own component, give its faces an optical job, use it in the figure', text: t,
+ST.tabs = () => el('div', { class: 'seg st-tabs', role: 'tablist' }, [['layers', 'Layers'], ['pattern', 'Pattern'], ['particles', 'Particles'], ['part', 'Part']].map(([m, t]) =>
+  el('button', { type: 'button', class: ST.mode === m ? 'active' : '', 'aria-selected': String(ST.mode === m), title: m === 'layers' ? 'Flat films and multilayers' : m === 'pattern' ? 'Periodic structures: gratings, metasurfaces (one unit cell)' : m === 'particles' ? 'Nanoparticles and dimers: exact Mie theory, near field, SERS hot spots' : 'Part Builder: draw your own component, give its faces an optical job, use it in the figure', text: t,
     onclick: () => { if (ST.mode === m) return; ST.mode = m; if (WS(m) && !WS(m).loaded()) WS(m).load(null); render(); } })));
 ST.rerender = () => render();
 function render() {

@@ -559,6 +559,41 @@ any of them can be patterned, so a grating can sit on, in or under a multilayer
   structure**). **Save / Open…** keep `.rnbxpattern.json` files; **CSV** writes the
   spectrum and the orders.
 
+### Particles: nanoparticles, dimers and SERS hot spots
+
+The **Particles** tab of Layer Studio calculates spheres, core–shell particles and
+dimers exactly (Mie theory; for dimers, multi-sphere Mie theory with the full
+coupling between the two particles).
+
+- **Particle.** One particle or a dimer of two identical particles with a gap
+  *g* (surface to surface). A particle is a core (material, diameter) with any
+  number of shells (**+ Shell**: material, thickness), in a medium (water by
+  default). Polarisation along the dimer axis (the hot-spot polarisation) or
+  across it; light travels along x.
+- **Extinction, scattering, absorption** against wavelength, as cross-sections
+  (nm²) or efficiencies Q = C / πR². Click the plot to choose the wavelength of
+  the near field.
+- **Near field |E|²** around the particles (x–z plane, logarithmic or linear
+  scale).
+- **Hot spot and SERS enhancement.** |E|² at the hot spot (the centre of the gap,
+  or 0.5 nm from the surface of a single particle on the polarisation axis)
+  against wavelength, with |E|⁴; at the chosen wavelength and **Raman shift**,
+  the enhancement |E(λ)|²·|E(λ_Raman)|² (electromagnetic; chemical enhancement is
+  not included).
+- **Field against the gap** (dimers): the hot-spot field and the enhancement for
+  gaps from the smallest to the largest you set. Below about 0.5 nm electron
+  tunnelling, which is not included, quenches the field.
+- **Multipole orders** are chosen automatically (more for narrow gaps: about
+  1 % on the gap field); set more to check convergence.
+- Presets: Au and Ag nanospheres, an Au nanoshell, Au@Ag, shell-isolated
+  Au@SiO₂ (SHINERS), and Au and Ag dimers with 1–5 nm gaps.
+- **Insert into figure** adds the spectrum, the hot-spot curves and the gap sweep
+  as data panels, and the near-field map as a picture. **CSV** writes them all.
+
+The solver was checked against classical Mie theory (identical to 10⁻⁸ for one
+particle), the Rayleigh limit, the optical theorem, energy conservation for
+lossless particles, and two far-apart particles (twice one particle).
+
 ## 5b5. Part Builder: design your own component
 
 **Studio ▸ Part** draws a component of your own and makes it work with the light

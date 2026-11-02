@@ -54,7 +54,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('cut shapes make holes; every face is named', r.geo.rings === 2 && r.geo.holes === 1 && r.geo.faces === 'a:bottom,a:left,a:right,a:top,h:rim', r.geo);
   // the editor
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* none */ } RNBX.setDocument(RNBX.newDocument()); });
-  await page.click('#btnStudio'); await page.click('.st-tabs >> text=Part');
+  await page.click('#btnStudio'); await page.click('.st-tabs >> text="Part"');
   await page.waitForSelector('.pb-editor svg');
   const e1 = await page.evaluate(() => ({ mode: RNBX.studio.mode, faces: document.querySelectorAll('.pb-face').length, rays: document.querySelectorAll('.pb-editor line').length, d3: !!document.querySelector('.pb-3dview svg') || true }));
   H.check('Part tab: drawing, face list and test beam', e1.mode === 'part' && e1.faces === 3 && e1.rays > 10, e1);
