@@ -474,7 +474,7 @@ T.GROUPS = [
   ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
-  ['Lab & chemistry', ['nanoprep']],
+  ['Lab & chemistry', ['nanoprep', 'lockinbench']],
   ['Diagrams & AI', ['specml']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
@@ -527,6 +527,27 @@ T.list.push({
     const dec = box(150, 74, 'Accuracy\n> 95 %?', { shape: 'decision', fill: '#fdebc8', w: 28, h: 15 }), out = box(92, 80, 'Report', { shape: 'terminal', fill: '#d8f0dc', w: 22, h: 9 });
     const fl = (p, q, o) => link('flow', p, q, o);
     d.objects.push(a, b, c, cnn, net, dec, out, fl(a, b), fl(b, c), fl(c, cnn, { route: 'hv' }), fl(cnn, net), fl(net, dec), fl(dec, out, { label: 'yes' }), fl(dec, cnn, { label: 'no', route: 'curve', bend: 0.45, dashed: true }));
+    return d;
+  },
+});
+
+/* ---------- instruments: a lock-in measurement on the optical table ---------- */
+T.list.push({
+  id: 'lockinbench', name: 'Lock-in measurement (optics + instruments)', desc: 'Instruments example: a laser through a sample onto a photodiode, read by a lock-in amplifier referenced to a function generator; a power supply and a laptop showing the data (generic)',
+  build() {
+    const d = base('nature-2', 183, 110, 'Lock-in measurement');
+    const laser = mk('laser', 18, 22, 0, { lambda: 633, power: 5 }, 'He–Ne laser', [0, 7]);
+    const lens = mk('lens', 60, 22, 0, { f: 50 }, 'Lens', [0, 9]);
+    const samp = mk('sample', 88, 22, 0, { look: 'cuvette', w: 4, h: 9, T: 0.6 }, 'Sample', [0, 9]);
+    const pd = mk('pd', 118, 22, 0, {}, 'Photodiode', [0, 8]);
+    const fgen = mk('fgen', 28, 66, 0, { readout: '1.000 kHz', wave: 'square' });
+    const lock = mk('lockin', 92, 66, 0, { readout: 'R 2.41 mV  θ 12.3°' });
+    const psu = mk('psu', 158, 30, 0, { volts: '15.00 V', amps: '0.120 A' });
+    const lap = mk('laptop', 152, 76, 0, { screen: 'figure', w: 30, h: 21 });
+    const plot = mk('plot', 40, 96, 0, { w: 46, h: 22, xlabel: 'Time (s)', ylabel: 'Signal (mV)', legend: false, series: [{ name: 'R', x: [0, 1, 2, 3, 4, 5, 6, 7, 8], y: [0.2, 0.25, 2.3, 2.4, 2.38, 2.45, 0.3, 0.22, 0.25], color: '#d62828', dash: 'solid' }] });
+    const w = (a, b, o) => link('wire', a, b, Object.assign({ route: 'curve', sag: 0.4 }, o || {}));
+    d.objects.push(laser, lens, samp, pd, fgen, lock, psu, lap, plot,
+      w(pd, lock, { arrow: 'end' }), w(fgen, lock, { arrow: 'end' }), w(psu, pd, { arrow: 'none' }), w(lock, lap, { arrow: 'end' }));
     return d;
   },
 });

@@ -36,6 +36,7 @@ const lib = RNBX.lib = {
     def.params = def.params || [];
     def.defaults = def.defaults || {};
     if (!registry[def.type]) order.push(def.type);
+    else if (!def.override) (lib.duplicates = lib.duplicates || []).push(def.type);   // a second part with the same type replaces the first: tests catch it
     registry[def.type] = def;
   },
   get: type => registry[type],

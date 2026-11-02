@@ -631,6 +631,32 @@ The **Diagrams & AI** group draws networks and flowcharts from a few settings.
 
 Template: **Diagrams & AI ▸ Spectra → CNN → classes**.
 
+## 5b8. Lab instruments & computing
+
+The **Lab instruments & computing** group puts the rest of the lab next to the
+optics. Each instrument is drawn from the front in 2D (Schematic or Shaded) and
+stands on the table in 3D (width, height and depth are settings), so electrical
+cables and fluid tubing connect to it.
+
+- **Electronics**: oscilloscope (1–4 channels; sine, square, triangle, pulses,
+  decaying or noisy signals), function generator (display, waveform), DC power
+  supply (voltage and current displays, terminals), lock-in amplifier (rack unit),
+  DAQ / USB interface (terminal block).
+- **Computers**: laptop, and desktop with monitor, tower and keyboard. The screen
+  shows spectra, code, text, oscilloscope traces, or **a data plot from this
+  figure**, drawn live inside the screen.
+- **Bench equipment**: hot plate / magnetic stirrer (temperature and speed, a
+  glowing plate, and a beaker or flask with liquid on it), centrifuge, analytical
+  balance with draft shield, syringe pump (the syringe empties when *filled* is
+  animated), peristaltic pump.
+- **Gases and vacuum**: gas cylinder with regulator and gauges (N₂, Ar, He, O₂,
+  CO₂, H₂, air), rotary-vane vacuum pump, vacuum chamber with viewport and gauge.
+- **Preparation and safety**: ultrasonic bath, fume hood (sash height, airflow),
+  glovebox (antechamber, O₂ readout), freezer / fridge, retort stand with clamp or
+  ring.
+
+Template: **Lab & chemistry ▸ Lock-in measurement (optics + instruments)**.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,
