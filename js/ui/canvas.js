@@ -231,7 +231,7 @@ function onDown(e) {
   const lbEl = e.target.closest && e.target.closest('#figure [data-label]');
   const tool = S.ui.tool;
 
-  if (tool === 'fiber' || tool === 'wire' || tool === 'tube') {
+  if (isConnTool(tool)) {
     if (idEl) connectClick(idEl.getAttribute('data-id'));
     return;
   }
@@ -467,12 +467,14 @@ function onUp(e) {
 C.setTool = tool => {
   S.ui.tool = tool || 'select';
   S.ui.connectFrom = null;
-  svg.classList.toggle('connecting', tool === 'fiber' || tool === 'wire' || tool === 'tube');
+  svg.classList.toggle('connecting', isConnTool(tool));
   const hint = D.$('#connectHint');
-  hint.hidden = !(tool === 'fiber' || tool === 'wire' || tool === 'tube');
+  hint.hidden = !isConnTool(tool);
   hint.textContent = tool === 'fiber' ? 'Fibre: click the input coupler (Esc to cancel)' : 'Wire: click the first object (Esc to cancel)';
   RNBX.emit('tool', S.ui.tool);
 };
+/* tools that join two objects: fibres, cables, tubing, flow connectors */
+function isConnTool(tool) { const d = tool && RNBX.lib.get(tool); return !!(d && d.connection && d.tool); }
 function connectClick(id) {
   const tool = S.ui.tool, o = RNBX.getObj(id);
   if (!o) return;

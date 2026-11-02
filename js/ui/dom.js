@@ -127,6 +127,7 @@ D.thumb = (type, props, mode) => {
   if (!def) return '';
   if (type === 'fiber') return `<svg viewBox="0 0 40 28"><path d="M4 22 C 14 22 12 6 22 6 S 30 22 36 22" fill="none" stroke="#f2b705" stroke-width="2.2" stroke-linecap="round"/><circle cx="4" cy="22" r="2" fill="#9aa1ab"/><circle cx="36" cy="22" r="2" fill="#9aa1ab"/></svg>`;
   if (type === 'wire') return `<svg viewBox="0 0 40 28"><path d="M4 6 H 22 V 22 H 32" fill="none" stroke="#3a3d42" stroke-width="1.4"/><path d="M31 18.5 L 36 22 L 31 25.5 Z" fill="#3a3d42"/></svg>`;
+  if (type === 'flow') return `<svg viewBox="0 0 40 28"><rect x="2" y="3" width="14" height="8" rx="1.5" fill="#dbe9f6" stroke="#3a3d42"/><rect x="24" y="17" width="14" height="8" rx="1.5" fill="#d8f0dc" stroke="#3a3d42"/><path d="M9 11 V 14 H 31 V 15" fill="none" stroke="#3a3d42" stroke-width="1.2"/><path d="M28.5 14.5 L 31 17.5 L 33.5 14.5 Z" fill="#3a3d42"/></svg>`;
   if (type === 'tube') return `<svg viewBox="0 0 40 28"><path d="M4 20 C 14 20 14 8 24 8 S 32 16 36 16" fill="none" stroke="#7d8a96" stroke-width="4.6" stroke-linecap="round"/><path d="M4 20 C 14 20 14 8 24 8 S 32 16 36 16" fill="none" stroke="#dbe4ec" stroke-width="3.4" stroke-linecap="round"/><path d="M4 20 C 14 20 14 8 24 8 S 32 16 36 16" fill="none" stroke="#5aa9e6" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   const p = Object.assign(U.deepClone(def.defaults), props || {});
   const doc = RNBX.state.doc;

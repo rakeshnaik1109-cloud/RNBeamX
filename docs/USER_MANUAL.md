@@ -602,6 +602,35 @@ parts are figure graphics: light does not interact with them (use *Sample* or a
 Part Builder part for that). Template: **Lab & chemistry ▸ Gold nanoparticle
 synthesis → samples**.
 
+## 5b7. Diagrams & AI
+
+The **Diagrams & AI** group draws networks and flowcharts from a few settings.
+
+- **Neural network (fully connected)**: type the nodes per layer (`3, 5, 5, 2`;
+  an autoencoder is `8, 4, 2, 4, 8`), the layer names and colours, left-to-right or
+  bottom-to-top. Layers larger than *Nodes shown* fold with ⋮ and show their size
+  (n = 784). Connections: every node to every node, none, or one band per layer pair;
+  *Weights* colour them blue (+) and red (−) with thickness by size. Input labels
+  x₁…xₙ, output labels ŷ₁…ŷₙ, a symbol in hidden nodes (σ, Σ) and bias nodes (+1).
+- **Convolutional network (CNN)**: write the layers as
+  `Input: 32x32x3, Conv: 30x30x16, Pool: 15x15x16, …, FC: 128, Output: 10`; feature
+  maps are drawn as blocks (height from the map size, depth from the channels on a
+  log scale), coloured by type (Input, Conv, Pool, Norm, Flatten, FC / Dense,
+  Output), with kernel projections and the sizes underneath.
+- **Transformer (block diagram)**: encoder and decoder, encoder only or decoder
+  only, with attention, add & norm and feed-forward blocks, residual paths,
+  positional encoding, the encoder output going into cross-attention, and the
+  N× repeat.
+- **Flowchart box**: process, rounded, start / end, decision, input / output,
+  document, database, sub-process, preparation and circle, with text (several
+  lines, markup), fill, outline and a soft shadow in the Shaded style.
+- **Flow connector**: pick it, click the first box, then the second. It stays
+  attached when boxes move. *Automatic* routing draws a straight line when the
+  boxes line up and right angles otherwise; or choose the route, a curve, a label
+  (yes / no), arrowheads, dashes and colour.
+
+Template: **Diagrams & AI ▸ Spectra → CNN → classes**.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,

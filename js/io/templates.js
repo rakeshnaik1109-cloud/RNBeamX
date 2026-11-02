@@ -475,6 +475,7 @@ T.GROUPS = [
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
   ['Lab & chemistry', ['nanoprep']],
+  ['Diagrams & AI', ['specml']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
 T.list.push({
@@ -510,6 +511,22 @@ T.list.push({
     d.objects.push(salt, cit, flask, cond, vial, pip, cuv, plate,
       arrow(41, 54, 11), arrow(83, 54, 10), arrow(115, 54, 6),
       txt(25, 72, '1  Precursors'), txt(66, 75, '2  Reflux, 15 min'), txt(104, 70, '3  Colloid'), txt(155, 76, '4  Aliquots for UV–vis and SERS'));
+    return d;
+  },
+});
+
+/* ---------- diagrams: a spectral machine-learning pipeline ---------- */
+T.list.push({
+  id: 'specml', name: 'Spectra → CNN → classes (flowchart)', desc: 'Diagram example: flowchart boxes joined by connectors that stay attached, a 1D CNN and a small classifier network (generic)',
+  build() {
+    const d = base('nature-2', 183, 92, 'Spectral classification pipeline');
+    const box = (x, y, text, o) => mk('fcbox', x, y, 0, Object.assign({ text, w: 30, h: 12, fill: '#dbe9f6' }, o || {}));
+    const a = box(20, 16, 'Raw spectra', { shape: 'database', fill: '#e4e7eb', w: 26, h: 15 }), b = box(20, 44, 'Baseline removal\nand normalisation'), c = box(20, 72, 'Train / test\nsplit', { shape: 'io', fill: '#e6def5' });
+    const cnn = mk('cnn', 92, 40, 0, { spec: 'Input: 1x64x1, Conv: 1x60x8, Pool: 1x30x8, Conv: 1x26x16, Pool: 1x13x16, FC: 64, Output: 4', size: 26, gap: 5 });
+    const net = mk('nnet', 150, 34, 0, { layers: '6, 4, 4', titles: 'Features, Hidden, Classes', colors: '#a3d9b1, #a3d9b1, #f5b7b1', r: 1.6, gap: 1.2, spacing: 11, inLabels: false, outLabels: false });
+    const dec = box(150, 74, 'Accuracy\n> 95 %?', { shape: 'decision', fill: '#fdebc8', w: 28, h: 15 }), out = box(92, 80, 'Report', { shape: 'terminal', fill: '#d8f0dc', w: 22, h: 9 });
+    const fl = (p, q, o) => link('flow', p, q, o);
+    d.objects.push(a, b, c, cnn, net, dec, out, fl(a, b), fl(b, c), fl(c, cnn, { route: 'hv' }), fl(cnn, net), fl(net, dec), fl(dec, out, { label: 'yes' }), fl(dec, cnn, { label: 'no', route: 'curve', bend: 0.45, dashed: true }));
     return d;
   },
 });
