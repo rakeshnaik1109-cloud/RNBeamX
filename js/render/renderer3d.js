@@ -357,7 +357,7 @@ R3.scene = (doc, trace, S, opt = {}) => {
       const cop = RNBX.render.connOpacity(obj, doc);
       if (cop <= 0.001) continue;
       const ft = obj.type === 'fiber' ? lib.fiberType(obj.props) : { k: 1 };
-      let col = obj.type === 'fiber' ? (obj.props.color || ft.color || doc.style.fiberColor) : (obj.props.color || '#9aa1ab');
+      let col = obj.type === 'fiber' ? (obj.props.color || ft.color || doc.style.fiberColor) : (obj.props.color || obj.props.liquid || obj.props.wallColor || '#9aa1ab');
       if (obj.type === 'fiber' && obj.props.colorMode === 'light' && trace.fiberLight[obj.id]) { const fl = trace.fiberLight[obj.id]; col = lib.colorOf(doc, Number(Object.keys(fl).sort((a, b) => fl[b] - fl[a])[0])); }
       const d = 'M ' + sc.map(q => n(q[0]) + ' ' + n(q[1])).join(' L ');
       const cw = U.pt2mm(obj.props.width || 0.8) * k * ft.k;

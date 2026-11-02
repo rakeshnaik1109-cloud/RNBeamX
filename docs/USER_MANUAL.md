@@ -570,6 +570,38 @@ real one (a plano-convex lens gives the textbook back focal length f − t/n, a
 spherical mirror focuses at R/2, an off-axis parabola sends every ray through its
 focus).
 
+## 5b6. Labware & chemistry
+
+The **Labware & chemistry** group in the parts list draws lab scenes next to the
+optics: sample preparation, syntheses, assays.
+
+- **Glassware**: beaker (with an optional stir bar), graduated cylinder, test tube
+  (with stopper), Erlenmeyer flask, round-bottom flask, volumetric flask (with its
+  mark and stopper), cuvette (frosted sides, cap), screw-cap vial, reagent bottle
+  (clear or amber), 1.5 mL microcentrifuge tube (lid open or closed), 15 / 50 mL
+  conical tube, burette (stopcock, drop), funnel (filter paper), petri dish (side
+  view) and Liebig condenser (cooling water in / out).
+- **Liquids** in every vessel: how full, colour and opacity, meniscus, a lower
+  second phase (two immiscible liquids), bubbles, particles (e.g. a nanoparticle
+  colloid) and a precipitate. *Filled* can be keyframed, so a vessel can fill or
+  empty in an animation.
+- **Labels on the glass** with markup (HAuCl_4, 1 M NaCl), graduation marks with
+  optional numbers, glass tint, wall thickness and sizes.
+- **Liquid handling**: micropipette (volume display, tip with liquid, drop),
+  Pasteur pipette, syringe (plunger follows the fill, graduations, needle).
+- **Plates and cultures**: 6 / 24 / 96-well plates from above or tilted, filled
+  as a dilution series, one colour per row, or listed wells (`A1-A6, B3=#ff0000`);
+  petri dish from above with colonies; test-tube rack with a colour per tube.
+- **Fluid tubing** (Connections): click two objects, like the electrical cable;
+  tube colour and diameter, the liquid inside, flow arrows in either direction, or
+  dashed for a gas line.
+
+Everything follows the figure style: **Schematic** gives clean line art with flat
+colours, **Shaded** gives tinted glass with highlights and liquid gradients. These
+parts are figure graphics: light does not interact with them (use *Sample* or a
+Part Builder part for that). Template: **Lab & chemistry ▸ Gold nanoparticle
+synthesis → samples**.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,

@@ -231,7 +231,7 @@ function onDown(e) {
   const lbEl = e.target.closest && e.target.closest('#figure [data-label]');
   const tool = S.ui.tool;
 
-  if (tool === 'fiber' || tool === 'wire') {
+  if (tool === 'fiber' || tool === 'wire' || tool === 'tube') {
     if (idEl) connectClick(idEl.getAttribute('data-id'));
     return;
   }
@@ -467,9 +467,9 @@ function onUp(e) {
 C.setTool = tool => {
   S.ui.tool = tool || 'select';
   S.ui.connectFrom = null;
-  svg.classList.toggle('connecting', tool === 'fiber' || tool === 'wire');
+  svg.classList.toggle('connecting', tool === 'fiber' || tool === 'wire' || tool === 'tube');
   const hint = D.$('#connectHint');
-  hint.hidden = !(tool === 'fiber' || tool === 'wire');
+  hint.hidden = !(tool === 'fiber' || tool === 'wire' || tool === 'tube');
   hint.textContent = tool === 'fiber' ? 'Fibre: click the input coupler (Esc to cancel)' : 'Wire: click the first object (Esc to cancel)';
   RNBX.emit('tool', S.ui.tool);
 };

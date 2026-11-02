@@ -474,6 +474,7 @@ T.GROUPS = [
   ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
+  ['Lab & chemistry', ['nanoprep']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
 T.list.push({
@@ -487,6 +488,28 @@ T.list.push({
     d.objects.push(laser, probe, chip, spec,
       link('fiber', laser, probe, { fiberType: 'mmf', bend: 0.5, boots: true }),
       link('fiber', probe, spec, { fiberType: 'mmf', bend: 0.6, boots: true }));
+    return d;
+  },
+});
+
+/* ---------- labware: a nanoparticle synthesis and sample-preparation flow ---------- */
+T.list.push({
+  id: 'nanoprep', name: 'Gold nanoparticle synthesis → samples', desc: 'Labware example: HAuCl₄ and citrate under reflux, the red colloid, aliquots by micropipette into a cuvette and a well plate (generic values)',
+  build() {
+    const d = base('nature-2', 183, 82, 'Nanoparticle synthesis and samples');
+    const txt = (x, y, t, o) => mk('text', x, y, 0, Object.assign({ text: t, size: 7 }, o || {}));
+    const arrow = (x, y, dx, label) => mk('arrow', x, y, 0, { dx, dy: 0, style: 'block', shaft: 2.4, headSize: 4, color: '#9aa4b0', label: label || '', labelSize: 6 });
+    const salt = mk('bottle', 16, 50, 0, { w: 13, h: 21, neck: 6, fill: 0.7, liquid: '#f4d35e', liqAlpha: 0.75, text: 'HAuCl_4', capColor: '#c0392b' });
+    const cit = mk('bottle', 33, 52, 0, { w: 11, h: 17, neck: 5, fill: 0.7, liquid: '#e8edf2', liqAlpha: 0.6, text: 'citrate', capColor: '#2f6db5' });
+    const flask = mk('roundflask', 66, 54, 0, { r: 10, neck: 4.4, neckH: 9, fill: 0.5, liquid: '#a5152c', liqAlpha: 0.85, particles: 50, partColor: '#5e0b17', bubbles: 4 });
+    const cond = mk('condenser', 66, 25.5, 0, { L: 26, w: 6 });
+    const vial = mk('vial', 104, 52, 0, { w: 9, h: 17, fill: 0.65, liquid: '#b3172f', particles: 40, partColor: '#5e0b17', text: 'Au NPs', capColor: '#2f6db5' });
+    const pip = mk('micropipette', 128, 34, 0, { L: 32, volume: '100 µL', tipFill: 0.5, liquid: '#b3172f' });
+    const cuv = mk('cuvette', 142, 58, 0, { w: 5, h: 17, fill: 0.7, liquid: '#c0263c', liqAlpha: 0.7 });
+    const plate = mk('wellplate', 166, 56, 0, { rows: 4, cols: 6, w: 26, fillMode: 'gradient', color1: '#f9d5da', color2: '#9b1029', labels: false });
+    d.objects.push(salt, cit, flask, cond, vial, pip, cuv, plate,
+      arrow(41, 54, 11), arrow(83, 54, 10), arrow(115, 54, 6),
+      txt(25, 72, '1  Precursors'), txt(66, 75, '2  Reflux, 15 min'), txt(104, 70, '3  Colloid'), txt(155, 76, '4  Aliquots for UV–vis and SERS'));
     return d;
   },
 });
