@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.layers.init();
   RNBX.timeline.init();
   RNBX.animateUI.init();
+  RNBX.studio.init();
   RNBX.learn.init();
   RNBX.menus.init();
 

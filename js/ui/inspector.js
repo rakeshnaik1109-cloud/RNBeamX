@@ -441,6 +441,7 @@ function responseSection(obj, def, set) {
   kids.push(out);
   const linked = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id && o.props.mode !== 'sensor');
   kids.push(el('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '10px' } },
+    obj.type === 'layers' && RNBX.studio ? el('button', { class: 'btn small primary', type: 'button', text: 'Open in Layer Studio', title: 'Design this stack full-screen: repeat groups, field |E|², wavelength × angle map', onclick: () => RNBX.studio.open(obj) }) : null,
     el('button', { class: 'btn small primary', type: 'button', text: linked ? 'Its panel' : 'Add panel', title: linked ? 'Select the linked data panel' : 'Add a data panel that follows this calculation', onclick: () => linked ? RNBX.select([linked.id]) : RNBX.plotData.addCalcPanel(obj) }),
     RNBX.plotData.canSense(obj) ? (() => { const sp = S.doc.objects.find(o => o.type === 'plot' && o.props.link === obj.id && o.props.mode === 'sensor');
       return el('button', { class: 'btn small', type: 'button', text: sp ? 'Its sensorgram' : 'Sensorgram', title: sp ? 'Select the sensorgram panel' : 'Add a panel that tracks the resonance while the figure animates', onclick: () => sp ? RNBX.select([sp.id]) : RNBX.plotData.addSensorPanel(obj) }); })() : null,

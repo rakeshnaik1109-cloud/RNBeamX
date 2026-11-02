@@ -22,7 +22,7 @@ const near = (name, v, exp, tol) => check(name, Number.isFinite(v) && Math.abs(v
 
 /* the engine in Node, without a browser (for the physics suites) */
 const loadEngine = (files = ['core/utils.js', 'engine/optics.js', 'engine/nkdata.js', 'engine/thinfilm.js', 'engine/rcwa.js']) => {
-  const ctx = { console, Math, JSON, Date, Float64Array, Uint8Array, Uint32Array, Array, Object, Number, String, Map, Set, isFinite, parseFloat, parseInt, setTimeout, clearTimeout };
+  const ctx = { console, Math, JSON, Date, Float64Array, Float32Array, Uint8Array, Uint32Array, Array, Object, Number, String, Map, Set, isFinite, parseFloat, parseInt, setTimeout, clearTimeout };
   ctx.window = ctx; ctx.localStorage = { getItem: () => null, setItem() {} };
   vm.createContext(ctx);
   files.forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', f), 'utf8'), ctx, { filename: f }));

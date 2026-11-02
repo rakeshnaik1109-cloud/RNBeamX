@@ -28,4 +28,20 @@ module.exports = async ({ H }) => {
   H.near('SPR angle, BK7 / 50 nm Au / water, 633 nm (literature ≈ 72°)', spr(M('H2O'), 60, 80).x, 72.0, 0.8);
   const shift = n => spr(M('custom', n, 0), 60, 85).x;
   H.near('SPR angular sensitivity (deg/RIU, literature ≈ 130–150)', (shift(1.343) - shift(1.333)) / 0.01, 145, 15);
+
+  // field inside the stack
+  const bare = TF.field(glass, 600, 0, 's'), iz = bare.z.findIndex(z => z >= 0);
+  H.near('field at a bare interface: |E|² = |1 + r|² = 0.64', bare.e2[iz], 0.64, 1e-9);
+  const mim = { inc: M('air'), layers: [{ m: M('Ni'), d: 6 }, { m: M('SiO2'), d: 120 }, { m: M('Al'), d: 100 }], sub: M('glass:N-BK7') };
+  [['s', 0], ['s', 40], ['p', 60]].forEach(([pol, th]) => {
+    const fr = TF.field(mim, 620, th, pol), sv = TF.solve(mim, 620, th, pol);
+    H.near(`absorption from the field integral equals A (${pol}, ${th}°)`, fr.absorbed.reduce((a, b) => a + b, 0), sv.A, 2e-3);
+    H.near(`field R equals solver R (${pol}, ${th}°)`, fr.R, sv.R, 1e-12);
+  });
+  const qwL = []; for (let i = 0; i < 5; i++) qwL.push({ m: M('custom', 1.45, 0), d: 600 / 4 / 1.45 }, { m: M('custom', 2.4, 0), d: 600 / 4 / 2.4 });
+  const cav = { inc: M('air'), layers: qwL.concat([{ m: M('custom', 1.45, 0), d: 600 / 2 / 1.45 }], qwL.slice().reverse()), sub: M('custom', 1.52, 0) };
+  const fc = TF.field(cav, 600, 0, 's');
+  H.check('microcavity (LH)⁵ 2L (HL)⁵: transmission peak at the design wavelength and field enhanced in the cavity', TF.solve(cav, 600, 0, 's').T > 0.9 && Math.max(...fc.e2) > 20, { T: TF.solve(cav, 600, 0, 's').T, peak: Math.max(...fc.e2) });
+  const mp = TF.map(mim, { lmin: 400, lmax: 900, amin: 0, amax: 80, nl: 11, na: 5, pol: 'p', show: 'R' });
+  H.near('wavelength × angle map agrees with the solver', mp.v[2 * 11 + 4], TF.response(mim, 600, 40, 'p').R, 1e-6);
 };

@@ -112,6 +112,66 @@ TF.response = (stack, nm, thetaDeg, pol) => {
   return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2 };
 };
 
+/* ---------- field inside the stack ----------
+   |E|² (relative to the incident field) from a little above the stack,
+   through every film, into the medium behind it. z in nm, 0 = first
+   interface, positive going in the direction of the light.
+   Same matrices as TF.solve, built without scaling: the field is
+   sampled through each film from its back face, where it is known. */
+const cosC = (x, y) => [Math.cos(x) * Math.cosh(y), -Math.sin(x) * Math.sinh(y)];
+const sinC = (x, y) => [Math.sin(x) * Math.cosh(y), Math.cos(x) * Math.sinh(y)];
+const expI = (x, y) => { const e = Math.exp(-y); return [Math.cos(x) * e, Math.sin(x) * e]; };   // e^{i(x + iy)}
+/* [E, H] at the front of a slab from [E, H] at its back */
+const slab = (q, e, t, nm, v) => {
+  const x = 2 * Math.PI * q[0] * t / nm, y = 2 * Math.PI * q[1] * t / nm, cs = cosC(x, y), sn = sinC(x, y);
+  return [add(mul(cs, v[0]), mul(div(mul([0, -1], sn), e), v[1])), add(mul(mul(mul([0, -1], e), sn), v[0]), mul(cs, v[1]))];
+};
+TF.field = (stack, nm, thetaDeg, pol, opt = {}) => {
+  const n0 = TF.nk(stack.inc, nm).n, th = U.rad(thetaDeg), Kx = n0 * Math.sin(th), N0 = [n0, 0];
+  const eta = (N, q) => (pol === 'p' ? div(mul(N, N), q) : q);
+  const q0 = qz(N0, Kx), eta0 = eta(N0, q0);
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k], qs = qz(Ns, Kx), etas = eta(Ns, qs);
+  const L = stack.layers.filter(l => l.d > 0).map(l => { const nk = TF.nk(l.m, nm), N = [nk.n, nk.k], q = qz(N, Kx); return { N, q, e: eta(N, q), d: +l.d }; });
+  // back to front
+  let v = [[1, 0], etas];
+  const back = [];
+  for (let j = L.length - 1; j >= 0; j--) { back[j] = v; v = slab(L[j].q, L[j].e, L[j].d, nm, v); }
+  const B = v[0], C = v[1], r = div(sub(mul(eta0, B), C), add(mul(eta0, B), C));
+  const ct = pol === 'p' ? Math.cos(th) : 1, scale = div(mul([ct, 0], add([1, 0], r)), B);
+  const E2 = (w, N) => { const Et = mul(scale, w[0]); if (pol !== 'p') return abs2(Et); const H = mul(scale, w[1]), N2 = abs2(mul(N, N)); return abs2(Et) + Kx * Kx * abs2(H) / N2; };
+  const total = L.reduce((a, l) => a + l.d, 0), pad = opt.pad != null ? opt.pad : Math.max(nm * 0.5, total * 0.25);
+  const step = opt.step || Math.max(0.25, (total + 2 * pad) / (opt.points || 600));
+  const z = [], e2 = [], layer = [];
+  for (let h = pad; h > 1e-9; h -= step) { z.push(-h); e2.push(E2(slab(q0, eta0, h, nm, v), N0)); layer.push(-1); }
+  let z0 = 0;
+  L.forEach((l, j) => {
+    const m = Math.max(2, Math.ceil(l.d / step));
+    for (let i = 0; i <= m; i++) { const t = l.d * i / m; z.push(z0 + t); e2.push(E2(slab(l.q, l.e, l.d - t, nm, back[j]), l.N)); layer.push(j); }
+    z0 += l.d;
+  });
+  for (let h = step; h <= pad + 1e-9; h += step) {
+    const ph = expI(2 * Math.PI * qs[0] * h / nm, 2 * Math.PI * qs[1] * h / nm), w = [ph, mul(etas, ph)];
+    z.push(z0 + h); e2.push(E2(w, Ns)); layer.push(L.length);
+  }
+  // absorbed fraction in each film: (2π/λ) ∫ Im(N²) |E|² dz / (n0 cos θ0)
+  const absorbed = L.map((l, j) => {
+    const m = Math.max(40, Math.ceil(l.d / Math.min(step, l.d / 40))), im = 2 * l.N[0] * l.N[1];
+    let s = 0; for (let i = 0; i <= m; i++) { const t = l.d * i / m, w = i === 0 || i === m ? 0.5 : 1; s += w * E2(slab(l.q, l.e, l.d - t, nm, back[j]), l.N); }
+    return 2 * Math.PI / nm * im * s * (l.d / m) / (n0 * Math.cos(th));
+  });
+  return { z, e2, layer, total, absorbed, R: abs2(r) };
+};
+/* ---------- wavelength × angle map ----------
+   o: { lmin, lmax, amin, amax, nl, na, pol, show: 'R' | 'T' | 'A' } → { v: Float32Array (row = angle), … } */
+TF.map = (stack, o) => {
+  const nl = U.clamp(Math.round(o.nl) || 120, 4, 600), na = U.clamp(Math.round(o.na) || 90, 4, 400), v = new Float32Array(nl * na), q = o.show || 'R';
+  for (let j = 0; j < na; j++) {
+    const a = Math.min(89.9, o.amin + (o.amax - o.amin) * j / (na - 1));
+    for (let i = 0; i < nl; i++) { const r = TF.response(stack, o.lmin + (o.lmax - o.lmin) * i / (nl - 1), a, o.pol || 'p'); v[j * nl + i] = r[q]; }
+  }
+  return { v, nl, na, lmin: o.lmin, lmax: o.lmax, amin: o.amin, amax: o.amax, show: q, pol: o.pol || 'p' };
+};
+
 /* ---------- scans ---------- */
 TF.DEFAULT_CALC = { scan: 'wl', lmin: 400, lmax: 900, angle: 0, amin: 0, amax: 89, lambda: 633, pol: 'avg', show: 'RTA', points: 301, unit: 'nm' };
 /* returns { x, series: { R, T, A }, xlabel, warn } */

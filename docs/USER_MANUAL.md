@@ -426,6 +426,49 @@ ZnO, ZnS, CaF₂, Si, Ge, water, ethanol, methanol, acetone, PDMS, PMMA, the opt
 glasses, and custom n, k. Ag and Au also come as UV–mid-IR datasets (to 25 µm).
 Outside a dataset's range the end value is used and the readout warns you.
 
+## 5b4. Layer Studio: design thin films and multilayers
+
+**Studio** (top bar) opens a full-screen workspace for flat multilayers: MIM and
+MIMIM absorbers, Fabry–Pérot filters, Bragg mirrors, microcavities, Tamm
+structures, antireflection coatings and SPR chips. Select a *Multilayer stack* and
+press **Open in Layer Studio** (Optical response section) to edit one that is
+already in the figure.
+
+- **Structure** (left). Films are listed from the top down, between the medium
+  above and the substrate (or air for a free-standing film). Each film has a
+  material from the measured database (or your own n, k), a real thickness in nm,
+  a colour, a name and an optional tag (M₁, I, M₂…). **λ/4** and **λ/2** set a
+  quarter- or half-wave thickness at the design wavelength λ₀. Tick films and
+  press **Repeat ticked** to make a periodic group, e.g. (TiO₂ / SiO₂) × 8; change
+  its number of periods at any time, or **Ungroup** it. *Light arrives from* sets
+  whether light comes from above or through the substrate.
+- **Start from** loads a ready design: single film, λ/4 MgF₂ coating, MIM
+  absorber (Ni / SiO₂ / Al, R ≈ 0 at 625 nm), MIMIM broadband absorber, Ag MIM
+  filter, metal Fabry–Pérot, Bragg mirror, microcavity (LH)⁵ 2L (HL)⁵, Tamm
+  structure and a Kretschmann SPR chip.
+- **Cross-section and field** (middle). The stack drawn to scale (very thin films
+  are widened so they stay readable) or with equal heights, with |E|²/|E₀|² through
+  it at a chosen wavelength, angle and polarisation, and the share of the light
+  absorbed in each film. The absorbed shares add up to A.
+- **Optical response** (right). R, T and A against wavelength or angle (up to 4001
+  points, for sharp cavity modes), with the dip / peak and its width. Click the
+  curve to see the field at that point.
+- **Wavelength × angle map**. R, T or A over wavelength and angle of incidence;
+  bands that bend with angle are cavity, guided or plasmonic modes. Click it to see
+  the field there.
+- **Insert into figure** adds a *Multilayer stack* drawing (drawn thicknesses
+  compressed, proportional or equal; with a layer key if you like), and optionally
+  a linked R, T, A panel, the field profile and the map. When you opened a stack
+  from the figure the button reads **Update the stack** (or *Insert as a new
+  stack*). The stack keeps its repeat groups, so it reopens as you built it.
+- **Save** / **Open…** keep designs as `.rnbxlayers.json` files; **CSV** writes the
+  spectrum, the field profile and the absorption in each film. Ctrl+Z / Ctrl+Y undo
+  inside the Studio; Esc closes it and the design is kept for next time.
+
+The calculation is the same exact transfer-matrix method as *Optical response*
+(planar, isotropic films; measured n, k from refractiveindex.info). Gratings and
+patterned layers are not part of the Studio yet.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,
