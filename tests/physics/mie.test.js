@@ -37,4 +37,17 @@ module.exports = async ({ H }) => {
     const g40 = (N) => { const L = [{ r: 20, n: au(633) }]; return M.intensity(M.field(M.solve([{ z: -20.5, layers: L }, { z: 20.5, layers: L }], 1.33, 633, 'z', N), 0, 0, 0)); };
     H.near('1 nm gap: the gap field converges with the multipole order (40 vs 50)', g40(40) / g40(50), 1, 0.01);
     H.check('single 40 nm Au sphere resonance near 530 nm', single.Qext > 1, single.Qext); }
+  // 9. nanorods (spheroid model with size corrections)
+  { const c2 = M.c, em = 1.33 * 1.33, epsAu = lam => { const q = TF.nk({ mat: 'Au' }, lam); return c2.cmul([q.n, q.k], [q.n, q.k]); };
+    // a sphere: the corrected polarisability reproduces the exact Mie dipole
+    let worst = 0; for (const lam of [500, 540, 600]) { const q = TF.nk({ mat: 'Au' }, lam), R = 25, ex = M.sphere([{ r: R, n: [q.n, q.k] }], 1.33, lam, 1).Cext, sp = M.spheroid(epsAu(lam), em, R, R, lam).long.Cext; worst = Math.max(worst, Math.abs(sp / ex - 1)); }
+    H.check('sphere limit: size-corrected polarisability = Mie dipole (50 nm Au, within 3 %)', worst < 0.03, worst);
+    let best = { C: 0 }; for (let lam = 600; lam <= 1000; lam += 2) { const C = M.spheroid(epsAu(lam), em, 20, 5, lam).long.Cext; if (C > best.C) best = { C, lam }; }
+    H.check('Au rod 40 × 10 nm in water: longitudinal plasmon 760–800 nm', best.lam >= 760 && best.lam <= 800, best);
+    let b2 = { C: 0 }; for (let lam = 500; lam <= 900; lam += 2) { const C = M.spheroid(epsAu(lam), em, 25, 12.5, lam).long.Cext; if (C > b2.C) b2 = { C, lam }; }
+    H.check('aspect ratio 2 resonates bluer than 4 (≈ 600 nm)', b2.lam >= 580 && b2.lam <= 640 && b2.lam < best.lam, b2);
+    const r = M.spheroid(epsAu(780), em, 20, 5, 780);
+    H.near('rod near field → incident field far away', M.spheroidField(20, 5, r.long.Ein, 'long', 0, 3000), 1, 1e-3);
+    H.near('tip field at the surface = ε E_in / εm', M.spheroidField(20, 5, r.long.Ein, 'long', 0, 20.002) / (r.long.Esurf[0] ** 2 + r.long.Esurf[1] ** 2), 1, 0.1);
+    H.check('longitudinal plasmon far stronger than transverse at 780 nm', r.long.Cext > 50 * r.trans.Cext, [r.long.Cext, r.trans.Cext]); }
 };

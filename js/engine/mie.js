@@ -466,4 +466,45 @@ MIE.crossFar = S => {
   Csca /= k * k;
   return { Cext, Csca, Cabs: Cext - Csca };
 };
+
+/* ---------- nanorods: spheroids in the long-wavelength approximation ----------
+   A rod of length ℓ (tip to tip) and diameter D is modelled as a prolate spheroid with
+   semi-axes a = ℓ/2 (along z) and b = D/2. Polarisability with the size corrections of
+   Kuwata et al., Appl. Phys. Lett. 83, 4625 (2003) — dynamic depolarisation and radiation
+   damping, x = π × (length along the field) / λ₀ — which matches exact Mie theory for spheres
+   and gives the longitudinal and transverse plasmons of rods.
+   eps: particle permittivity [re, im]; em: host permittivity (real); lengths in nm; λ in vacuum. */
+MIE.depol = (a, b) => {
+  if (Math.abs(a - b) < 1e-9 * a) return 1 / 3;
+  if (a > b) { const e = Math.sqrt(1 - (b * b) / (a * a)); return (1 - e * e) / (e * e) * (Math.log((1 + e) / (1 - e)) / (2 * e) - 1); }
+  const g = Math.sqrt((b * b) / (a * a) - 1); return (1 + g * g) / (g * g) * (1 - Math.atan(g) / g);
+};
+MIE.spheroid = (eps, em, a, b, lam) => {
+  const V = 4 / 3 * Math.PI * a * b * b, La = MIE.depol(a, b), Lb = (1 - La) / 2, k = 2 * Math.PI * Math.sqrt(em) / lam;
+  const one = (L, len) => {
+    const x = Math.PI * len / lam, A = -0.4865 * L - 1.046 * L * L + 0.8481 * L * L * L, B = 0.01909 * L + 0.1999 * L * L + 0.6077 * L * L * L;
+    const den = cadd(cadd([L, 0], cdiv([em, 0], csub(eps, [em, 0]))), [A * em * x * x + B * em * em * x * x * x * x, -4 * Math.PI * Math.PI * Math.pow(em, 1.5) / 3 * V / (lam * lam * lam)]);
+    const alpha = cdiv([V, 0], den), Cext = k * alpha[1], Csca = Math.pow(k, 4) / (6 * Math.PI) * (alpha[0] * alpha[0] + alpha[1] * alpha[1]);
+    // uniform field inside (from p = α E₀ = V (ε − εm)/εm · E_in in these units) and the field just outside, normal to the surface
+    const Ein = cdiv(cscale(alpha, em), cscale(csub(eps, [em, 0]), V)), Esurf = cscale(cmul(eps, Ein), 1 / em);
+    return { alpha, Cext, Csca, Cabs: Cext - Csca, Ein, Esurf, L };
+  };
+  return { long: one(La, 2 * a), trans: one(Lb, 2 * b), V };
+};
+/* near field of a prolate spheroid (quasi-static solution in spheroidal coordinates, driven by the corrected
+   internal field E_in): |E|² / |E₀|² at (x, z) in the plane through the axis; pol 'long' (E ∥ z) or 'trans' (E ∥ x); null inside */
+MIE.spheroidField = (a, b, Ein, pol, x, z) => {
+  if ((x * x) / (b * b) + (z * z) / (a * a) < 1) return null;
+  const f = Math.sqrt(Math.max(1e-12, a * a - b * b)), xi0 = a / f;
+  const Q1 = xi => xi / 2 * Math.log((xi + 1) / (xi - 1)) - 1, Q11 = xi => Math.sqrt(xi * xi - 1) * (0.5 * Math.log((xi + 1) / (xi - 1)) - xi / (xi * xi - 1));
+  const C = pol === 'long' ? cscale(csub([1, 0], Ein), xi0 / Q1(xi0)) : cscale(csub([1, 0], Ein), Math.sqrt(xi0 * xi0 - 1) / Q11(xi0));
+  const phi = (X, Z) => {
+    const rho = Math.abs(X), r1 = Math.hypot(rho, Z + f), r2 = Math.hypot(rho, Z - f), xi = Math.max(1 + 1e-12, (r1 + r2) / (2 * f)), eta = U_clamp((r1 - r2) / (2 * f));
+    if (pol === 'long') return cscale(csub([xi, 0], cscale(C, Q1(xi))), -f * eta);
+    return cscale(csub([Math.sqrt(xi * xi - 1), 0], cscale(C, Q11(xi))), -f * Math.sqrt(Math.max(0, 1 - eta * eta)) * (X < 0 ? -1 : 1));
+  };
+  const h = 1e-3 * Math.min(a, b), ex = cscale(csub(phi(x + h, z), phi(x - h, z)), -1 / (2 * h)), ez = cscale(csub(phi(x, z + h), phi(x, z - h)), -1 / (2 * h));
+  return ex[0] * ex[0] + ex[1] * ex[1] + ez[0] * ez[0] + ez[1] * ez[1];
+};
+const U_clamp = v => (v > 1 ? 1 : v < -1 ? -1 : v);
 })();

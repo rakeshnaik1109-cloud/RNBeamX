@@ -583,10 +583,21 @@ coupling between the two particles).
 - **Field against the gap** (dimers): the hot-spot field and the enhancement for
   gaps from the smallest to the largest you set. Below about 0.5 nm electron
   tunnelling, which is not included, quenches the field.
+- **Nanorods.** Choose *Particles ▸ Nanorod*, then the material, length (tip to
+  tip) and diameter, and the orientation: random (rods in solution: one
+  longitudinal and two transverse plasmons averaged), polarised along the rod, or
+  across it. The rod is calculated as a prolate spheroid of the same length and
+  diameter in the long-wavelength approximation with size corrections (dynamic
+  depolarisation and radiation damping, Kuwata et al., Appl. Phys. Lett. 83, 4625,
+  2003), which reproduces exact Mie theory for spheres to within a few per cent.
+  The hot spot is 0.5 nm beyond the tip; the near field is the quasi-static field
+  of the spheroid. Rods with rounded ends resonate somewhat to the red of the
+  spheroid (about 10–30 nm for aspect ratios 2–4). Presets: Au 40 × 10 nm
+  (≈ 780 nm), 50 × 25 nm, 75 × 25 nm aligned, Ag 60 × 20 nm.
 - **Multipole orders** are chosen automatically (more for narrow gaps: about
   1 % on the gap field); set more to check convergence.
 - Presets: Au and Ag nanospheres, an Au nanoshell, Au@Ag, shell-isolated
-  Au@SiO₂ (SHINERS), and Au and Ag dimers with 1–5 nm gaps.
+  Au@SiO₂ (SHINERS), Au and Ag dimers with 1–5 nm gaps, and Au and Ag nanorods.
 - **Insert into figure** adds the spectrum, the hot-spot curves and the gap sweep
   as data panels, and the near-field map as a picture. **CSV** writes them all.
 
