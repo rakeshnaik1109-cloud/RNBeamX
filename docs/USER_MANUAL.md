@@ -657,6 +657,33 @@ cables and fluid tubing connect to it.
 
 Template: **Lab & chemistry ▸ Lock-in measurement (optics + instruments)**.
 
+## 5b9. Biology & medicine, safety signs
+
+The **Biology & medicine** group draws life-science figures from a few settings,
+in Schematic (flat colours, ink lines) or Shaded (gradients and highlights). They
+are page graphics: they do not take part in the ray tracing.
+
+- **Brain** (side view): each lobe its own colour, one colour, or one region
+  highlighted (frontal, parietal, temporal, occipital, cerebellum, brainstem);
+  number of folds and a fold pattern; optional lobe labels.
+- **Neuron** (dendrites, soma, myelinated axon, terminals), **cells** (animal or
+  plant, with nucleus and organelles), **bacteria** (rod, coccus, spiral; flagella
+  and pili), **viruses**, **DNA** double helix (turns, base pairs, a sequence),
+  **antibody** (with or without antigen), **protein** ribbon (helices, β-sheets and
+  loops in colours you choose), **blood cells** (red, red edge-on, white, platelet).
+- **Eye** in cross-section, optionally with light focused on the retina and labels;
+  **lab mouse**; **human figure** (standing or arms raised).
+
+The **Safety signs** group has three signs, each with a *Symbol* menu, a size and
+an optional caption underneath (e.g. *Class 4 laser*):
+
+- **GHS hazard pictogram** (red diamond): flammable, oxidiser, explosive, gas under
+  pressure, corrosive, acute toxicity, health hazard, irritant, environment.
+- **Warning sign** (yellow triangle): general, laser radiation, ionising radiation,
+  biological hazard, high voltage, magnetic field, hot surface, cryogenic, toxic.
+- **Mandatory sign** (blue circle): eye protection, gloves, lab coat, face shield,
+  respiratory protection, refer to the instructions.
+
 ## 5c. Your own components and styles
 
 - **Groups.** Select parts and press **Ctrl+G** (Arrange ▸ Group): they move,
