@@ -396,7 +396,15 @@ function responseSection(obj, def, set) {
     kids.push(control({ key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 190, max: 30000, step: 1 }, cget, cset));
   }
   const geo = def.grating ? def.grating(obj.props, obj, S.doc) : null;
-  if (geo) {
+  if (geo && geo.dim === 2) {
+    // crossed (2D) grating from Layer Studio ▸ Pattern
+    kids.push(control({ key: 'method', label: 'Method', type: 'select', options: [['auto', '2D grating (RCWA), rigorous'], ['tmm', 'Flat films only (fast)']] }, k => cget(k) === 'tmm' ? 'tmm' : 'auto', (k, v) => cset(k, v, true)));
+    if (c.method !== 'tmm') kids.push(el('div', { class: 'grid2' },
+      control({ key: 'orders2', label: 'Orders ± (x and y)', type: 'number', min: 1, max: 10, step: 1, hint: '(2M+1)² orders: slow above 5' }, k => cget(k) || geo.Mx, cset),
+      control({ key: 'phi', label: 'Azimuth φ', type: 'number', unit: '°', min: -180, max: 180, step: 1 }, k => cget(k) || 0, cset)),
+      control({ key: 'rpoints', label: 'Points in the curve', type: 'number', min: 11, max: 401, step: 10 }, k => cget(k) || 41, cset),
+      el('div', { class: 'hint', text: `Unit cell ${U.fmt(geo.px, 0)} × ${U.fmt(geo.py, 0)} nm, ${(2 * geo.Mx + 1) * (2 * geo.My + 1)} orders. Runs in the background; open it in Layer Studio to check convergence and see the near field.` }));
+  } else if (geo) {
     kids.push(control({ key: 'method', label: 'Method', type: 'select', options: [['auto', 'Grating (RCWA), rigorous'], ['tmm', 'Flat films only (fast)']] }, k => cget(k) === 'tmm' ? 'tmm' : 'auto', (k, v) => cset(k, v, true)));
     if (c.method !== 'tmm') kids.push(el('div', { class: 'grid2' },
       control({ key: 'orders', label: 'Diffraction orders ±', type: 'number', min: 1, max: 60, step: 1, hint: 'more = slower, more exact' }, k => cget(k) || 20, cset),

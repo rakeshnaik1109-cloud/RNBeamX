@@ -58,4 +58,45 @@ module.exports = async ({ H }) => {
   const sine = { period: 600, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, slices: 16, layers: [{ mat: 'air', nm: 60, shapes: [{ kind: 'sine', x: 300, mat: 'Au' }] }, { mat: 'Au', nm: 150, shapes: [] }] };
   H.check('sinusoidal and sawtooth profiles are sliced into steps', RC.fromPattern(sine).slices.length >= 10 && RC.fromPattern({ period: 833, layers: [{ mat: 'air', nm: 300, shapes: [{ kind: 'saw', x: 0, dir: 1, mat: 'Al' }] }], substrate: { mat: 'Al' } }, { slices: 12 }).slices.length === 12);
   H.near('grating equation: first order at 30° for λ = Λ/2', RC.orderAngle(1, 0, -1, 500, 1000, 1), 30, 1e-9);
+
+  // near field (1D): a flat stack gives the thin-film field; absorption from the field = A
+  const flatP = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'Ag', nm: 30, shapes: [] }, { mat: 'TiO2', nm: 80, shapes: [] }] };
+  const flatS = { inc: { mat: 'air' }, layers: [{ m: { mat: 'Ag' }, d: 30 }, { m: { mat: 'TiO2' }, d: 80 }], sub: { mat: 'glass:N-BK7' } };
+  const nearest = (tf, z) => { let j = 0, b = 1e9; tf.z.forEach((zz, i) => { if (Math.abs(zz - z) < b) { b = Math.abs(zz - z); j = i; } }); return tf.e2[j]; };
+  for (const pol of ['s', 'p']) {
+    const zs = [-120, 15, 60, 200], f = RC.core.field1(RC.problemAt(RC.fromPattern(flatP, { orders: 3 }), 600), 600, 35, pol, [0, 150], zs), tf = TFm.field(flatS, 600, 35, pol, { pad: 300, step: 0.05 });
+    H.check(`grating near field of a flat stack = thin-film field (${pol})`, zs.every((z, i) => Math.abs(f.map[i * 2] - nearest(tf, z)) < 2e-3 * Math.max(1, nearest(tf, z))), zs.map((z, i) => [f.map[i * 2], nearest(tf, z)]));
+  }
+  const lossy = { period: 500, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 60, shapes: [{ kind: 'trap', x: 150, wb: 200, mat: 'custom', n: 2, k: 0.1 }] }, { mat: 'SiO2', nm: 40, shapes: [] }] };
+  for (const pol of ['s', 'p']) {
+    const g = RC.fromPattern(lossy, { orders: 15 }), lam = 650, pb = RC.problemAt(g, lam), sv = RC.core.solve(pb, lam, 10, pol);
+    const nx = 400, xs = Array.from({ length: nx }, (_, i) => (i + 0.5) / nx * 500), nz = 120, zs = Array.from({ length: nz }, (_, i) => (i + 0.5) / nz * 60);
+    const f = RC.core.field1(pb, lam, 10, pol, xs, zs); let A = 0;
+    zs.forEach((z, iz) => xs.forEach((x, ix) => { if (x >= 50 && x <= 250) A += 0.4 * f.map[iz * nx + ix]; }));
+    A *= (2 * Math.PI / lam) * (500 / nx) * (60 / nz) / (500 * Math.cos(10 * Math.PI / 180));
+    H.near(`absorption from the grating near field = A (${pol})`, A, sv.A, 0.003);
+  }
+  // 2D (crossed) gratings
+  const s2 = (pat, lam, th, phi, pol, o) => RC.core.solve2(RC.problemAt2(RC.fromPattern2(pat, o), lam), lam, th, phi, pol);
+  const flat2 = Object.assign({ dim: 2, px: 400, py: 400 }, flatP);
+  [['s', 0], ['p', 0], ['s', 37], ['p', 37]].forEach(([pol, phi]) => H.near(`2D solver, flat layers = transfer matrix (${pol}, φ ${phi}°)`, s2(flat2, 600, 35, phi, pol, { mx: 1, my: 1 }).R, TFm.solve(flatS, 600, 35, pol).R, 1e-9));
+  const l1 = { period: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 150, shapes: [{ kind: 'trap', x: 200, wb: 200, mat: 'TiO2' }] }] };
+  const l2 = { dim: 2, px: 400, py: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 150, shapes: [{ kind: 'rect', x: 200, y: 200, wx: 200, wy: 401, mat: 'TiO2' }] }] };
+  H.near('2D solver with lines = 1D solver (TE)', s2(l2, 550, 10, 0, 's', { mx: 6, my: 0, raster: 400 }).R, RC.core.solve(RC.problemAt(RC.fromPattern(l1, { orders: 6 }), 550), 550, 10, 's').R, 1e-5);
+  const disks = { dim: 2, px: 400, py: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 120, shapes: [{ kind: 'disk', x: 200, y: 200, rx: 110, ry: 110, mat: 'TiO2' }] }] };
+  const ds = s2(disks, 600, 0, 0, 's', { mx: 2, my: 2 }), dp = s2(disks, 600, 0, 0, 'p', { mx: 2, my: 2 });
+  H.near('square disk array at normal incidence: s and p alike (C4 symmetry)', ds.R, dp.R, 1e-9);
+  const ob = s2(disks, 450, 20, 30, 'p', { mx: 2, my: 2 });
+  H.near('2D lossless cell conserves energy at oblique incidence', ob.R + ob.T, 1, 2e-4);
+  H.check('2D orders carry (m, n)', ob.Tn.length > 1 && ob.Tn.every(q => q.n != null));
+  // 2D near field: flat stack, and absorption in lossy disks
+  const f2 = RC.core.field2(RC.problemAt2(RC.fromPattern2(flat2, { mx: 1, my: 1 }), 600), 600, 35, 50, 'p', [-120, 15, 60, 200], [[0, 0], [133, 77]]), tfp = TFm.field(flatS, 600, 35, 'p', { pad: 300, step: 0.05 });
+  H.check('2D near field of a flat stack = thin-film field (p, φ 50°)', [-120, 15, 60, 200].every((z, i) => Math.abs(f2.map[i * 2] - nearest(tfp, z)) < 2e-3 * Math.max(1, nearest(tfp, z))));
+  const ld = { dim: 2, px: 400, py: 400, ambient: 'air', substrate: { mat: 'glass:N-BK7' }, layers: [{ mat: 'air', nm: 100, shapes: [{ kind: 'disk', x: 200, y: 200, rx: 120, ry: 120, mat: 'custom', n: 2, k: 0.1 }] }] };
+  { const g = RC.fromPattern2(ld, { mx: 3, my: 3 }), lam = 620, pb = RC.problemAt2(g, lam), sv = RC.core.solve2(pb, lam, 15, 20, 's');
+    const n = 40, pts = []; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) pts.push([(i + 0.5) / n * 400, (j + 0.5) / n * 400]);
+    const zs = Array.from({ length: 16 }, (_, i) => (i + 0.5) / 16 * 100), f = RC.core.field2(pb, lam, 15, 20, 's', zs, pts); let A = 0;
+    zs.forEach((z, iz) => pts.forEach(([x, y], ip) => { if (Math.hypot(x - 200, y - 200) <= 120) A += 0.4 * f.map[iz * pts.length + ip]; }));
+    A *= (2 * Math.PI / lam) * 10 * 10 * (100 / 16) / (400 * 400 * Math.cos(15 * Math.PI / 180));
+    H.near('absorption from the 2D near field ≈ A (lossy disks)', A, sv.A, 0.05 * sv.A); }
 };

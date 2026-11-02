@@ -6,7 +6,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* none */ } RNBX.setDocument(RNBX.newDocument()); });
   await page.click('#btnStudio');
   await page.click('.st-tabs >> text=Pattern');
-  await page.waitForFunction(() => document.querySelector('.st-spec svg'), null, { timeout: 30000 });
+  await page.waitForFunction(() => document.querySelector('.st-spec svg') && document.querySelectorAll('.st-orders tr').length >= 2, null, { timeout: 30000 });
   const a = await page.evaluate(() => ({ mode: RNBX.studio.mode, cross: !!document.querySelector('.ps-cross'), orders: document.querySelectorAll('.st-orders tr').length, spec: !!document.querySelector('.st-spec svg') }));
   H.check('Pattern tab: cross-section, orders table and a background RCWA spectrum', a.mode === 'pattern' && a.cross && a.orders >= 2 && a.spec, a);
   // every preset builds a valid grating
@@ -41,9 +41,44 @@ module.exports = async ({ base, getBrowser, H }) => {
     return { type: obj.type, periods: obj.props.periods, panel: !!panel, same: Math.abs(res.series.T[20] - one.T) < 1e-9, drawn: svg.length > 2000 };
   });
   H.check('insert: a Patterned structure with a linked RCWA panel that agrees with the Studio', ins.type === 'ucell' && ins.periods === 6 && ins.panel && ins.same && ins.drawn, ins);
+  // near field (1D), drawn in the background with outlines
+  const nf = await page.evaluate(async () => {
+    const PS = RNBX.patternStudio; RNBX.studio.open(null, 'pattern'); PS.setDesign(PS.PRESETS.find(p => p.id === 'gmr').make());
+    for (let i = 0; i < 200 && !document.querySelector('.st-field svg image'); i++) await new Promise(r => setTimeout(r, 100));
+    return { img: !!document.querySelector('.st-field svg image'), outlines: document.querySelectorAll('.st-field svg path').length };
+  });
+  H.check('1D near field |E|² map with the structure outlined', nf.img && nf.outlines >= 3, nf);
+  // 2D arrays: switch, top view, side view, near field, (m, n) orders, drag a handle
+  const two = await page.evaluate(async () => {
+    const PS = RNBX.patternStudio, d = PS.PRESETS.find(p => p.id === 'disks').make(); d.mx = 1; d.my = 1; d.calc.points = 5; PS.setDesign(d);
+    for (let i = 0; i < 300 && !(document.querySelector('.st-field svg image') && document.querySelector('.st-spec svg') && document.querySelectorAll('.st-orders tr').length > 1); i++) await new Promise(r => setTimeout(r, 100));
+    return { top: !!document.querySelector('.st-cross .ps-cross'), side: document.querySelectorAll('.st-cross').length >= 2, field: !!document.querySelector('.st-field svg image'), spec: !!document.querySelector('.st-spec svg'), mn: /\(0, 0\)/.test(document.querySelector('.st-orders').textContent) };
+  });
+  H.check('2D array: top view, side cut, near field, spectrum and (m, n) orders', Object.values(two).every(Boolean), two);
+  const rx0 = await page.evaluate(() => RNBX.patternStudio.design().layers[0].shapes[0].rx);
+  const hd2 = await page.evaluate(() => { const c = [...document.querySelectorAll('.ps-cross circle')][0], b = c.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+  await page.mouse.move(hd2.x, hd2.y); await page.mouse.down(); await page.mouse.move(hd2.x + 20, hd2.y, { steps: 4 }); await page.mouse.up();
+  const rx1 = await page.evaluate(() => RNBX.patternStudio.design().layers[0].shapes[0]);
+  H.check('dragging a disk handle in the top view resizes it (and keeps it round)', rx1.rx > rx0 + 5 && rx1.ry === rx1.rx, { rx0, rx: rx1.rx, ry: rx1.ry });
+  const xy = await page.evaluate(async () => {
+    const sel = [...document.querySelectorAll('.st-field')].length && [...document.querySelectorAll('.studio select')].find(s => [...s.options].some(o => o.value === 'xy'));
+    sel.value = 'xy'; sel.dispatchEvent(new Event('change'));
+    for (let i = 0; i < 300; i++) { const t = document.querySelector('.st-field svg text:last-of-type'); if (document.querySelector('.st-field svg image') && /at depth/.test(document.querySelector('.st-field').textContent)) return true; await new Promise(r => setTimeout(r, 100)); }
+    return false;
+  });
+  H.check('2D near field in a plane at a chosen depth (x–y)', xy);
+  const ins2 = await page.evaluate(async () => {
+    const PS = RNBX.patternStudio, obj = PS.insert({ panel: true, periods: 3 }); RNBX.studio.close();
+    obj.props.calc.rpoints = 5;
+    const doc = RNBX.state.doc; let res;
+    for (let i = 0; i < 600; i++) { res = RNBX.plotData.calcResult(obj, doc); if (res && res.x && !res.pending) break; await new Promise(r => setTimeout(r, 100)); }
+    const g = RNBX.lib.get('ucell').grating(obj.props), lam = res.x[2], one = RNBX.rcwa.core.solve2(RNBX.rcwa.problemAt2(g, lam), lam, 0, 0, obj.props.calc.pol);
+    return { dim: obj.props.pattern.dim, same: Math.abs(res.series.R[2] - one.R) < 1e-9, drawn: RNBX.render.build(doc).svg.length > 2000 };
+  });
+  H.check('insert a 2D array: drawn, and its linked panel is calculated with the 2D solver', ins2.dim === 2 && ins2.same && ins2.drawn, ins2);
   // update in place from the figure
   const up = await page.evaluate(() => {
-    const obj = RNBX.state.doc.objects.find(o => o.type === 'ucell'), n0 = RNBX.state.doc.objects.length;
+    const obj = RNBX.state.doc.objects.find(o => o.type === 'ucell' && o.props.pattern.dim !== 2), n0 = RNBX.state.doc.objects.length;
     RNBX.studio.open(obj);
     const mode = RNBX.studio.mode, d = RNBX.patternStudio.design(); d.layers[0].shapes[0].wb = 50; RNBX.patternStudio.setDesign(d);
     RNBX.patternStudio.insert({}); RNBX.studio.close();

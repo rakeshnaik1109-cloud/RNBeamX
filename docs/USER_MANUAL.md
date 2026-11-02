@@ -493,14 +493,41 @@ modal method with Li's rule for TM).
 - **Optical response**: R, T and A against wavelength or angle, calculated in the
   background. **Check convergence** compares with 1.5× the orders (metal edges
   need many). Click the curve to see the orders there.
+- **Near field |E|²** at the chosen wavelength, angle and polarisation: a colour
+  map of |E|² / |E₀|² through one or more periods, with the structure outlined
+  (linear or logarithmic scale; *Field CSV* exports it). It is rebuilt from the
+  same calculation (fields of every order in every layer; E = D / ε point by point
+  for TM), so the power absorbed in the structure from the field equals A.
 - **Wavelength × angle map** on request (*Calculate map*): each point is a full
   grating calculation, so it takes from a few seconds to about a minute.
+
+**2D arrays (crossed gratings).** Set *Structure ▸ 2D array* for structures
+periodic in x and y: a rectangular cell Λx × Λy (a hexagonal lattice is a
+rectangular cell with two shapes, as in the preset). Shapes are **disks /
+ellipses, rectangles, rings and crosses** with vertical walls; a shape of air in
+a solid film is a hole. *Orders ±Mx / ±My* set the Fourier orders kept in each
+direction ((2Mx+1)(2My+1) in all); *Azimuth φ* turns the plane of incidence.
+- **Top view** of the selected layer: drag a shape to move it, its handles to
+  resize it, and the dashed *cut* line to choose where the **side view** and the
+  side cut of the near field are taken. Click a layer in the side view to edit it.
+- **Near field** in a side cut (x–z) or in a plane at any depth (x–y).
+- **Diffraction orders (m, n)** with their efficiencies and directions (θ from
+  the normal, φ from x).
+- Presets: TiO₂ nanodisks, hexagonal Si pillars, elliptical pillars, a
+  photonic-crystal slab, a hole array in Au, an Au cross absorber, Ag nanopatches,
+  Si rings.
+
+The 2D solver is RCWA in the formulation of Rumpf with the plain Fourier
+(Laurent) rule. It is slower than 1D (about 0.4 s per wavelength at ±3 × ±3
+orders, spread over several background workers) and metal shapes converge
+slowly: start with ±3, then use *Check convergence*. Inserted 2D arrays are
+drawn as rows of pillars, holes or rings and keep their linked RCWA panel.
 - **Start from**: lamellar grating, guided-mode resonance filter, Al wire-grid
   polariser, gap-plasmon absorber (Au strips / 10 nm SiO₂ / Au, R ≈ 1 % at
   1270 nm), sinusoidal Au grating, blazed Al grating (1200 lines/mm), slanted
   grating, trapezoid Si ridges, two ridges per period, two-level steps.
-- **Insert into figure** adds a *Patterned structure* (a few periods in the
-  oblique device-sketch view), optionally with a linked RCWA panel and the map.
+- **Insert into figure** adds a *Patterned structure* (a few periods, or a few
+  rows of a 2D array, in the oblique device-sketch view), optionally with a linked RCWA panel and the map.
   Select it and press **Open in Layer Studio** to edit it again (**Update the
   structure**). **Save / Open…** keep `.rnbxpattern.json` files; **CSV** writes the
   spectrum and the orders.
