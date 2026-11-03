@@ -307,3 +307,6 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .ms-item.on { background: var(--accent-soft); }
 @media (max-width: 900px) { .ms-wrap { grid-template-columns: 1fr; } .ms-view { height: 52vh; } }
 .ms-acts .btn { flex: 0 0 auto; }
+.po-big { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 8px; }
+.po-big b { font-size: 26px; }
+.po-big span { color: var(--muted); }

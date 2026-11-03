@@ -326,6 +326,9 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .ms-item.on { background: var(--accent-soft); }
 @media (max-width: 900px) { .ms-wrap { grid-template-columns: 1fr; } .ms-view { height: 52vh; } }
 .ms-acts .btn { flex: 0 0 auto; }
+.po-big { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 8px; }
+.po-big b { font-size: 26px; }
+.po-big span { color: var(--muted); }
 
 </style>
 <style>
@@ -12383,6 +12386,7 @@ lib.register({
     frame: '', frameW: 0.5,
     cbar: false, cbMin: 0, cbMax: 1, cbLabel: '', cbSize: 6,
     zoom: false, zx: 0.5, zy: 0.5, zf: 3, zs: 0.38, zPos: 'tr', zColor: '#ffd23f', zLines: true, zLabel: true,
+    poro: null, poroShow: false, poroMask: '',
     meas: [], measShow: true, measLabels: true, measColor: '#2bd4ff', measW: 0.35, measSize: 5.5, measKeyClass: '',
   },
   params: [
@@ -12434,6 +12438,7 @@ lib.register({
     { key: 'zLines', label: 'Connecting lines', type: 'bool', show: p => p.zoom },
     { key: 'zLabel', label: 'Show ×N', type: 'bool', show: p => p.zoom },
     head('Measurements'),
+    { key: 'poroShow', label: 'Show the pore map (from Porosity…)', type: 'bool', show: p => !!p.poroMask },
     { key: 'measShow', label: 'Show measurements on the panel', type: 'bool', show: p => (p.meas || []).length > 0 },
     { key: 'measLabels', label: 'Label each with its value', type: 'bool', show: p => p.measShow && (p.meas || []).length > 0 },
     { key: 'measColor', label: 'Colour', type: 'color', show: p => p.measShow && (p.meas || []).length > 0 },
@@ -12498,6 +12503,7 @@ lib.register({
         s += `<rect x="${n(ox + lw / 2)}" y="${n(oy + lw / 2)}" width="${n(side - lw)}" height="${n(side - lw)}" fill="none" stroke="${p.zColor}" stroke-width="${n(lw * 1.6)}"/>`;
         if (p.zLabel) { const fs = Math.max(1.4, Math.min(2.5, side * 0.12)); s += `<text x="${n(ox + (p.zPos[1] === 'l' ? side - 1 : 1))}" y="${n(oy + (p.zPos[0] === 't' ? side - 0.9 : fs + 0.6))}" font-family="${font}" font-size="${n(fs)}" font-weight="700" fill="${p.zColor}" text-anchor="${p.zPos[1] === 'l' ? 'end' : 'start'}">×${U.fmt(p.zf, 1)}</text>`; }
       }
+      if (p.poroShow && p.poroMask) s += `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.poroMask, S.live) : p.poroMask)}" x="${n(ix)}" y="${n(iy)}" width="${n(FW)}" height="${n(FH)}" preserveAspectRatio="none"/>`;
       if (p.measShow !== false && (p.meas || []).length) s += IP.measOverlay(p, w, h, ix, iy, FW, FH, font);
       s += '</g>';
     }
@@ -12647,6 +12653,92 @@ IP.measOverlay = (p, w, h, ix, iy, FW, FH, font) => {
     else if (q.type === 'count') P.forEach(a => { s += `<circle cx="${n(a[0])}" cy="${n(a[1])}" r="${n(lw * 2.4)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/>`; });
   });
   return s;
+};
+
+/* ---------- porosity (pores segmented by a threshold) ----------
+   The image is turned into grey levels (at most 2048 px on the long side), smoothed (box blur
+   ×3 ≈ Gaussian of σ px), thresholded (Otsu's method or a set level; pores dark or bright),
+   and the pores are labelled as 8-connected regions. Porosity = pore pixels / pixels in the
+   region of interest; each pore gets its area, equivalent diameter and centroid. */
+IP.otsu = hist => {
+  let total = 0, sum = 0; for (let i = 0; i < 256; i++) { total += hist[i]; sum += i * hist[i]; }
+  let wB = 0, sB = 0, best = 0, thr = 127;
+  for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = total - wB; if (!wF) break; sB += t * hist[t]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; thr = t; } }
+  return thr;
+};
+const boxBlur = (src, w, h, r) => {
+  if (r < 1) return src;
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h), k = 2 * r + 1;
+  for (let y = 0; y < h; y++) { let acc = 0; for (let x = -r; x <= r; x++) acc += src[y * w + Math.min(w - 1, Math.max(0, x))]; for (let x = 0; x < w; x++) { tmp[y * w + x] = acc / k; const xo = Math.max(0, x - r), xi = Math.min(w - 1, x + r + 1); acc += src[y * w + xi] - src[y * w + xo]; } }
+  for (let x = 0; x < w; x++) { let acc = 0; for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x]; for (let y = 0; y < h; y++) { out[y * w + x] = acc / k; const yo = Math.max(0, y - r), yi = Math.min(h - 1, y + r + 1); acc += tmp[yi * w + x] - tmp[yo * w + x]; } }
+  return out;
+};
+/* grey levels of an image href at most `max` px on the long side: { g (Float32 0–255), w, h, k (px of the original per px here) } */
+IP.greyOf = async (href, max = 2048) => {
+  const img = await IP.decode(href), k = Math.max(1, Math.max(img.naturalWidth, img.naturalHeight) / max), w = Math.max(1, Math.round(img.naturalWidth / k)), h = Math.max(1, Math.round(img.naturalHeight / k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2];
+  return { g, w, h, k: img.naturalWidth / w };
+};
+/* o: { thr (0–255 or null = Otsu), bright (pores brighter than the solid), sigma (px), minArea (px of the original), roi: [x0, y0, x1, y1] fractions, edge: keep pores cut by the ROI edge in the size statistics } */
+IP.porosity = (G, o = {}) => {
+  const { w, h } = G, sig = Math.max(0, +o.sigma || 0), r = Math.round(sig * 0.87);   // three box passes of radius r ≈ Gaussian of σ
+  const roi = o.roi || [0, 0, 1, 1], X0 = Math.max(0, Math.floor(roi[0] * w)), Y0 = Math.max(0, Math.floor(roi[1] * h)), X1 = Math.min(w, Math.ceil(roi[2] * w)), Y1 = Math.min(h, Math.ceil(roi[3] * h));
+  // smooth inside the region only, so an info bar or border outside it cannot bleed in
+  let g = G.g;
+  if (r >= 1) {
+    const sw = X1 - X0, sh = Y1 - Y0; let sub = new Float32Array(sw * sh);
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) sub[y * sw + x] = G.g[(y + Y0) * w + x + X0];
+    sub = boxBlur(boxBlur(boxBlur(sub, sw, sh, r), sw, sh, r), sw, sh, r);
+    g = new Float32Array(w * h); for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) g[(y + Y0) * w + x + X0] = sub[y * sw + x];
+  }
+  const hist = new Uint32Array(256);
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) hist[Math.max(0, Math.min(255, Math.round(g[y * w + x])))]++;
+  const thr = o.thr == null ? IP.otsu(hist) : +o.thr;
+  const mask = new Uint8Array(w * h);
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) { const v = g[y * w + x]; mask[y * w + x] = o.bright ? (v > thr ? 1 : 0) : (v <= thr ? 1 : 0); }
+  // 8-connected labelling (union–find)
+  const lab = new Int32Array(w * h), par = [0];
+  const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) par[Math.max(a, b)] = Math.min(a, b); };
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) {
+    const i = y * w + x; if (!mask[i]) continue;
+    const nb = [];
+    if (x > X0 && lab[i - 1]) nb.push(lab[i - 1]);
+    if (y > Y0) { if (lab[i - w]) nb.push(lab[i - w]); if (x > X0 && lab[i - w - 1]) nb.push(lab[i - w - 1]); if (x < X1 - 1 && lab[i - w + 1]) nb.push(lab[i - w + 1]); }
+    if (!nb.length) { par.push(par.length); lab[i] = par.length - 1; }
+    else { const m = Math.min(...nb); lab[i] = m; nb.forEach(q => unite(m, q)); }
+  }
+  const k2 = G.k * G.k, min = Math.max(0, +o.minArea || 0) / k2, reg = new Map();
+  let porePx = 0;
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) {
+    const i = y * w + x; if (!lab[i]) continue;
+    const L = find(lab[i]); lab[i] = L;
+    let R = reg.get(L); if (!R) { R = { n: 0, sx: 0, sy: 0, edge: false }; reg.set(L, R); }
+    R.n++; R.sx += x; R.sy += y; if (x === X0 || y === Y0 || x === X1 - 1 || y === Y1 - 1) R.edge = true;
+  }
+  const pores = [];
+  reg.forEach((R, L) => { if (R.n < min) { R.small = true; return; } porePx += R.n; pores.push({ id: L, areaPx: R.n * k2, cx: (R.sx / R.n + 0.5) * G.k, cy: (R.sy / R.n + 0.5) * G.k, edge: R.edge }); });
+  const roiPx = Math.max(1, (X1 - X0) * (Y1 - Y0));
+  return { thr, hist, mask, lab, reg, w, h, k: G.k, roi: [X0, Y0, X1, Y1], porosity: porePx / roiPx, roiAreaPx: roiPx * k2, pores };
+};
+/* calibrated results: sizes in nm (or px) and the pore density */
+IP.poroSummary = (p, R, keepEdge) => {
+  const s = IP.nmPerPx(p), use = R.pores.filter(q => keepEdge || !q.edge);
+  const eqdPx = use.map(q => 2 * Math.sqrt(q.areaPx / Math.PI)), areaPx = use.map(q => q.areaPx);
+  let eqd = eqdPx, unit = 'px', area = areaPx, aunit = 'px²';
+  if (s) { const nm = eqdPx.map(v => v * s), [u, f] = IP.lenUnit(nm); eqd = nm.map(v => v / f); unit = u; area = areaPx.map(v => v * s * s / (f * f)); aunit = u + '²'; }
+  const roiUm2 = s ? R.roiAreaPx * s * s / 1e6 : 0;
+  return { porosity: R.porosity, n: R.pores.length, nStats: use.length, edgeExcluded: R.pores.length - use.length, eqd: stat(eqd), eqdVals: eqd, unit, area: stat(area), aunit, density: roiUm2 ? R.pores.length / roiUm2 : 0, thr: R.thr };
+};
+/* the pore map as a transparent PNG at the analysis resolution (pores coloured) */
+IP.poreMaskURL = (R, colour = '#ff3b30', alpha = 0.55) => {
+  const cv = document.createElement('canvas'); cv.width = R.w; cv.height = R.h;
+  const ctx = cv.getContext('2d'), im = ctx.createImageData(R.w, R.h), c = [parseInt(colour.slice(1, 3), 16), parseInt(colour.slice(3, 5), 16), parseInt(colour.slice(5, 7), 16)], a = Math.round(alpha * 255);
+  for (let i = 0; i < R.w * R.h; i++) { const L = R.lab[i]; if (L && !(R.reg.get(L) || {}).small) { im.data[i * 4] = c[0]; im.data[i * 4 + 1] = c[1]; im.data[i * 4 + 2] = c[2]; im.data[i * 4 + 3] = a; } }
+  ctx.putImageData(im, 0, 0);
+  return cv.toDataURL('image/png');
 };
 
 /* fill a micrograph from an image file (keeps its calibration and look) */
@@ -19168,9 +19260,10 @@ PN.calibrate = obj => {
 };
 
 /* buttons in the inspector of an image panel */
-lib.get('micrograph').tools = obj => el('div', {}, (() => { const G = IP.geom(obj.props); const st = (obj.props.meas || []).length ? IP.measStats(obj.props) : [], ms = IP.summaryText(st), ar = st.length ? IP.aspect(st) : null; return el('div', { class: 'readout', style: { marginBottom: '8px', whiteSpace: 'pre-line' } }, obj.props.href ? `${obj.props.pxW} × ${obj.props.pxH} px · ` + (G.visNm ? `field ${IP.lengthLabel(G.visNm, obj.props.unit)} wide · scale bar ${IP.lengthLabel(IP.barNm(obj.props), obj.props.unit)}` : obj.props.calib === 'none' ? 'no calibration' : 'not calibrated yet: set the pixel size or measure a scale bar') + (ms.length ? '\nMeasured — ' + ms.join(' · ') + (ar ? ` · aspect ratio ${ar.r.toFixed(2)} ± ${ar.se.toFixed(2)}` : '') : '') : 'No image yet'); })(),
+lib.get('micrograph').tools = obj => el('div', {}, (() => { const G = IP.geom(obj.props); const st = (obj.props.meas || []).length ? IP.measStats(obj.props) : [], ms = IP.summaryText(st), ar = st.length ? IP.aspect(st) : null; return el('div', { class: 'readout', style: { marginBottom: '8px', whiteSpace: 'pre-line' } }, obj.props.href ? `${obj.props.pxW} × ${obj.props.pxH} px · ` + (G.visNm ? `field ${IP.lengthLabel(G.visNm, obj.props.unit)} wide · scale bar ${IP.lengthLabel(IP.barNm(obj.props), obj.props.unit)}` : obj.props.calib === 'none' ? 'no calibration' : 'not calibrated yet: set the pixel size or measure a scale bar') + (ms.length ? '\nMeasured — ' + ms.join(' · ') + (ar ? ` · aspect ratio ${ar.r.toFixed(2)} ± ${ar.se.toFixed(2)}` : '') : '') + (obj.props.poro && obj.props.poro.result ? `\nPorosity ${(obj.props.poro.result.porosity * 100).toFixed(1)} % · ${obj.props.poro.result.n} pores · diameter ${IP.fmtN(obj.props.poro.result.eqd)} ± ${IP.fmtSD(obj.props.poro.result.eqdSd, obj.props.poro.result.eqd)} ${obj.props.poro.result.unit}` : '') : 'No image yet'); })(),
  el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '10px' } },
   el('button', { style: { flex: '0 0 auto' }, class: 'btn small primary', type: 'button', text: obj.props.href ? 'Replace image…' : 'Choose image…', onclick: () => RNBX.project.pickFile('image/*', f => IP.fill(obj, f)) }),
+  obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Porosity…', title: 'Pore area fraction, pore count and size distribution (threshold segmentation)', onclick: () => RNBX.porosity.open(obj) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small primary', type: 'button', text: 'Measure…', title: 'Lengths, widths, diameters, areas, angles and counts, with mean ± SD and histograms', onclick: () => RNBX.measure.open(obj) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Calibrate / crop…', title: 'Measure a scale bar printed in the image; crop off the info bar', onclick: () => PN.calibrate(obj) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Auto contrast', title: 'Black and white points that clip 0.5 % of the pixels at each end', onclick: () => IP.autoLevels(obj.props.href).then(r => { RNBX.history.checkpoint(); Object.assign(obj.props, r); RNBX.changed(); RNBX.inspector.build(); }) }) : null,
@@ -19412,6 +19505,163 @@ MS.open = obj => {
     fit(); draw(); cv.focus();
   });
   MS._t = { setTool, add: q => add(Object.assign({ cls }, q)), get: () => p.meas, toImg, scr, close: () => m.close(), fitView: () => { fit(); draw(); }, view: () => ({ s, ox, oy }) };
+  return m;
+};
+})();
+
+</script>
+<script>
+/* js/ui/porosity.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/porosity.js
+   Porosity of a substrate from an SEM image panel (e.g. porous
+   SERS substrates, nanoporous gold, anodic alumina): pores are
+   segmented by a threshold (Otsu or set by hand, pores dark or
+   bright, optional smoothing), inside the cropped region or a
+   rectangle you draw. Gives the porosity (pore area fraction),
+   the number and density of pores and their size distribution
+   (equivalent diameter); the pore map can be shown on the panel.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, IP = RNBX.imgproc;
+const PO = RNBX.porosity = {};
+PO.DEFAULT = { auto: true, thr: 100, bright: false, sigma: 1, minArea: 4, roiMode: 'crop', roi: null, edge: false, colour: '#ff3b30' };
+
+PO.open = obj => {
+  const p = obj.props;
+  if (!p.href) { RNBX.toast('Choose an image first'); return null; }
+  const o = Object.assign({}, PO.DEFAULT, p.poro || {});
+  let G = null, R = null, sum = null, img = null, drag = null, busy = 0;
+  const cv = el('canvas', { class: 'ms-canvas' }), host = el('div', { class: 'ms-view' }, cv);
+  const res = el('div', { class: 'po-res' }), histHost = el('div', {}), status = el('div', { class: 'hint' });
+  const cropRoi = () => [p.cx0 || 0, p.cy0 || 0, p.cx1 == null ? 1 : p.cx1, p.cy1 == null ? 1 : p.cy1];
+  const roi = () => (o.roiMode === 'rect' && o.roi ? o.roi : cropRoi());
+
+  /* ---------- view: the image with pores tinted and the region outlined ---------- */
+  let s = 1, ox = 0, oy = 0, maskCv = null;
+  const draw = () => {
+    if (!img) return;
+    const ctx = cv.getContext('2d'), dpr = window.devicePixelRatio || 1, W = cv.width / dpr, H = cv.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, W, H);
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    s = Math.min(W / iw, H / ih) * 0.97; ox = (W - iw * s) / 2; oy = (H - ih * s) / 2;
+    ctx.drawImage(img, ox, oy, iw * s, ih * s);
+    if (maskCv && o.showMap !== false) ctx.drawImage(maskCv, ox, oy, iw * s, ih * s);
+    const r = drag && drag.r ? drag.r : roi();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]);
+    ctx.strokeRect(ox + r[0] * iw * s, oy + r[1] * ih * s, (r[2] - r[0]) * iw * s, (r[3] - r[1]) * ih * s); ctx.setLineDash([]);
+  };
+  const frac = e => { const b = cv.getBoundingClientRect(); return [U.clamp(((e.clientX - b.left) - ox) / (img.naturalWidth * s), 0, 1), U.clamp(((e.clientY - b.top) - oy) / (img.naturalHeight * s), 0, 1)]; };
+  cv.addEventListener('pointerdown', e => { if (o.roiMode !== 'rect' || !img) return; cv.setPointerCapture(e.pointerId); const a = frac(e); drag = { a, r: [a[0], a[1], a[0], a[1]] }; });
+  cv.addEventListener('pointermove', e => { if (!drag) return; const b = frac(e); drag.r = [Math.min(drag.a[0], b[0]), Math.min(drag.a[1], b[1]), Math.max(drag.a[0], b[0]), Math.max(drag.a[1], b[1])]; draw(); });
+  cv.addEventListener('pointerup', () => { if (!drag) return; const r = drag.r; drag = null; if (r[2] - r[0] > 0.02 && r[3] - r[1] > 0.02) { o.roi = r.map(v => U.round(v, 4)); run(); } else draw(); });
+
+  /* ---------- analysis ---------- */
+  const run = async () => {
+    const tok = ++busy;
+    status.textContent = 'Analysing…';
+    await new Promise(r2 => setTimeout(r2, 10));
+    if (!G) G = await IP.greyOf(p.href);
+    if (tok !== busy) return;
+    R = IP.porosity(G, { thr: o.auto ? null : o.thr, bright: o.bright, sigma: o.sigma, minArea: o.minArea, roi: roi() });
+    if (o.auto) { o.thr = R.thr; thrIn.value = R.thr; thrNum.value = R.thr; }
+    sum = IP.poroSummary(p, R, o.edge);
+    const url = IP.poreMaskURL(R, o.colour, 0.55), im = new Image();
+    im.onload = () => { maskCv = im; draw(); }; im.src = url;
+    PO._last = { R, sum, url };
+    status.textContent = `Threshold ${R.thr}${o.auto ? ' (Otsu)' : ''} · region ${R.roi[2] - R.roi[0]} × ${R.roi[3] - R.roi[1]} px analysed${G.k > 1 ? ` (image reduced ${G.k.toFixed(2)}× for speed)` : ''}.`;
+    drawResults();
+  };
+  const fmt = IP.fmtN;
+  const drawResults = () => {
+    if (!sum) return;
+    const cal = !!IP.nmPerPx(p);
+    res.innerHTML = `<div class="po-big"><b>${(sum.porosity * 100).toFixed(1)} %</b><span>porosity (pore area fraction)</span></div>` +
+      `<table class="st-tab ms-tab"><tr><td>Pores</td><td><b>${sum.n}</b>${cal ? ` · ${fmt(sum.density)} per µm²` : ''}</td></tr>` +
+      (sum.nStats ? `<tr><td>Equivalent diameter</td><td><b>${fmt(sum.eqd.mean)} ± ${IP.fmtSD(sum.eqd.sd, sum.eqd.mean)} ${U.esc(sum.unit)}</b> (median ${fmt(sum.eqd.median)}, ${fmt(sum.eqd.min)}–${fmt(sum.eqd.max)})</td></tr>` +
+        `<tr><td>Pore area</td><td>${fmt(sum.area.mean)} ± ${IP.fmtSD(sum.area.sd, sum.area.mean)} ${U.esc(sum.aunit)}</td></tr>` : '') +
+      `<tr><td>Size statistics</td><td>${sum.nStats} pores${sum.edgeExcluded ? `, ${sum.edgeExcluded} cut by the region edge left out` : ''}</td></tr></table>` +
+      (cal ? '' : '<div class="hint">Not calibrated: sizes in pixels (Calibrate / crop… sets the scale).</div>');
+    histHost.innerHTML = '';
+    if (sum.eqdVals.length > 1) {
+      const b = RNBX.measure.bins(sum.eqdVals), w = 330, h = 140, ymax = Math.max(...b.counts, 1);
+      const X = v => 34 + (v - b.edges[0]) / (b.edges[b.edges.length - 1] - b.edges[0] || 1) * (w - 64), Y = c => h - 24 - c / ymax * (h - 36);
+      let svg = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="Arial" font-size="10" class="st-chart">`;
+      b.counts.forEach((c, i) => { svg += `<rect x="${X(b.edges[i]) + 0.5}" y="${Y(c)}" width="${Math.max(0.5, X(b.edges[i + 1]) - X(b.edges[i]) - 1)}" height="${h - 24 - Y(c)}" fill="${o.colour}" fill-opacity="0.75"/>`; });
+      svg += `<line x1="34" y1="${h - 24}" x2="${w - 20}" y2="${h - 24}" stroke="currentColor"/><line x1="34" y1="${h - 24}" x2="34" y2="10" stroke="currentColor"/><text x="30" y="${Y(ymax) + 4}" text-anchor="end" fill="currentColor">${ymax}</text>`;
+      [b.edges[0], b.edges[b.edges.length - 1]].forEach(v => { svg += `<text x="${X(v)}" y="${h - 11}" text-anchor="middle" fill="currentColor">${fmt(v)}</text>`; });
+      svg += `<text x="${(w + 14) / 2}" y="${h - 1}" text-anchor="middle" fill="currentColor">Pore equivalent diameter (${U.esc(sum.unit)})</text></svg>`;
+      histHost.append(el('div', { html: svg }));
+    }
+  };
+
+  /* ---------- controls ---------- */
+  const set = (k, v) => { o[k] = v; run(); };
+  const pol = el('select', { style: { width: '100%' }, onchange: () => set('bright', pol.value === 'bright') }, [['dark', 'Pores are dark (usual SEM)'], ['bright', 'Pores are bright']].map(q => el('option', { value: q[0], text: q[1] })));
+  pol.value = o.bright ? 'bright' : 'dark';
+  const thrIn = el('input', { type: 'range', min: 0, max: 255, step: 1, value: o.thr, style: { flex: '1 1 auto' }, oninput: () => { o.auto = false; autoCb.checked = false; thrNum.value = thrIn.value; o.thr = +thrIn.value; clearTimeout(PO._t); PO._t = setTimeout(run, 80); } });
+  const thrNum = el('input', { type: 'number', min: 0, max: 255, step: 1, value: o.thr, style: { width: '64px', flex: '0 0 64px' }, onchange: () => { o.auto = false; autoCb.checked = false; thrIn.value = thrNum.value; set('thr', +thrNum.value); } });
+  const autoCb = el('input', { type: 'checkbox', checked: o.auto, onchange: () => set('auto', autoCb.checked) });
+  const sigIn = el('input', { type: 'number', min: 0, max: 10, step: 0.5, value: o.sigma, style: { width: '64px' }, onchange: () => set('sigma', Math.max(0, +sigIn.value)) });
+  const minIn = el('input', { type: 'number', min: 0, max: 100000, step: 1, value: o.minArea, style: { width: '74px' }, onchange: () => set('minArea', Math.max(0, +minIn.value)) });
+  const roiSel = el('select', { style: { width: '100%' }, onchange: () => { o.roiMode = roiSel.value; run(); } }, [['crop', 'The cropped image (info bar excluded)'], ['rect', 'A rectangle I draw on the image']].map(q => el('option', { value: q[0], text: q[1] })));
+  roiSel.value = o.roiMode;
+  const edgeCb = el('input', { type: 'checkbox', checked: o.edge, onchange: () => { o.edge = edgeCb.checked; sum = IP.poroSummary(p, R, o.edge); drawResults(); } });
+  const colIn = el('input', { type: 'color', value: o.colour, style: { width: '44px', height: '26px', flex: '0 0 44px', padding: '0' }, onchange: () => set('colour', colIn.value) });
+  const fld = (label, ...c) => el('label', { class: 'st-f' }, el('span', { text: label }), el('div', { class: 'row', style: { gap: '6px', alignItems: 'center' } }, ...c));
+
+  const apply = (show) => {
+    if (!R) return;
+    RNBX.history.checkpoint();
+    p.poro = Object.assign({}, o, { result: { porosity: sum.porosity, n: sum.n, eqd: sum.eqd.mean, eqdSd: sum.eqd.sd, unit: sum.unit, density: sum.density, thr: R.thr } });
+    if (show) { p.poroMask = PO._last.url; p.poroShow = true; }
+    RNBX.changed(); if (RNBX.inspector) RNBX.inspector.build();
+  };
+  const csv = () => {
+    if (!R) return;
+    const s2 = IP.nmPerPx(p), rows = ['# ' + (S.doc.meta.title || 'Figure') + ' — porosity analysis (RNBeamX)', `# porosity ${(sum.porosity * 100).toFixed(3)} %, ${sum.n} pores, threshold ${R.thr}${o.auto ? ' (Otsu)' : ''}, pores ${o.bright ? 'bright' : 'dark'}, smoothing ${o.sigma} px, minimum ${o.minArea} px`, '# calibration: ' + (s2 ? IP.fmtN(s2) + ' nm per pixel' : 'none (pixels)'), 'pore,area,equivalent diameter,centroid x (px),centroid y (px),cut by the edge', ];
+    R.pores.forEach((q, i) => { const a = s2 ? q.areaPx * s2 * s2 : q.areaPx; rows.push([i + 1, a.toPrecision(6), (2 * Math.sqrt(a / Math.PI)).toPrecision(6), q.cx.toFixed(1), q.cy.toFixed(1), q.edge ? 'yes' : 'no'].join(',')); });
+    rows.splice(4, 0, `# units: ${s2 ? 'nm², nm' : 'px², px'}`);
+    U.download(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(S.doc.meta.title || 'image') + '_porosity.csv');
+  };
+  const addHist = () => {
+    if (!sum || sum.eqdVals.length < 2) { RNBX.toast('Too few pores for a histogram'); return; }
+    const b = RNBX.measure.bins(sum.eqdVals), x = [], y = [];
+    b.counts.forEach((c, i) => { x.push(b.edges[i], b.edges[i], b.edges[i + 1], b.edges[i + 1]); y.push(0, c, c, 0); });
+    RNBX.arrange.addDataPanel({ series: [{ name: `Pores: ${IP.fmtN(sum.eqd.mean)} ± ${IP.fmtSD(sum.eqd.sd, sum.eqd.mean)} ${sum.unit} (n = ${sum.nStats})`, x, y, color: o.colour }], xlabel: `Pore diameter (${sum.unit})`, ylabel: 'Count' });
+    RNBX.toast('Pore-size histogram added as a data panel.');
+  };
+  const addText = () => {
+    if (!sum) return;
+    const t = RNBX.createObject('text', obj.x, obj.y + (p.h || 20) / 2 + 6);
+    t.props.text = `Porosity ${(sum.porosity * 100).toFixed(1)} %; ${sum.n} pores` + (IP.nmPerPx(p) ? ` (${IP.fmtN(sum.density)} µm^{−2})` : '') + (sum.nStats ? `; pore diameter ${IP.fmtN(sum.eqd.mean)} ± ${IP.fmtSD(sum.eqd.sd, sum.eqd.mean)} ${sum.unit}` : '');
+    t.props.size = 6; RNBX.addObject(t); RNBX.toast('Summary added under the panel.');
+  };
+
+  const side = el('div', { class: 'ms-side' },
+    fld('Pores', pol), fld('Threshold (grey level 0–255)', thrIn, thrNum), el('label', { class: 'check' }, autoCb, 'Automatic threshold (Otsu’s method)'),
+    fld('Smoothing σ (px)', sigIn, el('span', { class: 'hint', style: { margin: 0 }, text: 'against SEM noise' })),
+    fld('Smallest pore (px of the image)', minIn),
+    fld('Region analysed', roiSel), el('label', { class: 'check' }, edgeCb, 'Include pores cut by the region edge in the size statistics'),
+    fld('Pore colour', colIn), status, el('h4', { text: 'Results' }), res, histHost,
+    el('div', { class: 'row ms-acts', style: { gap: '6px', flexWrap: 'wrap', margin: '8px 0' } },
+      el('button', { class: 'btn small primary', type: 'button', text: 'Show the pore map on the panel', onclick: () => { apply(true); RNBX.toast('Pore map shown on the panel (Inspector ▸ Measurements to hide it).'); } }),
+      el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Every pore: area, equivalent diameter, position', onclick: csv }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add histogram to figure', onclick: addHist }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add summary text', onclick: addText })),
+    el('div', { class: 'hint', text: 'Porosity here is the area fraction of pores seen from the top in the region analysed (a 2D, surface measure). It depends on the threshold: compare images with the same settings, and check the coloured map follows the pores. For a rough surface, smoothing and a minimum pore size remove noise.' }));
+  const m = D.modal({ title: 'Porosity', sub: `${p.pxW} × ${p.pxH} px` + (IP.nmPerPx(p) ? ` · ${IP.fmtN(IP.nmPerPx(p))} nm per pixel` : ' · not calibrated'), wide: true,
+    body: el('div', { class: 'ms-wrap' }, host, side),
+    foot: [el('button', { class: 'btn primary', type: 'button', text: 'Done', onclick: () => { apply(false); m.close(); } })] });
+  m.root.classList.add('ms-modal');
+  IP.decode(p.href).then(im => {
+    img = im;
+    const r = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, w = Math.max(320, Math.round(r.width)), h = Math.max(260, Math.round(r.height));
+    cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    draw(); run();
+  });
+  PO._d = { o, run, close: () => m.close(), last: () => PO._last, apply };
   return m;
 };
 })();
