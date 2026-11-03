@@ -469,6 +469,29 @@ The calculation is the same exact transfer-matrix method as *Optical response*
 (planar, isotropic films; measured n, k from refractiveindex.info). Gratings and
 patterned layers are not part of the Studio yet.
 
+### Fit to a measurement
+
+At the bottom of the **Layers** tab, **Fit to a measurement** compares the design
+with a measured spectrum and fits it.
+- **Load measured…** (CSV or text: x and the value), **Paste…**, or **From
+  RNSpectraX** (the spectrum sent with *Export ▾ → RNBeamX*). Choose what was
+  measured (R, T or A), whether x is wavelength in nm or µm or the angle of
+  incidence, and whether the values are fractions or per cent (recognised
+  automatically), and the range to fit. The model uses the design's angle (or
+  wavelength) and polarisation from *Optical response*; the measurement is drawn
+  over the calculated spectrum.
+- Tick what may change: the **thickness** of any film (in a repeat group, the film
+  once — every repeat follows), **n and k** of films with custom n, k, a **scale
+  factor** (calibration of the measurement) and an **offset** (stray light,
+  background). Min and max default to 0.5× – 1.5× of the thickness.
+- **Fit** runs Levenberg–Marquardt from several starting points spread over the
+  ranges, so it does not settle on the wrong interference fringe. The fitted
+  values go into the design as one step (Ctrl+Z restores them); the result table
+  gives each value with its standard error (1σ, from the covariance of the fit,
+  assuming the tabulated n, k are exact), the RMS deviation before and after, R²,
+  and a warning when a value ends at a limit (widen the range). The residual is
+  plotted underneath.
+
 ### Pattern: periodic structures (one unit cell)
 
 The **Pattern** tab of Layer Studio designs gratings and metasurfaces that are

@@ -200,7 +200,7 @@ function render() {
   views = { list: el('div', { class: 'st-list' }), cross: el('div', { class: 'st-cross' }), spec: el('div', { class: 'st-spec' }), map: el('div', { class: 'st-map' }), absorb: el('div', { class: 'st-absorb' }) };
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Structure' }), sideControls(), views.list, substrateRow(), el('div', { class: 'hint', text: 'Top of the list = top of the stack. ⧉ duplicates, ↑↓ move, λ/4 sets a quarter-wave thickness at the design wavelength. Tick films and press “Repeat” for a periodic group.' }));
   const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Cross-section and field |E|²' }), fieldControls(), views.cross, views.absorb);
-  const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Optical response' }), specControls(), views.spec, el('h4', { text: 'Wavelength × angle map' }), mapControls(), views.map);
+  const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Optical response' }), specControls(), views.spec, el('h4', { text: 'Wavelength × angle map' }), mapControls(), views.map, el('h4', { text: 'Fit to a measurement' }), RNBX.layerFit ? RNBX.layerFit.panel() : null);
   root.append(head, el('div', { class: 'st-body' }, left, mid, right));
   buildList();
   refresh();
@@ -341,8 +341,12 @@ function drawSpectrum() {
   try { res = TF().scan(ST.stack(d), c); } catch (e) { host.textContent = 'Calculation failed: ' + e.message; return; }
   const q = c.show.split('').filter(v => QCOL[v]), wl = c.scan === 'wl';
   const cross = wl ? (Math.abs((+d.field.angle || 0) - (+c.angle || 0)) < 1e-6 ? d.field.nm : null) : (Math.abs(d.field.nm - c.lambda) < 1e-6 ? d.field.angle : null);
+  // a loaded measurement on the same axis (Fit to a measurement)
+  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.angle === !wl;
+  const ovSeries = showOv ? [{ x: ov.x.map(v => (wl && c.unit === 'um' ? v / 1000 : v)), y: ov.y, color: '#555555', w: 1.1 }] : [];
+  const leg = q.map(k => ({ name: QNAME[k], color: QCOL[k] })).concat(showOv ? [{ name: 'Measured ' + ov.q, color: '#555555' }] : []);
   const ch = chart({ id: 'st-spec', w, h, xr: [res.x[0], res.x[res.x.length - 1]], yr: [0, 1], xlabel: res.xlabel, ylabel: q.length === 1 ? QNAME[q[0]] : 'R, T, A',
-    series: q.map(k => ({ x: res.x, y: res.series[k], color: QCOL[k] })), legend: q.length > 1 ? q.map(k => ({ name: QNAME[k], color: QCOL[k] })) : null, cross });
+    series: ovSeries.concat(q.map(k => ({ x: res.x, y: res.series[k], color: QCOL[k] }))), legend: q.length > 1 || showOv ? leg : null, cross });
   host.innerHTML = ch.svg;
   const sum = TF().summary(res);
   host.append(el('div', { class: 'readout', html: (sum.length ? sum.map(U.esc).join('<br>') : 'No dip or peak inside this range.') + (res.warn.length ? `<br><span style="color:var(--danger)">Outside the measured data: ${U.esc(res.warn.join(', '))}</span>` : '') + `<br><span class="hint" style="margin:0">Click the curve to see the field at that ${wl ? 'wavelength' : 'angle'}.</span>` }));
