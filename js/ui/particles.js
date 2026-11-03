@@ -114,8 +114,31 @@ PT.point = (dd, lam, N) => {
   const c = MIE().cross(Sx), hs = PT.hotSpot(dd), E2 = MIE().intensity(MIE().field(Sx, hs[0], hs[1], hs[2]));
   return { lam, Cext: c.Cext, Csca: c.Csca, Cabs: c.Cabs, E2, S: Sx };
 };
+/* a size distribution (single spheres, core–shell or rods): Gaussian in size with σ = spread %,
+   the whole particle scaled, 11 nodes from −2.5σ to +2.5σ; cross-sections averaged per particle */
+PT.samples = dd => {
+  const sp = +dd.spread || 0;
+  if (!(sp > 0) || !(dd.kind === 'single' || dd.kind === 'rod')) return [{ dd, w: 1 }];
+  const out = [];
+  for (let t = -2.5; t <= 2.501; t += 0.5) {
+    const f = 1 + sp / 100 * t; if (f < 0.15) continue;
+    const c = JSON.parse(JSON.stringify(dd)); c.spread = 0;
+    if (dd.kind === 'rod') { c.rod.L = dd.rod.L * f; c.rod.D = dd.rod.D * f; c.core.d = dd.core.d * f; }
+    else { c.core.d = dd.core.d * f; c.shells.forEach(q => { q.t = (+q.t || 0) * f; }); }
+    out.push({ dd: c, w: Math.exp(-t * t / 2) });
+  }
+  const W = out.reduce((a, q) => a + q.w, 0); out.forEach(q => { q.w /= W; });
+  return out;
+};
+PT.ensemble = (dd, lam, lo) => {
+  const S = PT.samples(dd);
+  if (S.length === 1) return PT.point(dd, lam, PT.order(dd, lo || lam));
+  const r = { lam, Cext: 0, Csca: 0, Cabs: 0, E2: 0 };
+  S.forEach(q => { const p = PT.point(q.dd, lam, PT.order(q.dd, lo || lam)); ['Cext', 'Csca', 'Cabs', 'E2'].forEach(k => { r[k] += q.w * (isFinite(p[k]) ? p[k] : 0); }); });
+  return r;
+};
 const ramanNm = (lam, shift) => 1 / (1 / lam - shift * 1e-7);
-PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
+PT.sig = dd => JSON.stringify([+dd.spread || 0, dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
 
 /* ---------- state ---------- */
 let d = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, views = {};
@@ -155,13 +178,14 @@ PT.render = host => {
     el('span', { class: 'st-grow' }),
     el('button', { class: 'btn primary', type: 'button', text: 'Insert into figure', onclick: insertDialog }),
     D.iconBtn('close', 'Close (Esc): the design is kept for next time', ST().close)));
-  views = { left: el('div', {}), sketch: el('div', { class: 'st-cross' }), field: el('div', { class: 'st-field' }), fieldInfo: el('div', { class: 'readout' }), spec: el('div', { class: 'st-spec' }), hot: el('div', { class: 'st-spec' }), sweep: el('div', { class: 'st-spec' }), status: el('div', { class: 'hint' }) };
+  views = { left: el('div', {}), sketch: el('div', { class: 'st-cross' }), field: el('div', { class: 'st-field' }), fieldInfo: el('div', { class: 'readout' }), spec: el('div', { class: 'st-spec' }), hot: el('div', { class: 'st-spec' }), colour: el('div', { class: 'pt-colour' }), sweep: el('div', { class: 'st-spec' }), status: el('div', { class: 'hint' }) };
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Particle' }), views.left);
   const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Geometry' }), views.sketch, el('h4', { text: 'Near field |E|²' }), probeControls(), views.field, views.fieldInfo);
   const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Extinction, scattering, absorption' }), specControls(), views.status, views.spec,
+    el('h4', { text: 'Colour of the colloid' }), views.colour,
     el('h4', { text: 'Hot spot and SERS enhancement' }), views.hot, hasGap() ? el('h4', { text: 'Field against the gap' }) : null, hasGap() ? sweepControls() : null, hasGap() ? views.sweep : null);
   root.append(el('div', { class: 'st-body' }, left, mid, right));
-  buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep();
+  buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep(); drawColour();
   runAll();
 };
 const hasGap = () => d.kind === 'dimer' || d.kind === 'mirror' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
@@ -184,6 +208,7 @@ function buildLeft() {
     g.push(fld('Rods', sel1([['one', 'One rod'], ['tip', 'Two, end to end (tip gap)'], ['side', 'Two, side by side']], () => ro.pair, v => { d.rod.pair = v; if (v !== 'one' && !(+d.rod.gap > 0)) d.rod.gap = 2; if (v !== 'one') d.orient = 'long'; }, 'pair', 'all')),
       fld('Ends', sel1([['round', 'Rounded (hemispherical caps)'], ['spheroid', 'Spheroid']], () => ro.ends, v => { d.rod.ends = v; }, 'ends')),
       fld('Orientation', sel1([['random', 'Random (in solution)'], ['long', 'Light polarised along the rods'], ['trans', 'Polarised across the rods']], () => d.orient || 'random', v => { d.orient = v; }, 'ori')));
+    if (ro.pair === 'one') g.push(fld('Size spread σ (%)', num(() => +d.spread || 0, v => { d.spread = U.clamp(v, 0, 35); }, { step: 1, min: 0, max: 35, key: 'spread', title: 'Gaussian spread of length and width together (same aspect ratio); 0 = all the same size' })));
     if (ro.pair !== 'one') g.push(fld('Gap g (nm)', num(() => ro.gap, v => { d.rod.gap = Math.max(0.1, v); }, { step: 0.1, min: 0.1, max: 500, key: 'rgap', title: ro.pair === 'tip' ? 'Tip-to-tip distance' : 'Side-to-side distance' })));
     host.append(el('div', { class: 'st-grid' }, ...g));
     const box = el('div', { class: 'st-group st-player' }, el('div', { class: 'st-cap', text: ro.pair === 'one' ? 'Rod' : 'Each rod' }),
@@ -222,6 +247,7 @@ function buildLeft() {
     el('button', { class: 'btn small', type: 'button', text: '+ Shell', title: 'Add a shell outside the particle', onclick: () => change(() => d.shells.push(shell('SiO2', 5)), null, 'list') }),
     el('span', {})));
   const R = outerR(d);
+  if (d.kind === 'single') host.append(el('div', { class: 'st-grid' }, fld('Size spread σ (%)', num(() => +d.spread || 0, v => { d.spread = U.clamp(v, 0, 35); }, { step: 1, min: 0, max: 35, key: 'spread', title: 'Gaussian spread of the diameter (whole particle scaled); 0 = all the same size' }))));
   if (d.kind === 'mirror') host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm, ${UI().f1(+d.gap, 2)} nm above the substrate. Multipole image method (Wind, Vlieger & Bedeaux 1987): the sphere's multipoles and their images in the substrate, solved together (${PT.order(d, d.calc.lmin)} orders for this gap), with the dipole from exact Mie theory so the size red-shift and radiation damping are kept. The medium fills the gap and the space around: for a nanoparticle-on-mirror set it to the spacer's index (e.g. 1.45 for a SAM), which sets the gap mode. The exciting field is the local field (incident plus reflected); “normal” drives the gap mode seen in dark-field with p-polarised light. Checked against exact two-sphere Mie theory (a perfect mirror is equivalent to a dimer). Scattering includes the image dipole; extinction is that of the particle.` }));
   else host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
 }
@@ -255,12 +281,12 @@ async function runSpec() {
   spec = out;
   for (let i = 0; i < n; i++) {
     if (run !== specRun) return;
-    const lam = lo + (hi - lo) * i / (n - 1), p = PT.point(dd, lam, N);
+    const lam = lo + (hi - lo) * i / (n - 1), p = +dd.spread > 0 ? PT.ensemble(dd, lam, lo) : PT.point(dd, lam, N);
     out.x.push(lam); out.Cext.push(p.Cext); out.Csca.push(p.Csca); out.Cabs.push(p.Cabs); out.E2.push(p.E2);
     if (views.status) views.status.textContent = `Calculating… ${Math.round(100 * (i + 1) / n)} %` + (dd.kind === 'rod' ? '' : ` (${N} multipole orders)`);
     if (i % 3 === 2 || i === n - 1) { drawSpec(); await later(); }
   }
-  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? PT.rodModel(dd) + '.' : `${N} multipole orders.`); drawSpec();
+  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? PT.rodModel(dd) + '.' : `${N} multipole orders.`) + (PT.samples(dd).length > 1 ? ` Averaged over a size distribution (σ = ${dd.spread} %, ${PT.samples(dd).length} sizes).` : ''); drawSpec(); drawColour();
 }
 async function runRaman() {
   const run = ++fieldRun, dd = d; await later(); if (run !== fieldRun) return;
@@ -424,6 +450,26 @@ function drawHot() {
   const r = raman;
   host.append(el('div', { class: 'readout', html: r ? `Hot spot ${where}: at ${UI().f1(r.lam, 1)} nm |E|² = <b>${fmtE(r.E2a)}</b>; at the Raman line ${UI().f1(r.lr, 1)} nm (${d.probe.shift} cm⁻¹) |E|² = ${fmtE(r.E2b)}.<br>SERS enhancement |E(λ)|²·|E(λ<sub>R</sub>)|² ≈ <b>${fmtE(r.EF)}</b> (the |E|⁴ approximation; chemical enhancement not included).` : 'Calculating the hot spot…' }));
 }
+/* the colour of the colloid: transmitted through a cuvette (absorbance scaled to an optical
+   density at the extinction peak) and scattered in dark field (engine/colour.js) */
+function drawColour() {
+  const host = views.colour; if (!host) return;
+  if (!spec || !spec.done) { host.innerHTML = '<div class="hint">After the spectrum.</div>'; return; }
+  const CO = RNBX.colour, od = d.colourOD == null ? 1 : +d.colourOD;
+  const t = CO.transmitted(spec.x, spec.Cext, od), sc = CO.scattered(spec.x, spec.Csca), lo = Math.min(...spec.x), hi = Math.max(...spec.x);
+  const part = lo > 400 || hi < 700;
+  const cuv = `<svg viewBox="0 0 120 120" width="120" height="120" xmlns="http://www.w3.org/2000/svg"><rect x="34" y="8" width="52" height="104" rx="3" fill="#ffffff" stroke="#9aa1ab"/><rect x="37" y="30" width="46" height="79" fill="${t.hex}"/><rect x="37" y="30" width="46" height="4" fill="#ffffff" opacity="0.35"/><text x="60" y="22" text-anchor="middle" font-size="9" fill="#555" font-family="Arial">1 cm</text></svg>`;
+  const df = `<svg viewBox="0 0 120 120" width="120" height="120" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="pt-df"><stop offset="0" stop-color="#ffffff"/><stop offset="0.25" stop-color="${sc.hex}"/><stop offset="1" stop-color="${sc.hex}" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="6" fill="#05070b"/><circle cx="60" cy="60" r="34" fill="url(#pt-df)"/></svg>`;
+  const odIn = el('input', { type: 'number', value: od, min: 0.05, max: 5, step: 0.1, style: { width: '70px' }, oninput: () => { const v = parseFloat(odIn.value); if (v > 0) { d.colourOD = v; save(); drawColour(); } } });
+  host.innerHTML = '';
+  host.append(el('div', { class: 'row', style: { gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' } },
+    el('div', { style: { textAlign: 'center' } }, el('div', { html: cuv }), el('div', { class: 'hint', style: { margin: 0 }, text: 'In a cuvette ' + t.hex })),
+    el('div', { style: { textAlign: 'center' } }, el('div', { html: df }), el('div', { class: 'hint', style: { margin: 0 }, text: 'Dark field ' + sc.hex })),
+    el('div', { style: { flex: '1 1 160px' } }, el('label', { class: 'st-f' }, el('span', { text: 'Optical density at the peak (1 cm)' }), odIn),
+      el('div', { class: 'hint', text: `Transmitted daylight (CIE D65) through the colloid, with the absorbance scaled to this optical density at the extinction peak; CIE 1931 colour matching, sRGB. Chromaticity x ${UI().f1(t.xy[0], 3)}, y ${UI().f1(t.xy[1], 3)}. Dark field: the colour of the scattered light (hue only).` + (part ? ' The spectrum does not cover 400–700 nm: wavelengths outside it count as not absorbed.' : '') }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add a cuvette of it to the figure', onclick: () => { const o = RNBX.createObject('cuvette', S.doc.page.width / 2, S.doc.page.height / 2); o.props.liquid = t.hex; o.props.fill = 0.75; RNBX.addObject(o); RNBX.toast('Cuvette added to the figure (' + t.hex + ').'); } }))));
+}
+PT.colour = () => (spec && spec.done ? { t: RNBX.colour.transmitted(spec.x, spec.Cext, d.colourOD == null ? 1 : +d.colourOD), s: RNBX.colour.scattered(spec.x, spec.Csca) } : null);
 const fmtE = v => (!isFinite(v) ? '–' : v >= 1e4 || v < 0.01 ? v.toExponential(2).replace('e+', ' × 10^').replace(/\^(\d+)/, (m, e) => '<sup>' + e + '</sup>').replace('e-', ' × 10^-') : UI().f1(v, v < 10 ? 2 : 0));
 const INFERNO = ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'].map(U.hexToRgb);
 const hot = v => { const t = U.clamp(v, 0, 1) * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(t)), u = t - i, a = INFERNO[i], b = INFERNO[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
