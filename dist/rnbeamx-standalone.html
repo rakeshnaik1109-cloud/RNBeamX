@@ -19526,7 +19526,7 @@ MS.open = obj => {
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, IP = RNBX.imgproc;
 const PO = RNBX.porosity = {};
-PO.DEFAULT = { auto: true, thr: 100, bright: false, sigma: 1, minArea: 4, roiMode: 'crop', roi: null, edge: false, colour: '#ff3b30' };
+PO.DEFAULT = { auto: true, thr: 100, bright: false, sigma: 1, minArea: 4, roiMode: 'rect', roi: null, edge: false, colour: '#ff3b30' };
 
 PO.open = obj => {
   const p = obj.props;
@@ -19570,7 +19570,7 @@ PO.open = obj => {
     const url = IP.poreMaskURL(R, o.colour, 0.55), im = new Image();
     im.onload = () => { maskCv = im; draw(); }; im.src = url;
     PO._last = { R, sum, url };
-    status.textContent = `Threshold ${R.thr}${o.auto ? ' (Otsu)' : ''} · region ${R.roi[2] - R.roi[0]} × ${R.roi[3] - R.roi[1]} px analysed${G.k > 1 ? ` (image reduced ${G.k.toFixed(2)}× for speed)` : ''}.`;
+    status.textContent = (o.roiMode === 'rect' && !o.roi ? 'Drag a rectangle on the image to choose the region (until then the whole cropped image is analysed). ' : o.roiMode === 'rect' ? 'Drag again on the image to change the region. ' : '') + `Threshold ${R.thr}${o.auto ? ' (Otsu)' : ''} · region ${R.roi[2] - R.roi[0]} × ${R.roi[3] - R.roi[1]} px analysed${G.k > 1 ? ` (image reduced ${G.k.toFixed(2)}× for speed)` : ''}.`;
     drawResults();
   };
   const fmt = IP.fmtN;
@@ -19605,7 +19605,7 @@ PO.open = obj => {
   const autoCb = el('input', { type: 'checkbox', checked: o.auto, onchange: () => set('auto', autoCb.checked) });
   const sigIn = el('input', { type: 'number', min: 0, max: 10, step: 0.5, value: o.sigma, style: { width: '64px' }, onchange: () => set('sigma', Math.max(0, +sigIn.value)) });
   const minIn = el('input', { type: 'number', min: 0, max: 100000, step: 1, value: o.minArea, style: { width: '74px' }, onchange: () => set('minArea', Math.max(0, +minIn.value)) });
-  const roiSel = el('select', { style: { width: '100%' }, onchange: () => { o.roiMode = roiSel.value; run(); } }, [['crop', 'The cropped image (info bar excluded)'], ['rect', 'A rectangle I draw on the image']].map(q => el('option', { value: q[0], text: q[1] })));
+  const roiSel = el('select', { style: { width: '100%' }, onchange: () => { o.roiMode = roiSel.value; run(); } }, [['rect', 'A rectangle I draw on the image'], ['crop', 'The whole cropped image (info bar excluded)']].map(q => el('option', { value: q[0], text: q[1] })));
   roiSel.value = o.roiMode;
   const edgeCb = el('input', { type: 'checkbox', checked: o.edge, onchange: () => { o.edge = edgeCb.checked; sum = IP.poroSummary(p, R, o.edge); drawResults(); } });
   const colIn = el('input', { type: 'color', value: o.colour, style: { width: '44px', height: '26px', flex: '0 0 44px', padding: '0' }, onchange: () => set('colour', colIn.value) });
