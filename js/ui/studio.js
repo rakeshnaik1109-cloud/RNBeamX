@@ -220,9 +220,9 @@ function render() {
     el('span', { class: 'st-grow' }),
     el('button', { class: 'btn primary', type: 'button', text: target ? 'Update the stack' : 'Insert into figure', onclick: insertDialog }),
     D.iconBtn('close', 'Close (Esc): the design is kept for next time', ST.close));
-  views = { list: el('div', { class: 'st-list' }), cross: el('div', { class: 'st-cross' }), spec: el('div', { class: 'st-spec' }), map: el('div', { class: 'st-map' }), absorb: el('div', { class: 'st-absorb' }) };
+  views = { list: el('div', { class: 'st-list' }), cross: el('div', { class: 'st-cross' }), spec: el('div', { class: 'st-spec' }), map: el('div', { class: 'st-map' }), absorb: el('div', { class: 'st-absorb' }), modes: el('div', { class: 'st-modes' }) };
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Structure' }), sideControls(), views.list, substrateRow(), el('div', { class: 'hint', text: 'Top of the list = top of the stack. ⧉ duplicates, ↑↓ move, λ/4 sets a quarter-wave thickness at the design wavelength. Tick films and press “Repeat” for a periodic group.' }));
-  const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Cross-section and field |E|²' }), fieldControls(), views.cross, views.absorb);
+  const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Cross-section and field |E|²' }), fieldControls(), views.cross, views.absorb, el('h4', { text: 'Guided modes' }), modeControls(), views.modes);
   const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Optical response' }), specControls(), views.spec, el('h4', { text: 'Wavelength × angle map' }), mapControls(), views.map, el('h4', { text: 'Fit to a measurement' }), RNBX.layerFit ? RNBX.layerFit.panel() : null);
   root.append(head, el('div', { class: 'st-body' }, left, mid, right));
   buildList();
@@ -360,6 +360,63 @@ function mapControls() {
     fld('θ from', num(() => mp.amin, v => { mp.amin = v; }, { min: 0, max: 89, key: 'mamin' })), fld('θ to', num(() => mp.amax, v => { mp.amax = v; }, { min: 1, max: 89.9, key: 'mamax' })));
 }
 
+/* ---------- guided modes ---------- */
+const MD = () => (d.modes = Object.assign({ nm: d.field.nm || 633, pol: 'both', prism: 1.78, ain: 0, sel: 0, disp: false }, d.modes || {}));
+function modeControls() {
+  const o = MD();
+  return el('div', { class: 'st-grid' },
+    fld('Wavelength (nm)', num(() => o.nm, v => { o.nm = v; }, { min: 100, max: 30000, key: 'mnm' })),
+    fld('Modes', sel1([['both', 'TE and TM'], ['s', 'TE (s)'], ['p', 'TM (p)']], () => o.pol, v => { o.pol = v; }, 'mpol')),
+    fld('Prism index (coupling)', num(() => o.prism, v => { o.prism = v; }, { min: 1, max: 5, step: 0.01, key: 'mpr' })),
+    fld('Grating: incidence (°)', num(() => o.ain, v => { o.ain = v; }, { min: -89, max: 89, step: 1, key: 'main' })),
+    el('label', { class: 'st-f row' }, el('input', { type: 'checkbox', checked: !!o.disp, onchange: e => change(() => { o.disp = e.target.checked; }) }), el('span', { text: 'n_eff against wavelength' })));
+}
+ST.modesOf = (dd = d, nm, pol) => {
+  const st = ST.stack(dd), out = [];
+  (pol === 'both' ? ['s', 'p'] : [pol]).forEach(p => out.push(...TF().modes(st, nm, p)));
+  // number the modes per polarisation: TE0, TE1 … (highest n_eff first)
+  ['s', 'p'].forEach(p => out.filter(m => m.pol === p).sort((a, b) => b.n[0] - a.n[0]).forEach((m, i) => { m.name = (p === 's' ? 'TE' : 'TM') + i; }));
+  return out.sort((a, b) => b.n[0] - a.n[0]);
+};
+const lenTxt = L => (!isFinite(L) ? 'lossless' : L >= 1e6 ? f1(L / 1e6, 2) + ' mm' : L >= 1e3 ? f1(L / 1e3, 1) + ' µm' : f1(L, 0) + ' nm');
+let modeTok = 0;
+function drawModes() {
+  const host = views.modes, o = MD(), tok = ++modeTok; if (!host) return;
+  host.innerHTML = '<div class="hint">Searching for modes…</div>';
+  setTimeout(() => {
+    if (tok !== modeTok || !root) return;
+    let ms;
+    try { ms = ST.modesOf(d, o.nm, o.pol); } catch (e) { host.textContent = 'Mode search failed: ' + e.message; return; }
+    host.innerHTML = '';
+    if (!ms.length) { host.append(el('div', { class: 'hint', text: `No guided mode at ${o.nm} nm: no film has a higher index than both sides, and no metal surface carries a plasmon. (Leaky modes, below the cladding index, are not listed.)` })); if (o.disp) drawDispersion(host); return; }
+    o.sel = Math.min(o.sel || 0, ms.length - 1);
+    const sinI = Math.sin(o.ain * Math.PI / 180), rows = ms.map((m, i) => {
+      const ne = m.n[0], th = ne < o.prism ? Math.asin(ne / o.prism) * 180 / Math.PI : NaN, per = o.nm / (ne - sinI);
+      return el('tr', { class: i === o.sel ? 'st-sel' : '', style: { cursor: 'pointer' }, onclick: () => { o.sel = i; save(); drawModes(); } },
+        el('td', { html: `<b>${m.name}</b>` }), el('td', { text: ne.toFixed(5) + (m.n[1] > 0 ? ` + ${m.n[1].toExponential(2)}i` : '') }), el('td', { text: lenTxt(m.Lprop) }),
+        el('td', { text: isFinite(th) ? f1(th, 2) + '°' : '—' }), el('td', { text: per > 0 && isFinite(per) ? f1(per, 1) + ' nm' : '—' }));
+    });
+    host.append(el('table', { class: 'st-tab' }, el('tr', {}, ...['Mode', 'n_eff', 'Propagation length (1/e power)', `Prism coupling angle (n = ${o.prism})`, `Grating period (1st order, ${o.ain}°)`].map(t => el('th', { text: t }))), ...rows));
+    // profile of the chosen mode
+    const m = ms[o.sel], st = ST.stack(d), fr = TF().modeField(st, o.nm, m), w = Math.max(300, host.clientWidth || 440), lo = lightOrder();
+    const bands = []; let z0 = 0; lo.films.forEach(l => { bands.push([z0, z0 + +l.nm, l.color || colorOf(l.mat)]); z0 += +l.nm; });
+    const ch = chart({ id: 'st-mode', w, h: 200, xr: [fr.z[0], fr.z[fr.z.length - 1]], yr: [0, 1.05], xlabel: 'Depth z (nm), light-entry side at 0', ylabel: m.pol === 'p' ? '|H_y|² (norm.)' : '|E_y|² (norm.)',
+      under: (X, Y, L, R, T, B) => bands.map(b => `<rect x="${X(b[0])}" y="${T}" width="${Math.max(0.5, X(b[1]) - X(b[0]))}" height="${B - T}" fill="${b[2]}" fill-opacity="0.45"/>`).join(''),
+      series: [{ x: fr.z, y: fr.f, color: m.pol === 'p' ? '#d62728' : '#1f77b4', w: 1.8 }] });
+    host.append(el('div', { html: ch.svg }), el('div', { class: 'hint', text: `${m.name}: n_eff = ${m.n[0].toFixed(5)}${m.n[1] > 0 ? ` + ${m.n[1].toExponential(3)}i (lossy; propagation length ${lenTxt(m.Lprop)})` : ''}. The mode decays into both sides. Prism coupling (Otto / Kretschmann, attenuated total reflection) at sin θ = n_eff / n_prism; a grating couples it when n_eff = sin θ + λ/Λ. Exact zeros of the transfer-matrix dispersion relation; roughness layers and mixtures included.` }));
+    if (o.disp) drawDispersion(host);
+  }, 20);
+}
+function drawDispersion(host) {
+  const o = MD(), c = d.calc, lo = Math.min(c.lmin, c.lmax), hi = Math.max(c.lmin, c.lmax), pts = { s: [], p: [] };
+  for (let i = 0; i <= 30; i++) { const lam = lo + (hi - lo) * i / 30; ST.modesOf(d, lam, o.pol).forEach(m => pts[m.pol].push([lam, m.n[0]])); }
+  const all = pts.s.concat(pts.p); if (!all.length) return;
+  const y0 = Math.min(...all.map(q => q[1])), y1 = Math.max(...all.map(q => q[1])), pad = (y1 - y0) * 0.08 || 0.05, w = Math.max(300, host.clientWidth || 440);
+  const dots = (X, Y) => ['s', 'p'].map(p => pts[p].map(q => `<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="2.2" fill="${p === 's' ? '#1f77b4' : '#d62728'}"/>`).join('')).join('');
+  const ch = chart({ id: 'st-disp', w, h: 200, xr: [lo, hi], yr: [y0 - pad, y1 + pad], xlabel: 'Wavelength (nm)', ylabel: 'n_eff', over: dots, legend: [{ name: 'TE', color: '#1f77b4' }, { name: 'TM', color: '#d62728' }] });
+  host.append(el('div', { html: ch.svg }), el('div', { class: 'hint', text: `Guided modes from ${lo} to ${hi} nm (the Optical response range), 31 wavelengths.` }));
+}
+
 /* ---------- calculations ---------- */
 ST.fieldOf = (dd = d) => {
   const st = ST.stack(dd), f = dd.field;
@@ -376,7 +433,7 @@ let refreshT = 0;
 function refresh() {
   if (!root) return;
   clearTimeout(refreshT);
-  refreshT = setTimeout(() => { drawSpectrum(); drawCross(); scheduleMap(); }, 30);
+  refreshT = setTimeout(() => { drawSpectrum(); drawCross(); scheduleMap(); drawModes(); }, 30);
 }
 
 /* spectrum */

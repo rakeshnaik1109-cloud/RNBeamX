@@ -267,3 +267,5 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .pb-face.sel { border-color: var(--accent); background: var(--accent-soft); }
 .pb-3dview svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .pb-3d input[type=range] { flex: 1; }
+.studio .st-tab tr.st-sel td { background: var(--accent-soft); }
+.studio .st-modes .st-tab { width: 100%; font-size: 11.5px; }

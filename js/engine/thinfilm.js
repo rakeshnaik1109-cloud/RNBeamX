@@ -211,6 +211,90 @@ TF.field = (stack, nm, thetaDeg, pol, opt = {}) => {
   });
   return { z, e2, layer, total, absorbed, R: abs2(r) };
 };
+/* ---------- guided modes ----------
+   A bound mode of the stack is a pole of its reflection: the zero of
+   D(K) = η₀B + C as a function of the complex in-plane index K = n_eff, with the
+   fields decaying in both claddings (Im q > 0 there). Seeds are the dips of |D| along
+   the real axis; each is refined in the complex plane (Muller's method), which also
+   finds lossy modes (surface plasmons, gap plasmons in metal–insulator–metal). */
+const disp = (stack, nm, pol, K) => {
+  const eta = (N, q) => (pol === 'p' ? div(mul(N, N), q) : q);
+  const n0 = TF.nk(stack.inc, nm), N0 = [n0.n, n0.k], q0 = qzC(N0, K), e0 = eta(N0, q0);
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k], qs = qzC(Ns, K), es = eta(Ns, qs);
+  let v = [[1, 0], es];
+  for (let j = stack.layers.length - 1; j >= 0; j--) {
+    const L = stack.layers[j]; if (!(L.d > 0)) continue;
+    const nk = TF.nk(L.m, nm), N = [nk.n, nk.k], q = qzC(N, K), e = eta(N, q);
+    v = slab(q, e, L.d, nm, v);
+    const m = Math.max(Math.hypot(v[0][0], v[0][1]), Math.hypot(v[1][0], v[1][1])) || 1;   // keep the size in check
+    v = [[v[0][0] / m, v[0][1] / m], [v[1][0] / m, v[1][1] / m]];
+  }
+  return add(mul(e0, v[0]), v[1]);
+};
+/* q = sqrt(N² − K²) for a complex K, on the branch that decays (Im q ≥ 0) */
+const qzC = (N, K) => { let q = csqrt(sub(mul(N, N), mul(K, K))); if (q[1] < 0 || (Math.abs(q[1]) < 1e-12 && q[0] < 0)) q = [-q[0], -q[1]]; return q; };
+const muller = (f, x0, x1, x2, it = 60) => {
+  let f0 = f(x0), f1 = f(x1), f2 = f(x2);
+  for (let i = 0; i < it; i++) {
+    const h1 = sub(x1, x0), h2 = sub(x2, x1), d1 = div(sub(f1, f0), h1), d2 = div(sub(f2, f1), h2), a = div(sub(d2, d1), add(h2, h1));
+    const b = add(mul(a, h2), d2), c = f2, disc = csqrt(sub(mul(b, b), mul([4, 0], mul(a, c))));
+    const den1 = add(b, disc), den2 = sub(b, disc), den = Math.hypot(den1[0], den1[1]) > Math.hypot(den2[0], den2[1]) ? den1 : den2;
+    if (!(Math.hypot(den[0], den[1]) > 0)) break;
+    const dx = div(mul([-2, 0], c), den), x3 = add(x2, dx);
+    x0 = x1; x1 = x2; x2 = x3; f0 = f1; f1 = f2; f2 = f(x3);
+    if (!isFinite(x3[0]) || !isFinite(x3[1])) return null;
+    if (Math.hypot(dx[0], dx[1]) < 1e-12 * Math.max(1, Math.hypot(x3[0], x3[1]))) break;
+  }
+  return x2;
+};
+
+TF.modes = (stack, nm, pol) => {
+  const clad = Math.max(TF.nk(stack.inc, nm).n, TF.nk(stack.sub, nm).n);
+  const films = stack.layers.filter(l => l.d > 0).map(l => TF.nk(l.m, nm));
+  const metal = films.some(q => q.k > q.n) || TF.nk(stack.sub, nm).k > TF.nk(stack.sub, nm).n || TF.nk(stack.inc, nm).k > TF.nk(stack.inc, nm).n;
+  const nmax = Math.max(clad, ...films.filter(q => q.k <= q.n).map(q => q.n));
+  const lo = clad * (1 + 1e-7), hi = metal ? Math.max(nmax, clad) * 4 : nmax;
+  if (!(hi > lo)) return [];
+  const f = K => disp(stack, nm, pol, K), M = 6000, val = [], xs = [];
+  for (let i = 0; i <= M; i++) { const x = lo + (hi - lo) * i / M; xs.push(x); const d = f([x, 0]); val.push(Math.log(Math.hypot(d[0], d[1]) + 1e-300)); }
+  const out = [];
+  for (let i = 1; i < M; i++) {
+    if (!(val[i] < val[i - 1] && val[i] <= val[i + 1])) continue;
+    const h = (hi - lo) / M, r = muller(f, [xs[i] - h, 0], [xs[i] + h, 1e-6], [xs[i], 0]);
+    if (!r || r[0] <= lo || r[0] > hi * 1.0001 || r[1] < -1e-6 * r[0]) continue;
+    if (Math.abs(r[1]) < 1e-8 * r[0]) r[1] = 0;
+    const d0 = f(r), sc = Math.hypot(...f([r[0] * 1.001, 0]));
+    if (Math.hypot(d0[0], d0[1]) > 1e-6 * Math.max(sc, 1e-30)) continue;
+    // decaying in both claddings
+    const nI = TF.nk(stack.inc, nm), nS = TF.nk(stack.sub, nm);
+    if (qzC([nI.n, nI.k], r)[1] <= 0 || qzC([nS.n, nS.k], r)[1] <= 0) continue;
+    if (out.some(m => Math.hypot(m.n[0] - r[0], m.n[1] - r[1]) < 1e-7 * r[0])) continue;
+    out.push({ n: r, pol, Lprop: r[1] > 1e-12 ? nm / (4 * Math.PI * r[1]) : Infinity });
+  }
+  out.sort((a, b) => b.n[0] - a.n[0]);
+  out.forEach((m, i) => { m.order = i; });
+  return out;
+};
+/* the mode's tangential field through the stack: E_y (TE, s) or H_y (TM, p), |·|² normalised to 1 */
+TF.modeField = (stack, nm, mode, opt = {}) => {
+  const pol = mode.pol, K = mode.n, eta = (N, q) => (pol === 'p' ? div(mul(N, N), q) : q);
+  const n0 = TF.nk(stack.inc, nm), N0 = [n0.n, n0.k], q0 = qzC(N0, K);
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k], qs = qzC(Ns, K), es = eta(Ns, qs);
+  const L = stack.layers.filter(l => l.d > 0).map(l => { const nk = TF.nk(l.m, nm), N = [nk.n, nk.k], q = qzC(N, K); return { N, q, e: eta(N, q), d: +l.d }; });
+  let v = [[1, 0], es]; const back = [];
+  for (let j = L.length - 1; j >= 0; j--) { back[j] = v; v = slab(L[j].q, L[j].e, L[j].d, nm, v); }
+  const total = L.reduce((a, l) => a + l.d, 0), pad = opt.pad != null ? opt.pad : Math.max(nm * 0.6, total * 0.4), step = Math.max(0.2, (total + 2 * pad) / (opt.points || 500));
+  // TM: plot H_y, which is the second component (up to a constant): w[1] / η ∝ H; for TE w[0] = E_y
+  const val = (w, l) => (pol === 'p' ? abs2(w[1]) : abs2(w[0]));
+  const z = [], f = [], layer = [];
+  for (let h = pad; h > 1e-9; h -= step) { const ph = expI(2 * Math.PI * q0[0] * h / nm, 2 * Math.PI * q0[1] * h / nm); z.push(-h);   /* decays upwards */ f.push(pol === 'p' ? abs2(mul(v[1], ph)) : abs2(mul(v[0], ph))); layer.push(-1); }
+  let z0 = 0;
+  L.forEach((l, j) => { const m = Math.max(2, Math.ceil(l.d / step)); for (let i = 0; i <= m; i++) { const t = l.d * i / m; z.push(z0 + t); f.push(val(slab(l.q, l.e, l.d - t, nm, back[j]), l)); layer.push(j); } z0 += l.d; });
+  for (let h = step; h <= pad + 1e-9; h += step) { const ph = expI(2 * Math.PI * qs[0] * h / nm, 2 * Math.PI * qs[1] * h / nm); z.push(z0 + h); f.push(pol === 'p' ? abs2(mul(es, ph)) : abs2(ph)); layer.push(L.length); }
+  const mx = Math.max(...f.filter(isFinite)) || 1;
+  return { z, f: f.map(x => x / mx), layer, total };
+};
+
 /* ---------- wavelength × angle map ----------
    o: { lmin, lmax, amin, amax, nl, na, pol, show: 'R' | 'T' | 'A' } → { v: Float32Array (row = angle), … } */
 TF.map = (stack, o) => {
