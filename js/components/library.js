@@ -30,7 +30,7 @@ const lib = RNBX.lib = {
   CATEGORIES: [
     'Sources', 'Mirrors & splitters', 'Lenses & objectives', 'Polarisation',
     'Filters & dispersion', 'Modulators & nonlinear', 'Fibre optics', 'Detectors',
-    'Samples & mechanics', 'Electronics', 'Connections', 'Annotations', 'Graphical abstract',
+    'Samples & mechanics', 'Electronics', 'Connections', 'Images & panels', 'Annotations', 'Graphical abstract',
   ],
   register(def) {
     def.params = def.params || [];

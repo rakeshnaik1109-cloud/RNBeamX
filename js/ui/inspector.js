@@ -154,11 +154,14 @@ function control(param, get, set, ctx = {}) {
       wrap.append(el('div', { class: 'hint', text: param.simple ? 'Top of the list = top row. Colour, name and tag (e.g. M₁).' : 'Top of the list = top of the stack. First line: colour, name, drawn thickness (mm), tag. Second line: material and real thickness, used by Optical response.' }));
       return wrap;
     }
+    case 'heading':
+      return el('div', { class: 'insp-subhead', text: param.label, style: { margin: '14px 0 6px', fontSize: '11px', fontWeight: '700', letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted)', borderTop: '1px solid var(--line)', paddingTop: '10px' } });
     case 'image': {
       const btn = el('button', { class: 'btn small', type: 'button', text: 'Choose image…' });
       btn.onclick = () => RNBX.project.pickFile('image/*,.svg', f => {
         const o = ctx.obj;
         if (!o) return;
+        if (o.type === 'micrograph') { RNBX.imgproc.fill(o, f); return; }
         // SVG drawings for custom components are inlined so they stay vector everywhere
         if (o.type === 'custom' && (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name))) {
           f.text().then(txt => {
@@ -487,6 +490,7 @@ function objectPanel(obj) {
   }
   if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));
   if (def.hint) body.push(el('div', { class: 'note', text: def.hint }));
+  if (def.tools) body.push(def.tools(obj));
   if (def.stackable) {
     const below = obj.props.on && RNBX.getObj(obj.props.on);
     body.push(below ? el('div', { class: 'readout' }, 'Stacked on ', el('b', { text: below.props.name || lib.get(below.type).name }), ' (size and view follow it). ',
@@ -559,7 +563,8 @@ function multiPanel(objs) {
   root.push(sec('Align & distribute', el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '2px', marginBottom: '10px' } },
     D.iconBtn('alignL', 'Align left', () => A.align('left')), D.iconBtn('alignC', 'Align centres horizontally', () => A.align('cx')), D.iconBtn('alignR', 'Align right', () => A.align('right')),
     D.iconBtn('alignT', 'Align top', () => A.align('top')), D.iconBtn('alignM', 'Align centres vertically', () => A.align('cy')), D.iconBtn('alignB', 'Align bottom', () => A.align('bottom')),
-    D.iconBtn('distH', 'Distribute horizontally', () => A.distribute('x')), D.iconBtn('distV', 'Distribute vertically', () => A.distribute('y')))));
+    D.iconBtn('distH', 'Distribute horizontally', () => A.distribute('x')), D.iconBtn('distV', 'Distribute vertically', () => A.distribute('y'))),
+    el('button', { class: 'btn small', type: 'button', style: { marginBottom: '10px' }, text: 'Lay out as figure panels…', title: 'Rows of equal height at a journal width, with letters a, b, c', onclick: () => RNBX.panels.dialog() })));
   const types = [...new Set(objs.map(o => o.type))];
   if (types.length === 1) {
     const def = lib.get(types[0]);

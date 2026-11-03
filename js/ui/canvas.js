@@ -623,7 +623,14 @@ C.init = () => {
     const f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (!f) return;
     if (/\.json$/i.test(f.name)) RNBX.project.openFile(f);
-    else if (/^image\//.test(f.type)) RNBX.project.importImage(f, p[0], p[1]);
+    else if (/^image\//.test(f.type)) {
+      // onto an image panel: fill it; elsewhere: a new image
+      const files = [...e.dataTransfer.files].filter(x => /^image\//.test(x.type));
+      const hit = S.doc.objects.slice().reverse().find(o => o.type === 'micrograph' && !o.hidden && (b => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3])(lib.worldBox(o)));
+      if (hit) RNBX.imgproc.fill(hit, f);
+      else if (files.length > 1 && RNBX.panels) RNBX.panels.importFiles(files);
+      else RNBX.project.importImage(f, p[0], p[1]);
+    }
   });
   new ResizeObserver(() => setVB()).observe(svg);
   D.$('#zoomIn').onclick = () => C.zoomBy(1.25);

@@ -32,10 +32,10 @@ P.openFile = file => new Promise((res, rej) => {
   r.readAsText(file);
 });
 
-P.pickFile = (accept, cb) => {
+P.pickFile = (accept, cb, multiple) => {
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = accept;
-  inp.onchange = () => { if (inp.files && inp.files[0]) cb(inp.files[0]); };
+  inp.type = 'file'; inp.accept = accept; inp.multiple = !!multiple;
+  inp.onchange = () => { if (inp.files && inp.files[0]) cb(multiple ? [...inp.files] : inp.files[0]); };
   inp.click();
 };
 
@@ -43,7 +43,7 @@ P.readImage = file => new Promise((res, rej) => {
   const r = new FileReader();
   r.onload = () => {
     const img = new Image();
-    img.onload = () => res({ href: r.result, aspect: img.naturalWidth / img.naturalHeight || 1 });
+    img.onload = () => res({ href: r.result, aspect: img.naturalWidth / img.naturalHeight || 1, pxW: img.naturalWidth, pxH: img.naturalHeight });
     img.onerror = () => res({ href: r.result, aspect: 1.5 });
     img.src = r.result;
   };
