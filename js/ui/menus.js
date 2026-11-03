@@ -51,6 +51,7 @@ M.items = {
     { label: 'Templates…', icon: 'grid', action: () => RNBX.dialogs.templates() },
     { label: 'Open project…', key: mod + 'O', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.project.openFile(f)) },
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
+    { label: 'Versions… (history, kept in this browser)', action: () => RNBX.versions.dialog() },
     { label: 'Copy share link', action: () => RNBX.share.copyLink() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
@@ -118,6 +119,7 @@ M.items = {
     '-',
     { label: 'Animate (one-click presets)…', key: 'A', action: () => RNBX.animateUI.open() },
     { label: 'Animation timeline', key: 'T', action: () => RNBX.timeline.toggle() },
+    { label: 'Command palette…', key: mod + 'K', action: () => RNBX.command.open() },
     { label: 'Help & shortcuts', icon: 'help', key: '?', action: () => RNBX.dialogs.help() },
   ],
 };
@@ -161,6 +163,7 @@ M.init = () => {
     D.iconBtn('glow', 'Beam glow', () => toggleStyle('beamGlow', 'Glow'), { id: 'tGlow' }),
     el('span', { class: 'sep' }),
     D.iconBtn('fit', 'Fit page (0)', () => RNBX.canvas.fit()),
+    el('button', { class: 'btn small ghost cmd-btn', type: 'button', text: mod + 'K', title: 'Command palette: run any command, add any component, open any template', onclick: () => RNBX.command.open() }),
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();

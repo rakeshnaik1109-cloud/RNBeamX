@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.studio.init();
   RNBX.learn.init();
   RNBX.menus.init();
+  RNBX.command.init();
+  RNBX.versions.init();
 
   RNBX.on('change', kind => { if (kind !== 'selection' && kind !== 'time') RNBX.project.autosave(); });
   RNBX.on('change', () => { document.title = (S.doc.meta.title && S.doc.meta.title !== 'Untitled setup' ? S.doc.meta.title + ' · ' : '') + 'RNBeamX'; });

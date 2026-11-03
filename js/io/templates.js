@@ -471,10 +471,11 @@ T.list.push({
 T.GROUPS = [
   ['Interferometers & polarisation', ['michelson', 'mzi', 'fringes', 'polarization']],
   ['Microscopy & imaging', ['epifluor', 'confocal', 'lightsheet', 'raman', 'tower', 'fourf', 'aberration']],
-  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
+  ['Spectroscopy & sensing', ['spectro', 'uvvis', 'darkfield', 'ftir', 'spr', 'ramanprobe', 'biosensor']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
-  ['Lab & chemistry', ['nanoprep', 'lockinbench']],
+  ['Lab & chemistry', ['nanoprep', 'lockinbench', 'evaporator']],
+  ['Results figures', ['results']],
   ['Diagrams & AI', ['specml']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
@@ -548,6 +549,93 @@ T.list.push({
     const w = (a, b, o) => link('wire', a, b, Object.assign({ route: 'curve', sag: 0.4 }, o || {}));
     d.objects.push(laser, lens, samp, pd, fgen, lock, psu, lap, plot,
       w(pd, lock, { arrow: 'end' }), w(fgen, lock, { arrow: 'end' }), w(psu, pd, { arrow: 'none' }), w(lock, lap, { arrow: 'end' }));
+    return d;
+  },
+});
+
+/* ---------- UV–vis absorption spectrophotometer ---------- */
+T.list.push({
+  id: 'uvvis', name: 'UV–vis absorption spectrometer', desc: 'White light through a cuvette of gold colloid into a grating spectrometer; the colloid’s absorbance spectrum beside it (generic)',
+  build() {
+    const d = base('nature-2', 183, 74, 'UV–vis absorption spectroscopy');
+    const lamp = mk('lamp', 16, 30, 0, { count: 5, beamWidth: 1.2 }, 'Deuterium–halogen\nlamp', [0, 8]);
+    const l1 = mk('lens', 36, 30, 0, { f: 40, d: 10 }, 'L1', [0, 8]);
+    const cuv = mk('sample', 54, 30, 0, { look: 'cuvette', w: 6, h: 9, T: 0.55, spot: '#c0263c' }, 'Cuvette\n(Au colloid)', [0, 9]);
+    const l2 = mk('lens', 72, 30, 0, { f: 40, d: 10 }, 'L2', [0, 8]);
+    const spec = mk('spectrometer', 96, 30, 0, { L: 22, H: 11 }, 'Spectrometer', [0, 9]);
+    const lam = [], A = [];
+    for (let l = 400; l <= 800; l += 10) { lam.push(l); A.push(+(0.06 + 0.94 * Math.exp(-Math.pow((l - 525) / 38, 2)) + 0.25 * Math.exp(-(l - 400) / 60)).toFixed(4)); }
+    const plot = mk('plot', 152, 36, 0, { w: 54, h: 40, xlabel: 'Wavelength (nm)', ylabel: 'Absorbance', legend: false, series: [{ name: 'Au colloid', x: lam, y: A, color: '#b3172f', dash: 'solid' }] });
+    d.objects.push(lamp, l1, cuv, l2, spec, plot, mk('panel', 4, 6, 0, { text: 'a' }), mk('panel', 122, 6, 0, { text: 'b' }),
+      mk('text', 54, 52, 0, { text: 'A = −log_{10}(I / I_0)', size: 6.5, color: '#444444' }));
+    return d;
+  },
+});
+
+/* ---------- dark-field scattering microscope ---------- */
+T.list.push({
+  id: 'darkfield', name: 'Dark-field scattering microscope', desc: 'Oblique white light passes the sample and misses the objective; the light scattered by the nanoparticles is collected and sent to a spectrometer (generic)',
+  build() {
+    const d = base('nature-15', 120, 96, 'Dark-field scattering microscope');
+    const lamp = mk('lamp', 14, 86, -40, { count: 3, beamWidth: 1 }, 'White light (oblique)', [0, 9]);
+    const smp = mk('sample', 50, 56, 90, { look: 'slide', w: 1.2, h: 26, T: 1 }, 'Nanoparticles on glass', [16, 6]);
+    const sc = mk('raysource', 50, 55.2, -90, { mode: 'point', rays: 7, fan: 16, colors: 'single', lambda: 600 }, '', [0, 0]);
+    const obj = mk('objective', 50, 47.7, 90, {}, 'Objective', [-14, 0]);
+    const m = mk('mirror', 50, 12, ang(UP, R), {}, 'M', [-7, 0]);
+    const tl = mk('lens', 70, 12, 0, { f: 200, d: 10 }, 'Tube lens', [0, -8]);
+    const spec = mk('spectrometer', 102, 12, 0, { L: 20, H: 10 }, 'Spectrometer', [0, 9]);
+    const dump = mk('beamdump', 86, 26, -40, {}, 'Beam dump', [0, 7]);
+    d.objects.push(lamp, smp, sc, obj, m, tl, spec, dump, mk('glow', 50, 55.6, 0, { r: 2.4, color: '#ffb000', strength: 0.9 }),
+      mk('text', 93, 72, 0, { text: 'only light scattered by the\nparticles enters the objective', size: 5.5, italic: true, color: '#555555' }));
+    return d;
+  },
+});
+
+/* ---------- vacuum thermal / e-beam evaporator (schematic, not traced) ---------- */
+T.list.push({
+  id: 'evaporator', name: 'Vacuum evaporation system', desc: 'Lab schematic: chamber with substrate and thickness monitor, rotary and backing pumps, gas line for venting, LT/HT supply and a computer (generic)',
+  build() {
+    const d = base('nature-2', 183, 100, 'Vacuum evaporation system');
+    const ch = mk('vacchamber', 70, 46, 0, {});
+    const pump = mk('vacpump', 24, 82, 0, {});
+    const gas = mk('gascyl', 150, 42, 0, {});
+    const psu = mk('psu', 128, 86, 0, { volts: '1.2 V', amps: '80 A' });
+    const pc = mk('desktop', 164, 84, 0, {});
+    const w = (a, b, o) => link('wire', a, b, Object.assign({ route: 'curve', sag: 0.3 }, o || {}));
+    const t = (x, y, s, o) => mk('text', x, y, 0, Object.assign({ text: s, size: 6.5 }, o || {}));
+    d.objects.push(ch, pump, gas, psu, pc, w(pump, ch, { arrow: 'none' }), w(gas, ch, { arrow: 'end' }), w(psu, ch, { arrow: 'end' }), w(pc, psu, { arrow: 'none' }),
+      t(24, 66, 'Roughing / backing pump'), t(150, 14, 'N₂ for venting'), t(128, 70, 'LT supply (boat)'), t(70, 12, 'Chamber: substrate, shutter, thickness monitor (QCM)', { size: 6 }),
+      t(70, 94, 'Sequence: roughing → backing → high vacuum (diffusion / turbo) → evaporate → vent', { size: 5.8, color: '#555555', italic: true }));
+    return d;
+  },
+});
+
+/* ---------- a multi-panel results figure ---------- */
+T.list.push({
+  id: 'results', name: 'Results figure: images, energy diagram, spectrum', desc: 'Four panels at double-column width: two microscope image panels to drop your images into, a Jablonski diagram and a data plot, lettered a–d',
+  build() {
+    const d = base('nature-2', 183, 140, 'Results figure');
+    const a = mk('micrograph', 46.75, 35, 0, { w: 89.5, letter: 'a' }), b = mk('micrograph', 136.25, 35, 0, { w: 89.5, letter: 'b' });
+    const jab = mk('jablonski', 46.75, 104, 0, { w: 84, h: 62 });
+    const lam = [], y1 = [], y2 = [];
+    for (let l = 450; l <= 750; l += 5) { lam.push(l); y1.push(+Math.exp(-Math.pow((l - 520) / 25, 2)).toFixed(4)); y2.push(+(0.85 * Math.exp(-Math.pow((l - 575) / 32, 2))).toFixed(4)); }
+    const plot = mk('plot', 136.25, 104, 0, { w: 84, h: 60, xlabel: 'Wavelength (nm)', ylabel: 'Intensity (a.u.)', series: [{ name: 'absorption', x: lam, y: y1, color: '#2f6fd6', dash: 'solid' }, { name: 'emission', x: lam, y: y2, color: '#1f9d3a', dash: 'solid' }] });
+    d.objects.push(a, b, jab, plot, mk('panel', 4, 74, 0, { text: 'c' }), mk('panel', 93, 74, 0, { text: 'd' }));
+    return d;
+  },
+});
+
+/* ---------- SPR biosensor (graphical abstract) ---------- */
+T.list.push({
+  id: 'biosensor', name: 'SPR biosensor: capture layer and sensorgram', desc: 'Graphical abstract: antibodies on Protein G over a SAM on gold, antigens arriving, and the binding curve (generic)',
+  build() {
+    const d = base('ga-els', 183, 74, 'SPR biosensor');
+    const surf = mk('biosurface', 56, 48, 0, { w: 84, chem: 'proteinG', n: 6, abH: 9, labels: true, size: 5 });
+    const t = [], R = [];
+    for (let s = 0; s <= 600; s += 10) { t.push(s); R.push(+(s < 120 ? 0 : s < 360 ? 160 * (1 - Math.exp(-(s - 120) / 90)) : 160 * (1 - Math.exp(-240 / 90)) * Math.exp(-(s - 360) / 900)).toFixed(2)); }
+    const plot = mk('plot', 156, 38, 0, { w: 48, h: 44, xlabel: 'Time (s)', ylabel: 'Response (RU)', legend: false, series: [{ name: 'antigen', x: t, y: R, color: '#1f77b4', dash: 'solid' }] });
+    const arr = mk('arrow', 120, 38, 0, { dx: 10, dy: 0, style: 'block', shaft: 2.4, headSize: 4, color: '#9aa4b0' });
+    d.objects.push(surf, plot, arr, mk('text', 56, 8, 0, { text: 'Oriented capture on Protein G', size: 7, bold: true }));
     return d;
   },
 });

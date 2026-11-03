@@ -289,6 +289,27 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .studio .st-tab tr.st-sel td { background: var(--accent-soft); }
 .studio .st-modes .st-tab { width: 100%; font-size: 11.5px; }
 
+/* command palette */
+.cmd-pal { width: min(680px, 94vw); }
+.cmd-input { width: 100%; font-size: 15px; padding: 10px 12px; margin-bottom: 8px; }
+.cmd-list { max-height: 56vh; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+.cmd-row { display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 7px; color: var(--text); cursor: pointer; }
+.cmd-row.on { background: var(--accent-soft); }
+.cmd-group { flex: 0 0 74px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.cmd-label { flex: 1 1 auto; }
+.cmd-sub { font-size: 11px; color: var(--muted); }
+.cmd-row kbd { font-size: 11px; color: var(--muted); }
+.cmd-btn { font-family: var(--mono, monospace); font-size: 11px; }
+/* versions */
+.vs-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
+.vs-row { display: flex; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.vs-row.auto { opacity: 0.85; }
+.vs-thumb { width: 110px; height: 70px; flex: 0 0 110px; background: #fff; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); }
+.vs-thumb img { max-width: 100%; max-height: 100%; }
+.vs-info { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vs-info small { color: var(--muted); }
+.vs-acts { display: flex; gap: 6px; align-items: center; }
+
 </style>
 <style>
 /* css/layout.css */
@@ -15281,6 +15302,104 @@ P.duplicate = () => { P.copy(); P.paste(4); };
 
 </script>
 <script>
+/* js/io/versions.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — io/versions.js
+   Version history of the figure, kept in this browser
+   (IndexedDB; nothing is uploaded): versions you name, and
+   automatic ones every few minutes while you work (the last 20
+   are kept). Each has a small picture; restoring one is a single
+   step that Ctrl+Z takes back.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state;
+const VS = RNBX.versions = {};
+const AUTO_MIN = 5, AUTO_KEEP = 20;
+
+const db = () => new Promise((res, rej) => {
+  if (!window.indexedDB) return rej(new Error('This browser cannot keep versions (no IndexedDB).'));
+  const rq = indexedDB.open('rnbeamx-versions', 1);
+  rq.onupgradeneeded = () => { const st = rq.result.createObjectStore('v', { keyPath: 'id' }); st.createIndex('t', 't'); };
+  rq.onerror = () => rej(rq.error);
+  rq.onsuccess = () => res(rq.result);
+});
+const tx = (mode, fn) => db().then(d => new Promise((res, rej) => { const t = d.transaction('v', mode), r = fn(t.objectStore('v')); t.oncomplete = () => { d.close(); res(r && r.result); }; t.onerror = () => { d.close(); rej(t.error); }; }));
+
+/* a small JPEG of the figure for the list */
+VS.thumb = async () => {
+  try {
+    const svg = RNBX.exporter.svgString(), W = 220, H = Math.max(40, Math.round(W * S.doc.page.height / S.doc.page.width));
+    const c = await RNBX.exporter.rasterize(svg, W, Math.min(H, 260), RNBX.isDarkPage(S.doc.page) ? '#0b1020' : '#ffffff');
+    return c.toDataURL('image/jpeg', 0.72);
+  } catch (e) { return ''; }
+};
+VS.list = () => tx('readonly', st => st.getAll()).then(a => (a || []).sort((x, y) => y.t - x.t));
+VS.save = async (name, auto = false) => {
+  const rec = { id: U.uid(), t: Date.now(), name: name || (auto ? 'Automatic' : 'Version'), auto, title: S.doc.meta.title, n: S.doc.objects.length, doc: JSON.parse(JSON.stringify(S.doc)), thumb: await VS.thumb() };
+  await tx('readwrite', st => st.put(rec));
+  if (auto) { const all = (await VS.list()).filter(v => v.auto); await Promise.all(all.slice(AUTO_KEEP).map(v => VS.remove(v.id))); }
+  return rec;
+};
+VS.remove = id => tx('readwrite', st => st.delete(id));
+VS.rename = async (id, name) => { const all = await VS.list(), v = all.find(q => q.id === id); if (!v) return; v.name = name; v.auto = false; await tx('readwrite', st => st.put(v)); };
+VS.restore = async id => {
+  const v = (await VS.list()).find(q => q.id === id);
+  if (!v) throw new Error('That version is gone');
+  RNBX.history.checkpoint();
+  RNBX.setDocument(v.doc, true);
+  RNBX.toast(`Restored “${v.name}” from ${new Date(v.t).toLocaleString()}. Ctrl+Z goes back.`);
+};
+
+/* automatic versions: every few minutes, if the figure changed since the last one */
+let lastSig = '', lastAuto = Date.now(), timer = 0;
+const sig = () => { const j = JSON.stringify(S.doc.objects); return j.length + ':' + j.slice(0, 200) + j.slice(-200); };
+VS.tick = async (force) => {
+  if (!S.doc.objects.length) return null;
+  const s = sig();
+  if (s === lastSig || (!force && Date.now() - lastAuto < AUTO_MIN * 60000)) return null;
+  lastSig = s; lastAuto = Date.now();
+  try { return await VS.save('Automatic', true); } catch (e) { return null; }
+};
+VS.init = () => {
+  lastSig = sig();
+  RNBX.on('change', kind => { if (kind === 'selection' || kind === 'time') return; clearTimeout(timer); timer = setTimeout(() => VS.tick(), 4000); });
+};
+
+/* ---------- the dialog ---------- */
+VS.dialog = async () => {
+  const D = RNBX.dom, el = D.el;
+  const name = el('input', { type: 'text', placeholder: 'Name this version, e.g. “before reviewer changes”', style: { flex: '1 1 auto', minWidth: '0', width: 'auto' } });
+  const listHost = el('div', { class: 'vs-list' });
+  const draw = async () => {
+    let all;
+    try { all = await VS.list(); } catch (e) { listHost.textContent = e.message; return; }
+    listHost.innerHTML = '';
+    if (!all.length) { listHost.append(el('div', { class: 'note', text: 'No versions yet. Name one above, or keep working: a version is kept automatically every few minutes while the figure changes.' })); return; }
+    all.forEach(v => {
+      const when = new Date(v.t);
+      const row = el('div', { class: 'vs-row' + (v.auto ? ' auto' : '') },
+        el('div', { class: 'vs-thumb', html: v.thumb ? `<img src="${v.thumb}" alt="">` : '' }),
+        el('div', { class: 'vs-info' }, el('b', { text: v.name }), el('small', { text: `${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${v.title || 'Untitled'} · ${v.n} object${v.n === 1 ? '' : 's'}${v.auto ? ' · automatic' : ''}` })),
+        el('div', { class: 'vs-acts' },
+          el('button', { class: 'btn small primary', type: 'button', text: 'Restore', onclick: async () => { await VS.restore(v.id); m.close(); } }),
+          el('button', { class: 'btn small ghost', type: 'button', text: v.auto ? 'Keep…' : 'Rename…', title: v.auto ? 'Give it a name so it is not replaced by newer automatic versions' : 'Rename', onclick: async () => { const nn = prompt('Name of this version:', v.auto ? '' : v.name); if (nn) { await VS.rename(v.id, nn); draw(); } } }),
+          D.iconBtn('trash', 'Delete this version', async () => { await VS.remove(v.id); draw(); })));
+      listHost.append(row);
+    });
+  };
+  const saveBtn = el('button', { class: 'btn primary', type: 'button', style: { flex: '0 0 auto' }, text: 'Save version', onclick: async () => { await VS.save(name.value.trim() || 'Version ' + new Date().toLocaleString()); name.value = ''; RNBX.toast('Version saved in this browser.'); draw(); } });
+  name.onkeydown = e => { if (e.key === 'Enter') saveBtn.click(); };
+  const m = D.modal({ title: 'Versions', sub: 'Kept in this browser only — save the project file (Ctrl+S) to keep it elsewhere', wide: true,
+    body: [el('div', { class: 'row', style: { gap: '8px', marginBottom: '12px' } }, name, saveBtn), listHost] });
+  draw();
+  setTimeout(() => name.focus(), 30);
+  return m;
+};
+})();
+
+</script>
+<script>
 /* js/io/export.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — io/export.js
@@ -16486,10 +16605,11 @@ T.list.push({
 T.GROUPS = [
   ['Interferometers & polarisation', ['michelson', 'mzi', 'fringes', 'polarization']],
   ['Microscopy & imaging', ['epifluor', 'confocal', 'lightsheet', 'raman', 'tower', 'fourf', 'aberration']],
-  ['Spectroscopy & sensing', ['spectro', 'ftir', 'spr', 'ramanprobe']],
+  ['Spectroscopy & sensing', ['spectro', 'uvvis', 'darkfield', 'ftir', 'spr', 'ramanprobe', 'biosensor']],
   ['Lasers & ultrafast', ['pumpprobe', 'gaussian', 'expander', 'ga-shg']],
   ['Devices & photonics', ['ring', 'absorber']],
-  ['Lab & chemistry', ['nanoprep', 'lockinbench']],
+  ['Lab & chemistry', ['nanoprep', 'lockinbench', 'evaporator']],
+  ['Results figures', ['results']],
   ['Diagrams & AI', ['specml']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
@@ -16563,6 +16683,93 @@ T.list.push({
     const w = (a, b, o) => link('wire', a, b, Object.assign({ route: 'curve', sag: 0.4 }, o || {}));
     d.objects.push(laser, lens, samp, pd, fgen, lock, psu, lap, plot,
       w(pd, lock, { arrow: 'end' }), w(fgen, lock, { arrow: 'end' }), w(psu, pd, { arrow: 'none' }), w(lock, lap, { arrow: 'end' }));
+    return d;
+  },
+});
+
+/* ---------- UV–vis absorption spectrophotometer ---------- */
+T.list.push({
+  id: 'uvvis', name: 'UV–vis absorption spectrometer', desc: 'White light through a cuvette of gold colloid into a grating spectrometer; the colloid’s absorbance spectrum beside it (generic)',
+  build() {
+    const d = base('nature-2', 183, 74, 'UV–vis absorption spectroscopy');
+    const lamp = mk('lamp', 16, 30, 0, { count: 5, beamWidth: 1.2 }, 'Deuterium–halogen\nlamp', [0, 8]);
+    const l1 = mk('lens', 36, 30, 0, { f: 40, d: 10 }, 'L1', [0, 8]);
+    const cuv = mk('sample', 54, 30, 0, { look: 'cuvette', w: 6, h: 9, T: 0.55, spot: '#c0263c' }, 'Cuvette\n(Au colloid)', [0, 9]);
+    const l2 = mk('lens', 72, 30, 0, { f: 40, d: 10 }, 'L2', [0, 8]);
+    const spec = mk('spectrometer', 96, 30, 0, { L: 22, H: 11 }, 'Spectrometer', [0, 9]);
+    const lam = [], A = [];
+    for (let l = 400; l <= 800; l += 10) { lam.push(l); A.push(+(0.06 + 0.94 * Math.exp(-Math.pow((l - 525) / 38, 2)) + 0.25 * Math.exp(-(l - 400) / 60)).toFixed(4)); }
+    const plot = mk('plot', 152, 36, 0, { w: 54, h: 40, xlabel: 'Wavelength (nm)', ylabel: 'Absorbance', legend: false, series: [{ name: 'Au colloid', x: lam, y: A, color: '#b3172f', dash: 'solid' }] });
+    d.objects.push(lamp, l1, cuv, l2, spec, plot, mk('panel', 4, 6, 0, { text: 'a' }), mk('panel', 122, 6, 0, { text: 'b' }),
+      mk('text', 54, 52, 0, { text: 'A = −log_{10}(I / I_0)', size: 6.5, color: '#444444' }));
+    return d;
+  },
+});
+
+/* ---------- dark-field scattering microscope ---------- */
+T.list.push({
+  id: 'darkfield', name: 'Dark-field scattering microscope', desc: 'Oblique white light passes the sample and misses the objective; the light scattered by the nanoparticles is collected and sent to a spectrometer (generic)',
+  build() {
+    const d = base('nature-15', 120, 96, 'Dark-field scattering microscope');
+    const lamp = mk('lamp', 14, 86, -40, { count: 3, beamWidth: 1 }, 'White light (oblique)', [0, 9]);
+    const smp = mk('sample', 50, 56, 90, { look: 'slide', w: 1.2, h: 26, T: 1 }, 'Nanoparticles on glass', [16, 6]);
+    const sc = mk('raysource', 50, 55.2, -90, { mode: 'point', rays: 7, fan: 16, colors: 'single', lambda: 600 }, '', [0, 0]);
+    const obj = mk('objective', 50, 47.7, 90, {}, 'Objective', [-14, 0]);
+    const m = mk('mirror', 50, 12, ang(UP, R), {}, 'M', [-7, 0]);
+    const tl = mk('lens', 70, 12, 0, { f: 200, d: 10 }, 'Tube lens', [0, -8]);
+    const spec = mk('spectrometer', 102, 12, 0, { L: 20, H: 10 }, 'Spectrometer', [0, 9]);
+    const dump = mk('beamdump', 86, 26, -40, {}, 'Beam dump', [0, 7]);
+    d.objects.push(lamp, smp, sc, obj, m, tl, spec, dump, mk('glow', 50, 55.6, 0, { r: 2.4, color: '#ffb000', strength: 0.9 }),
+      mk('text', 93, 72, 0, { text: 'only light scattered by the\nparticles enters the objective', size: 5.5, italic: true, color: '#555555' }));
+    return d;
+  },
+});
+
+/* ---------- vacuum thermal / e-beam evaporator (schematic, not traced) ---------- */
+T.list.push({
+  id: 'evaporator', name: 'Vacuum evaporation system', desc: 'Lab schematic: chamber with substrate and thickness monitor, rotary and backing pumps, gas line for venting, LT/HT supply and a computer (generic)',
+  build() {
+    const d = base('nature-2', 183, 100, 'Vacuum evaporation system');
+    const ch = mk('vacchamber', 70, 46, 0, {});
+    const pump = mk('vacpump', 24, 82, 0, {});
+    const gas = mk('gascyl', 150, 42, 0, {});
+    const psu = mk('psu', 128, 86, 0, { volts: '1.2 V', amps: '80 A' });
+    const pc = mk('desktop', 164, 84, 0, {});
+    const w = (a, b, o) => link('wire', a, b, Object.assign({ route: 'curve', sag: 0.3 }, o || {}));
+    const t = (x, y, s, o) => mk('text', x, y, 0, Object.assign({ text: s, size: 6.5 }, o || {}));
+    d.objects.push(ch, pump, gas, psu, pc, w(pump, ch, { arrow: 'none' }), w(gas, ch, { arrow: 'end' }), w(psu, ch, { arrow: 'end' }), w(pc, psu, { arrow: 'none' }),
+      t(24, 66, 'Roughing / backing pump'), t(150, 14, 'N₂ for venting'), t(128, 70, 'LT supply (boat)'), t(70, 12, 'Chamber: substrate, shutter, thickness monitor (QCM)', { size: 6 }),
+      t(70, 94, 'Sequence: roughing → backing → high vacuum (diffusion / turbo) → evaporate → vent', { size: 5.8, color: '#555555', italic: true }));
+    return d;
+  },
+});
+
+/* ---------- a multi-panel results figure ---------- */
+T.list.push({
+  id: 'results', name: 'Results figure: images, energy diagram, spectrum', desc: 'Four panels at double-column width: two microscope image panels to drop your images into, a Jablonski diagram and a data plot, lettered a–d',
+  build() {
+    const d = base('nature-2', 183, 140, 'Results figure');
+    const a = mk('micrograph', 46.75, 35, 0, { w: 89.5, letter: 'a' }), b = mk('micrograph', 136.25, 35, 0, { w: 89.5, letter: 'b' });
+    const jab = mk('jablonski', 46.75, 104, 0, { w: 84, h: 62 });
+    const lam = [], y1 = [], y2 = [];
+    for (let l = 450; l <= 750; l += 5) { lam.push(l); y1.push(+Math.exp(-Math.pow((l - 520) / 25, 2)).toFixed(4)); y2.push(+(0.85 * Math.exp(-Math.pow((l - 575) / 32, 2))).toFixed(4)); }
+    const plot = mk('plot', 136.25, 104, 0, { w: 84, h: 60, xlabel: 'Wavelength (nm)', ylabel: 'Intensity (a.u.)', series: [{ name: 'absorption', x: lam, y: y1, color: '#2f6fd6', dash: 'solid' }, { name: 'emission', x: lam, y: y2, color: '#1f9d3a', dash: 'solid' }] });
+    d.objects.push(a, b, jab, plot, mk('panel', 4, 74, 0, { text: 'c' }), mk('panel', 93, 74, 0, { text: 'd' }));
+    return d;
+  },
+});
+
+/* ---------- SPR biosensor (graphical abstract) ---------- */
+T.list.push({
+  id: 'biosensor', name: 'SPR biosensor: capture layer and sensorgram', desc: 'Graphical abstract: antibodies on Protein G over a SAM on gold, antigens arriving, and the binding curve (generic)',
+  build() {
+    const d = base('ga-els', 183, 74, 'SPR biosensor');
+    const surf = mk('biosurface', 56, 48, 0, { w: 84, chem: 'proteinG', n: 6, abH: 9, labels: true, size: 5 });
+    const t = [], R = [];
+    for (let s = 0; s <= 600; s += 10) { t.push(s); R.push(+(s < 120 ? 0 : s < 360 ? 160 * (1 - Math.exp(-(s - 120) / 90)) : 160 * (1 - Math.exp(-240 / 90)) * Math.exp(-(s - 360) / 900)).toFixed(2)); }
+    const plot = mk('plot', 156, 38, 0, { w: 48, h: 44, xlabel: 'Time (s)', ylabel: 'Response (RU)', legend: false, series: [{ name: 'antigen', x: t, y: R, color: '#1f77b4', dash: 'solid' }] });
+    const arr = mk('arrow', 120, 38, 0, { dx: 10, dy: 0, style: 'block', shaft: 2.4, headSize: 4, color: '#9aa4b0' });
+    d.objects.push(surf, plot, arr, mk('text', 56, 8, 0, { text: 'Oriented capture on Protein G', size: 7, bold: true }));
     return d;
   },
 });
@@ -23062,7 +23269,7 @@ const KEYS = [
   ['Orient to beam', 'O'], ['Free move (no snapping)', 'hold Alt'], ['Constrain to axis', 'hold Shift'], ['Duplicate', 'Ctrl+D'],
   ['Copy / paste', 'Ctrl+C / Ctrl+V'], ['Delete', 'Del / Backspace'], ['Select all', 'Ctrl+A'], ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
   ['Pan', 'Space+drag · middle mouse · trackpad'], ['Zoom', 'wheel · Ctrl+wheel · + / −'], ['Fit page', '0'], ['Styles', '1 schematic · 2 shaded · 3 3D'],
-  ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Animate (presets)', 'A'], ['Timeline', 'T'], ['Add animation step', 'I'],
+  ['Command palette (commands, components, templates)', 'Ctrl+K'], ['Grid', 'G'], ['Labels on / off', 'L'], ['Auto-arrange labels', 'Shift+L'], ['Tidy setup', 'Shift+T'], ['Group / ungroup', 'Ctrl+G / Ctrl+Shift+G'], ['Polarisation marks', 'P'], ['Animate (presets)', 'A'], ['Timeline', 'T'], ['Add animation step', 'I'],
   ['Play / pause', 'K'], ['Save project', 'Ctrl+S'], ['Export', 'Ctrl+E'],
   ['Reset everything (undoable)', '↺ toolbar button'], ['Bring to front / back', 'Ctrl+] / Ctrl+['], ['Edit label', 'double-click'], ['Cancel tool', 'Esc'], ['This help', '?'],
 ];
@@ -23139,6 +23346,7 @@ M.items = {
     { label: 'Templates…', icon: 'grid', action: () => RNBX.dialogs.templates() },
     { label: 'Open project…', key: mod + 'O', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.project.openFile(f)) },
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
+    { label: 'Versions… (history, kept in this browser)', action: () => RNBX.versions.dialog() },
     { label: 'Copy share link', action: () => RNBX.share.copyLink() },
     '-',
     { label: 'Import image…', action: () => RNBX.project.pickFile('image/*', f => RNBX.project.importImage(f)) },
@@ -23206,6 +23414,7 @@ M.items = {
     '-',
     { label: 'Animate (one-click presets)…', key: 'A', action: () => RNBX.animateUI.open() },
     { label: 'Animation timeline', key: 'T', action: () => RNBX.timeline.toggle() },
+    { label: 'Command palette…', key: mod + 'K', action: () => RNBX.command.open() },
     { label: 'Help & shortcuts', icon: 'help', key: '?', action: () => RNBX.dialogs.help() },
   ],
 };
@@ -23249,6 +23458,7 @@ M.init = () => {
     D.iconBtn('glow', 'Beam glow', () => toggleStyle('beamGlow', 'Glow'), { id: 'tGlow' }),
     el('span', { class: 'sep' }),
     D.iconBtn('fit', 'Fit page (0)', () => RNBX.canvas.fit()),
+    el('button', { class: 'btn small ghost cmd-btn', type: 'button', text: mod + 'K', title: 'Command palette: run any command, add any component, open any template', onclick: () => RNBX.command.open() }),
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();
@@ -23372,6 +23582,90 @@ function onKey(e) {
 
 </script>
 <script>
+/* js/ui/command.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/command.js
+   Command palette (Ctrl+K or Ctrl+Shift+P): type a few letters
+   to run any menu command, add any component, open a template,
+   switch the figure style or open a Studio tab. ↑ ↓ to choose,
+   Enter to run, Esc to close.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, lib = RNBX.lib;
+const CP = RNBX.command = {};
+
+/* every command: { group, label, key, keywords, run } */
+CP.commands = () => {
+  const out = [], M = RNBX.menus;
+  Object.keys(M.items || {}).forEach(group => {
+    let items = [];
+    try { items = M.items[group](); } catch (e) { items = []; }
+    items.forEach(it => { if (it && it !== '-' && it.label && it.action && !it.disabled) out.push({ group, label: it.label.replace(/^✓ /, ''), key: it.key || '', run: it.action }); });
+  });
+  out.push({ group: 'File', label: 'Versions… (history of this figure)', key: '', keywords: 'history snapshot restore backup', run: () => RNBX.versions.dialog() });
+  [['schematic', 'Schematic'], ['shaded', 'Shaded'], ['3d', '3D']].forEach(([m, n]) => out.push({ group: 'View', label: 'Figure style: ' + n, run: () => RNBX.menus.setMode(m) }));
+  [['layers', 'Layers (thin films, ellipsometry, guided modes)'], ['pattern', 'Pattern (gratings, metasurfaces)'], ['particles', 'Particles (Mie, NPoM, colour)'], ['part', 'Part Builder']].forEach(([m, n]) => out.push({ group: 'Studio', label: 'Open Layer Studio ▸ ' + n, keywords: 'studio', run: () => RNBX.studio.open(null, m) }));
+  RNBX.templates.list.forEach(t => out.push({ group: 'Template', label: t.name, keywords: t.desc + ' template', run: () => {
+    if (S.doc.objects.length && !confirm('Replace the current figure with this template? (Ctrl+Z brings it back.)')) return;
+    RNBX.history.checkpoint(); RNBX.setDocument(RNBX.normalizeDocument(t.build()), true); RNBX.toast(t.name + ' loaded.');
+  } }));
+  lib.entries().forEach(e => out.push({ group: 'Add', label: e.name, keywords: (e.keywords || '') + ' ' + (e.category || ''), sub: e.category, run: () => RNBX.canvas.placeNew({ type: e.type, props: e.props || undefined }, [S.doc.page.width / 2, S.doc.page.height / 2], false) }));
+  return out;
+};
+/* all query words must appear; label matches rank above keyword matches, starts above contains */
+CP.search = (cmds, q) => {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return cmds.filter(c => c.group !== 'Add' && c.group !== 'Template').slice(0, 40);
+  return cmds.map(c => {
+    const L = c.label.toLowerCase(), all = (c.group + ' ' + L + ' ' + (c.keywords || '') + ' ' + (c.sub || '')).toLowerCase();
+    if (!words.every(w => all.includes(w))) return null;
+    let s = 0; words.forEach(w => { s += L.startsWith(w) ? 6 : L.includes(' ' + w) ? 4 : L.includes(w) ? 3 : 1; });
+    if (c.group !== 'Add') s += 0.5;
+    return { c, s };
+  }).filter(Boolean).sort((a, b) => b.s - a.s || a.c.label.length - b.c.label.length).slice(0, 60).map(x => x.c);
+};
+CP.open = () => {
+  if (document.querySelector('.cmd-pal')) return;
+  const cmds = CP.commands();
+  const input = el('input', { type: 'search', class: 'cmd-input', placeholder: 'Type a command, a component or a template…  (↑ ↓, Enter)' });
+  const list = el('div', { class: 'cmd-list', role: 'listbox' });
+  let shown = [], idx = 0;
+  const draw = () => {
+    shown = CP.search(cmds, input.value); idx = Math.min(idx, Math.max(0, shown.length - 1));
+    list.innerHTML = '';
+    if (!shown.length) list.append(el('div', { class: 'note', text: 'Nothing matches.' }));
+    shown.forEach((c, i) => {
+      const row = el('button', { type: 'button', class: 'cmd-row' + (i === idx ? ' on' : ''), role: 'option', onclick: () => run(c), onmousemove: () => { if (idx !== i) { idx = i; mark(); } } },
+        el('span', { class: 'cmd-group', text: c.group }), el('span', { class: 'cmd-label', text: c.label }), c.sub ? el('span', { class: 'cmd-sub', text: c.sub }) : null, c.key ? el('kbd', { text: c.key }) : null);
+      list.append(row);
+    });
+  };
+  const mark = () => { [...list.children].forEach((r, i) => r.classList.toggle('on', i === idx)); const r = list.children[idx]; if (r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest' }); };
+  const run = c => { m.close(); setTimeout(() => { try { c.run(); } catch (e) { RNBX.toast(e.message || String(e), 'error'); } }, 0); };
+  input.oninput = () => { idx = 0; draw(); };
+  input.onkeydown = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(shown.length - 1, idx + 1); mark(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(0, idx - 1); mark(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (shown[idx]) run(shown[idx]); }
+  };
+  const m = D.modal({ title: 'Command palette', sub: `${cmds.length} commands, components and templates · Ctrl+K`, body: [input, list] });
+  m.root.classList.add('cmd-pal');
+  draw();
+  input.focus();
+  setTimeout(() => input.focus(), 20);
+  return m;
+};
+CP.init = () => {
+  document.addEventListener('keydown', e => {
+    const c = e.ctrlKey || e.metaKey, k = (e.key || '').toLowerCase();
+    if (c && (k === 'k' || (e.shiftKey && k === 'p'))) { e.preventDefault(); e.stopPropagation(); CP.open(); }
+  }, true);
+};
+})();
+
+</script>
+<script>
 /* js/io/presence.js */
 /* ═══════════════════════════════════════════════════════════
    presence.js — live "using now" counts (shared by RNBeamX,
@@ -23489,6 +23783,8 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.studio.init();
   RNBX.learn.init();
   RNBX.menus.init();
+  RNBX.command.init();
+  RNBX.versions.init();
 
   RNBX.on('change', kind => { if (kind !== 'selection' && kind !== 'time') RNBX.project.autosave(); });
   RNBX.on('change', () => { document.title = (S.doc.meta.title && S.doc.meta.title !== 'Untitled setup' ? S.doc.meta.title + ' · ' : '') + 'RNBeamX'; });
