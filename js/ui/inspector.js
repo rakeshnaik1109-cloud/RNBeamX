@@ -368,6 +368,14 @@ function readout(obj) {
       const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
       html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
     }
+    { const st = RNBX.optics.stokes(h);
+      if (st && (st.dop > 0.02 || !(h.unpol > 0))) {
+        // polarisation ellipse (p horizontal, s vertical), as seen looking into the beam
+        const a = U.rad(st.azimuth), b = U.rad(st.ellipticity), ax = 13, bx = 13 * Math.abs(Math.tan(b)), pts = [];
+        for (let i = 0; i <= 48; i++) { const t = i / 48 * 2 * Math.PI, x = ax * Math.cos(t), y = bx * Math.sin(t); pts.push([16 + x * Math.cos(a) - y * Math.sin(a), 16 - (x * Math.sin(a) + y * Math.cos(a))]); }
+        const ell = `<svg viewBox="0 0 32 32" width="32" height="32" style="vertical-align:middle;margin-right:6px"><line x1="2" y1="16" x2="30" y2="16" stroke="#9aa1ab" stroke-width="0.5"/><line x1="16" y1="2" x2="16" y2="30" stroke="#9aa1ab" stroke-width="0.5"/><path d="M ${pts.map(q => q[0].toFixed(2) + ' ' + q[1].toFixed(2)).join(' L ')}" fill="none" stroke="#d62728" stroke-width="1.6" opacity="${(0.35 + 0.65 * st.dop).toFixed(2)}"/></svg>`;
+        html += `<br>${ell}<b>Polarisation</b>: ${U.esc(RNBX.optics.describePol(st))} · Stokes (S₁, S₂, S₃)/S₀ = (${st.s.map(v => U.fmt(v, 3)).join(', ')}) · degree of polarisation ${U.fmt(st.dop * 100, 1)} %`;
+      } }
     if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
     return el('div', { class: 'readout', html });
   }

@@ -286,6 +286,8 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .pb-face.sel { border-color: var(--accent); background: var(--accent-soft); }
 .pb-3dview svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .pb-3d input[type=range] { flex: 1; }
+.studio .st-tab tr.st-sel td { background: var(--accent-soft); }
+.studio .st-modes .st-tab { width: 100%; font-size: 11.5px; }
 
 </style>
 <style>
@@ -1117,6 +1119,23 @@ O.jones = (pol, angleDeg = 0) => {
     default: return null; // unpolarised
   }
 };
+/* Stokes parameters of the light at a detector (tracer hit): polarised parts per source and
+   wavelength add as fields, separate ones and unpolarised light as powers.
+   S1 = |E_p|² − |E_s|², S2 = 2 Re(E_p E_s*), S3 = 2 Im(E_p E_s*) (S3 = +1 for "Right circular" here) */
+O.stokes = h => {
+  if (!h) return null;
+  let S0 = h.unpol || 0, S1 = 0, S2 = 0, S3 = 0;
+  Object.values(h.pfields || {}).forEach(E => { const a = E[0], b = E[1], ab = C.mul(a, C.conj(b)), pa = C.abs2(a), pb = C.abs2(b); S0 += pa + pb; S1 += pa - pb; S2 += 2 * ab.re; S3 += 2 * ab.im; });
+  if (!(S0 > 0)) return null;
+  const Ip = Math.hypot(S1, S2, S3), dop = Math.min(1, Ip / S0);
+  return { S: [S0, S1, S2, S3], s: [S1 / S0, S2 / S0, S3 / S0], dop, azimuth: 0.5 * Math.atan2(S2, S1) * 180 / Math.PI, ellipticity: Ip > 0 ? 0.5 * Math.asin(Math.max(-1, Math.min(1, S3 / Ip))) * 180 / Math.PI : 0 };
+};
+O.describePol = st => {
+  if (!st) return '';
+  if (st.dop < 0.02) return 'unpolarised';
+  const e = st.ellipticity, a = st.azimuth, kind = Math.abs(e) > 44 ? (e > 0 ? 'right circular' : 'left circular') : Math.abs(e) < 1 ? `linear at ${a.toFixed(1)}° from p` : `elliptical (${e > 0 ? 'right' : 'left'}), major axis at ${a.toFixed(1)}°, ellipticity ${Math.abs(e).toFixed(1)}°`;
+  return (st.dop > 0.98 ? '' : `partially polarised (${(st.dop * 100).toFixed(0)} %), `) + kind;
+};
 O.scaleJ = (E, k) => E && [C.scale(E[0], k), C.scale(E[1], k)];
 O.powerJ = E => C.abs2(E[0]) + C.abs2(E[1]);
 O.applyM = (M, E) => [C.add(C.mul(M[0][0], E[0]), C.mul(M[0][1], E[1])), C.add(C.mul(M[1][0], E[0]), C.mul(M[1][1], E[1]))];
@@ -1372,6 +1391,7 @@ TF.nk = (m, nm) => {
   if (!id || id === 'air') return { n: 1, k: 0 };
   if (id === 'custom') return { n: +m.n || 1, k: Math.max(0, +m.k || 0) };
   if (id === 'ema') return TF.emaNk(m.ema || {}, nm);
+  if (id === 'aniso') return { n: +m.no || 1.5, k: +m.ko || 0, aniso: true };
   if (id.startsWith('glass:')) return { n: RNBX.optics.index(id.slice(6), nm), k: 0 };
   const d = DATA[id];
   if (!d) return { n: 1, k: 0, missing: true };
@@ -1458,6 +1478,7 @@ TF.solve = (stack, nm, thetaDeg, pol) => {
      R = Rf + Tf² a² Rb / (1 − Rf′ Rb a²),  T = Tf a Tb / (1 − Rf′ Rb a²),  a = e^(−α d / cos θs).
    Rf′ is the stack seen from inside the substrate; Tf is the same both ways (reciprocity). */
 TF.solveThick = (stack, nm, thetaDeg, pol) => {
+  if (TF.hasAniso(stack)) { const a = TF.solveAniso(stack, nm, thetaDeg); return { R: Math.min(1, a.R[pol]), T: Math.max(0, a.T[pol]), A: Math.max(0, 1 - a.R[pol] - a.T[pol]), X: a.Tx[pol], r: pol === 's' ? a.r.ss : mul([-1, 0], a.r.pp) }; }   // p: back to the admittance convention of TF.solve
   const f = TF.solve(stack, nm, thetaDeg, pol), bk = stack.back;
   if (!bk || !(bk.d > 0)) return f;
   const n0 = TF.nk(stack.inc, nm).n, sk = TF.nk(stack.sub, nm), ns = sk.n, Kx = n0 * Math.sin(U.rad(thetaDeg));
@@ -1473,13 +1494,14 @@ TF.solveThick = (stack, nm, thetaDeg, pol) => {
 TF.response = (stack, nm, thetaDeg, pol) => {
   if (pol !== 'avg') return TF.solveThick(stack, nm, thetaDeg, pol);
   const s = TF.solveThick(stack, nm, thetaDeg, 's'), p = TF.solveThick(stack, nm, thetaDeg, 'p');
-  return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2 };
+  return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2, X: s.X != null ? (s.X + p.X) / 2 : undefined };
 };
 /* Spectroscopic ellipsometry: ρ = rp / rs = tan Ψ · e^{iΔ}, in the convention of commercial
    instruments (Δ = 180° for a bare dielectric below Brewster's angle, 0° above; metals 0–180°).
    Coherent reflection from the front; the back side of a thick substrate is assumed suppressed. */
 TF.ellips = (stack, nm, thetaDeg) => {
-  const rs = TF.solve(stack, nm, thetaDeg, 's').r, rp = mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
+  const an = TF.hasAniso(stack) ? TF.solveAniso(stack, nm, thetaDeg) : null;   // anisotropic: the diagonal Jones elements (standard ellipsometry)
+  const rs = an ? an.r.ss : TF.solve(stack, nm, thetaDeg, 's').r, rp = an ? an.r.pp : mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
   const rho = div(rp, rs);
   let delta = -U.deg(Math.atan2(rho[1], rho[0]));
   delta = ((delta % 360) + 360) % 360;
@@ -1535,6 +1557,176 @@ TF.field = (stack, nm, thetaDeg, pol, opt = {}) => {
   });
   return { z, e2, layer, total, absorbed, R: abs2(r) };
 };
+/* ---------- anisotropic (uniaxial) films: Berreman 4 × 4 ----------
+   m: { mat: 'aniso', no, ko, ne, ke, tilt (° of the optic axis from the normal), az (° from the
+   plane of incidence) }. ψ = (Ex, Hy, Ey, −Hx), dψ/dz = i k₀ Δ ψ (Berreman, JOSA 62, 502 (1972));
+   each film contributes exp(−i k₀ Δ d), computed by scaling and squaring, so isotropic films
+   (degenerate modes) need no special care. The media on both sides are isotropic. */
+TF.isAniso = m => !!m && m.mat === 'aniso';
+TF.anisoEps = (m, nm) => {
+  const o = [+m.no || 1.5, +m.ko || 0], e = [+m.ne || 1.5, +m.ke || 0], eo = mul(o, o), ee = mul(e, e);
+  const t = U.rad(+m.tilt || 0), a = U.rad(+m.az || 0), c = [Math.sin(t) * Math.cos(a), Math.sin(t) * Math.sin(a), Math.cos(t)], de = sub(ee, eo);
+  const E = []; for (let i = 0; i < 3; i++) { E[i] = []; for (let j = 0; j < 3; j++) E[i][j] = add(i === j ? eo : [0, 0], mul(de, [c[i] * c[j], 0])); }
+  return E;
+};
+const m4mul = (A, B) => { const C = []; for (let i = 0; i < 4; i++) { C[i] = []; for (let j = 0; j < 4; j++) { let s = [0, 0]; for (let k = 0; k < 4; k++) s = add(s, mul(A[i][k], B[k][j])); C[i][j] = s; } } return C; };
+const m4id = () => [0, 1, 2, 3].map(i => [0, 1, 2, 3].map(j => (i === j ? [1, 0] : [0, 0])));
+const expm4 = A => {
+  let nrm = 0; A.forEach(r => r.forEach(v => { nrm = Math.max(nrm, Math.hypot(v[0], v[1])); }));
+  const sq = Math.max(0, Math.ceil(Math.log2(nrm * 4 / 0.5)) + 1), f = Math.pow(2, -sq), B = A.map(r => r.map(v => [v[0] * f, v[1] * f]));
+  let term = m4id(), sum = m4id();
+  for (let k = 1; k <= 14; k++) { term = m4mul(term, B).map(r => r.map(v => [v[0] / k, v[1] / k])); sum = sum.map((r, i) => r.map((v, j) => add(v, term[i][j]))); }
+  for (let i = 0; i < sq; i++) sum = m4mul(sum, sum);
+  return sum;
+};
+const delta4 = (E, Kx) => {
+  const e = (i, j) => E[i][j], i33 = div([1, 0], e(2, 2)), K = [Kx, 0], K2 = [Kx * Kx, 0], z = [0, 0];
+  return [
+    [mul(mul([-1, 0], K), mul(e(2, 0), i33)), sub([1, 0], mul(K2, i33)), mul(mul([-1, 0], K), mul(e(2, 1), i33)), z],
+    [sub(e(0, 0), mul(mul(e(0, 2), e(2, 0)), i33)), mul(mul([-1, 0], K), mul(e(0, 2), i33)), sub(e(0, 1), mul(mul(e(0, 2), e(2, 1)), i33)), z],
+    [z, z, z, [1, 0]],
+    [sub(e(1, 0), mul(mul(e(1, 2), e(2, 0)), i33)), mul(mul([-1, 0], K), mul(e(1, 2), i33)), sub(sub(e(1, 1), mul(mul(e(1, 2), e(2, 1)), i33)), K2), z],
+  ];
+};
+const isoEps = N => { const e = mul(N, N), z = [0, 0]; return [[e, z, z], [z, e, z], [z, z, e]]; };
+/* isotropic plane waves in ψ: s (E along y) and p (H along y), going down (+1) or up (−1) */
+const isoVecs = (N, Kx, dir) => {
+  let q = csqrt(sub(mul(N, N), [Kx * Kx, 0])); if (q[1] < 0 || (Math.abs(q[1]) < 1e-12 && q[0] < 0)) q = [-q[0], -q[1]];
+  const qd = dir > 0 ? q : [-q[0], -q[1]], n2 = mul(N, N);
+  return { s: [[0, 0], [0, 0], [1, 0], qd], p: [div(qd, n2), [1, 0], [0, 0], [0, 0]], q, n2 };
+};
+/* 4 × 4 complex solve (Gauss with pivoting) */
+const solve4 = (A, b) => {
+  const n = A.length, M = A.map((r, i) => r.concat([b[i]]));
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (abs2(M[r][c]) > abs2(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) { const f = div(M[r][c], M[c][c]); for (let k = c; k <= n; k++) M[r][k] = sub(M[r][k], mul(f, M[c][k])); }
+  }
+  const x = []; for (let r = n - 1; r >= 0; r--) { let s = M[r][n]; for (let k = r + 1; k < n; k++) s = sub(s, mul(M[r][k], x[k])); x[r] = div(s, M[r][r]); }
+  return x;
+};
+/* Jones reflection / transmission of a stack with anisotropic films, for s and p input:
+   { r: { ss, ps, sp, pp }, t: …, R: { s, p }, T: { s, p }, Rx: { s, p }, Tx: { s, p } }
+   (r.ps = p reflected from s input; p amplitudes in H_y, as in TF.solve; Rx, Tx = the power
+   that changes polarisation) */
+TF.solveAniso = (stack, nm, thetaDeg) => {
+  const ni = TF.nk(stack.inc, nm), N0 = [ni.n, 0], Kx = ni.n * Math.sin(U.rad(thetaDeg)), k0 = 2 * Math.PI / nm;
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k];
+  let M = m4id();
+  stack.layers.forEach(L => {
+    if (!(L.d > 0)) return;
+    const E = TF.isAniso(L.m) ? TF.anisoEps(L.m, nm) : (q => isoEps([q.n, q.k]))(TF.nk(L.m, nm));
+    const D = delta4(E, Kx), P = expm4(D.map(r => r.map(v => mul([0, -k0 * L.d], v))));
+    M = m4mul(M, P);
+  });
+  const inc = isoVecs(N0, Kx, 1), ref = isoVecs(N0, Kx, -1), tr = isoVecs(Ns, Kx, 1);
+  const col = (v, i) => v[i], Mv = v => [0, 1, 2, 3].map(i => [0, 1, 2, 3].reduce((s, k) => add(s, mul(M[i][k], v[k])), [0, 0]));
+  const Mts = Mv(tr.s), Mtp = Mv(tr.p);
+  // ψ_top = inc·a + ref·(rs, rp) = M (tr·(ts, tp))  →  [ref.s ref.p −Mts −Mtp] x = −inc·a
+  const A = [0, 1, 2, 3].map(i => [col(ref.s, i), col(ref.p, i), mul([-1, 0], Mts[i]), mul([-1, 0], Mtp[i])]);
+  const go = a => solve4(A, [0, 1, 2, 3].map(i => mul([-1, 0], add(mul(a[0], inc.s[i]), mul(a[1], inc.p[i])))));
+  const xs = go([[1, 0], [0, 0]]), xp = go([[0, 0], [1, 0]]);
+  // powers: s carries |E_y|² Re q, p carries |H_y|² Re(q / n²)
+  const ws0 = inc.q[0], wp0 = div(inc.q, inc.n2)[0], wss = tr.q[0], wps = div(tr.q, tr.n2)[0];
+  const Rs = { s: abs2(xs[0]), p: abs2(xs[1]) * wp0 / ws0 }, Rp = { s: abs2(xp[0]) * ws0 / wp0, p: abs2(xp[1]) };
+  const Ts = { s: abs2(xs[2]) * wss / ws0, p: abs2(xs[3]) * wps / ws0 }, Tp = { s: abs2(xp[2]) * wss / wp0, p: abs2(xp[3]) * wps / wp0 };
+  return { r: { ss: xs[0], ps: xs[1], sp: xp[0], pp: xp[1] }, t: { ss: xs[2], ps: xs[3], sp: xp[2], pp: xp[3] },
+    R: { s: Rs.s + Rs.p, p: Rp.s + Rp.p }, T: { s: Ts.s + Ts.p, p: Tp.s + Tp.p }, Rx: { s: Rs.p, p: Rp.s }, Tx: { s: Ts.p, p: Tp.s } };
+};
+TF.hasAniso = stack => stack.layers.some(l => l.d > 0 && TF.isAniso(l.m));
+TF.ANISO_PRESETS = [
+  ['lc', 'Nematic liquid crystal (5CB-like, nₒ 1.53, nₑ 1.71)', { no: 1.53, ne: 1.71 }],
+  ['calcite', 'Calcite (nₒ 1.658, nₑ 1.486)', { no: 1.658, ne: 1.486 }],
+  ['quartz', 'Crystalline quartz (nₒ 1.544, nₑ 1.553)', { no: 1.544, ne: 1.553 }],
+  ['sapphire', 'Sapphire (nₒ 1.768, nₑ 1.760)', { no: 1.768, ne: 1.760 }],
+  ['rutile', 'Rutile TiO₂ (nₒ 2.61, nₑ 2.90)', { no: 2.61, ne: 2.90 }],
+];
+
+/* ---------- guided modes ----------
+   A bound mode of the stack is a pole of its reflection: the zero of
+   D(K) = η₀B + C as a function of the complex in-plane index K = n_eff, with the
+   fields decaying in both claddings (Im q > 0 there). Seeds are the dips of |D| along
+   the real axis; each is refined in the complex plane (Muller's method), which also
+   finds lossy modes (surface plasmons, gap plasmons in metal–insulator–metal). */
+const disp = (stack, nm, pol, K) => {
+  const eta = (N, q) => (pol === 'p' ? div(mul(N, N), q) : q);
+  const n0 = TF.nk(stack.inc, nm), N0 = [n0.n, n0.k], q0 = qzC(N0, K), e0 = eta(N0, q0);
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k], qs = qzC(Ns, K), es = eta(Ns, qs);
+  let v = [[1, 0], es];
+  for (let j = stack.layers.length - 1; j >= 0; j--) {
+    const L = stack.layers[j]; if (!(L.d > 0)) continue;
+    const nk = TF.nk(L.m, nm), N = [nk.n, nk.k], q = qzC(N, K), e = eta(N, q);
+    v = slab(q, e, L.d, nm, v);
+    const m = Math.max(Math.hypot(v[0][0], v[0][1]), Math.hypot(v[1][0], v[1][1])) || 1;   // keep the size in check
+    v = [[v[0][0] / m, v[0][1] / m], [v[1][0] / m, v[1][1] / m]];
+  }
+  return add(mul(e0, v[0]), v[1]);
+};
+/* q = sqrt(N² − K²) for a complex K, on the branch that decays (Im q ≥ 0) */
+const qzC = (N, K) => { let q = csqrt(sub(mul(N, N), mul(K, K))); if (q[1] < 0 || (Math.abs(q[1]) < 1e-12 && q[0] < 0)) q = [-q[0], -q[1]]; return q; };
+const muller = (f, x0, x1, x2, it = 60) => {
+  let f0 = f(x0), f1 = f(x1), f2 = f(x2);
+  for (let i = 0; i < it; i++) {
+    const h1 = sub(x1, x0), h2 = sub(x2, x1), d1 = div(sub(f1, f0), h1), d2 = div(sub(f2, f1), h2), a = div(sub(d2, d1), add(h2, h1));
+    const b = add(mul(a, h2), d2), c = f2, disc = csqrt(sub(mul(b, b), mul([4, 0], mul(a, c))));
+    const den1 = add(b, disc), den2 = sub(b, disc), den = Math.hypot(den1[0], den1[1]) > Math.hypot(den2[0], den2[1]) ? den1 : den2;
+    if (!(Math.hypot(den[0], den[1]) > 0)) break;
+    const dx = div(mul([-2, 0], c), den), x3 = add(x2, dx);
+    x0 = x1; x1 = x2; x2 = x3; f0 = f1; f1 = f2; f2 = f(x3);
+    if (!isFinite(x3[0]) || !isFinite(x3[1])) return null;
+    if (Math.hypot(dx[0], dx[1]) < 1e-12 * Math.max(1, Math.hypot(x3[0], x3[1]))) break;
+  }
+  return x2;
+};
+
+TF.modes = (stack, nm, pol) => {
+  const clad = Math.max(TF.nk(stack.inc, nm).n, TF.nk(stack.sub, nm).n);
+  const films = stack.layers.filter(l => l.d > 0).map(l => TF.nk(l.m, nm));
+  const metal = films.some(q => q.k > q.n) || TF.nk(stack.sub, nm).k > TF.nk(stack.sub, nm).n || TF.nk(stack.inc, nm).k > TF.nk(stack.inc, nm).n;
+  const nmax = Math.max(clad, ...films.filter(q => q.k <= q.n).map(q => q.n));
+  const lo = clad * (1 + 1e-7), hi = metal ? Math.max(nmax, clad) * 4 : nmax;
+  if (!(hi > lo)) return [];
+  const f = K => disp(stack, nm, pol, K), M = 6000, val = [], xs = [];
+  for (let i = 0; i <= M; i++) { const x = lo + (hi - lo) * i / M; xs.push(x); const d = f([x, 0]); val.push(Math.log(Math.hypot(d[0], d[1]) + 1e-300)); }
+  const out = [];
+  for (let i = 1; i < M; i++) {
+    if (!(val[i] < val[i - 1] && val[i] <= val[i + 1])) continue;
+    const h = (hi - lo) / M, r = muller(f, [xs[i] - h, 0], [xs[i] + h, 1e-6], [xs[i], 0]);
+    if (!r || r[0] <= lo || r[0] > hi * 1.0001 || r[1] < -1e-6 * r[0]) continue;
+    if (Math.abs(r[1]) < 1e-8 * r[0]) r[1] = 0;
+    const d0 = f(r), sc = Math.hypot(...f([r[0] * 1.001, 0]));
+    if (Math.hypot(d0[0], d0[1]) > 1e-6 * Math.max(sc, 1e-30)) continue;
+    // decaying in both claddings
+    const nI = TF.nk(stack.inc, nm), nS = TF.nk(stack.sub, nm);
+    if (qzC([nI.n, nI.k], r)[1] <= 0 || qzC([nS.n, nS.k], r)[1] <= 0) continue;
+    if (out.some(m => Math.hypot(m.n[0] - r[0], m.n[1] - r[1]) < 1e-7 * r[0])) continue;
+    out.push({ n: r, pol, Lprop: r[1] > 1e-12 ? nm / (4 * Math.PI * r[1]) : Infinity });
+  }
+  out.sort((a, b) => b.n[0] - a.n[0]);
+  out.forEach((m, i) => { m.order = i; });
+  return out;
+};
+/* the mode's tangential field through the stack: E_y (TE, s) or H_y (TM, p), |·|² normalised to 1 */
+TF.modeField = (stack, nm, mode, opt = {}) => {
+  const pol = mode.pol, K = mode.n, eta = (N, q) => (pol === 'p' ? div(mul(N, N), q) : q);
+  const n0 = TF.nk(stack.inc, nm), N0 = [n0.n, n0.k], q0 = qzC(N0, K);
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k], qs = qzC(Ns, K), es = eta(Ns, qs);
+  const L = stack.layers.filter(l => l.d > 0).map(l => { const nk = TF.nk(l.m, nm), N = [nk.n, nk.k], q = qzC(N, K); return { N, q, e: eta(N, q), d: +l.d }; });
+  let v = [[1, 0], es]; const back = [];
+  for (let j = L.length - 1; j >= 0; j--) { back[j] = v; v = slab(L[j].q, L[j].e, L[j].d, nm, v); }
+  const total = L.reduce((a, l) => a + l.d, 0), pad = opt.pad != null ? opt.pad : Math.max(nm * 0.6, total * 0.4), step = Math.max(0.2, (total + 2 * pad) / (opt.points || 500));
+  // TM: plot H_y, which is the second component (up to a constant): w[1] / η ∝ H; for TE w[0] = E_y
+  const val = (w, l) => (pol === 'p' ? abs2(w[1]) : abs2(w[0]));
+  const z = [], f = [], layer = [];
+  for (let h = pad; h > 1e-9; h -= step) { const ph = expI(2 * Math.PI * q0[0] * h / nm, 2 * Math.PI * q0[1] * h / nm); z.push(-h);   /* decays upwards */ f.push(pol === 'p' ? abs2(mul(v[1], ph)) : abs2(mul(v[0], ph))); layer.push(-1); }
+  let z0 = 0;
+  L.forEach((l, j) => { const m = Math.max(2, Math.ceil(l.d / step)); for (let i = 0; i <= m; i++) { const t = l.d * i / m; z.push(z0 + t); f.push(val(slab(l.q, l.e, l.d - t, nm, back[j]), l)); layer.push(j); } z0 += l.d; });
+  for (let h = step; h <= pad + 1e-9; h += step) { const ph = expI(2 * Math.PI * qs[0] * h / nm, 2 * Math.PI * qs[1] * h / nm); z.push(z0 + h); f.push(pol === 'p' ? abs2(mul(es, ph)) : abs2(ph)); layer.push(L.length); }
+  const mx = Math.max(...f.filter(isFinite)) || 1;
+  return { z, f: f.map(x => x / mx), layer, total };
+};
+
 /* ---------- wavelength × angle map ----------
    o: { lmin, lmax, amin, amax, nl, na, pol, show: 'R' | 'T' | 'A' } → { v: Float32Array (row = angle), … } */
 TF.map = (stack, o) => {
@@ -1551,7 +1743,7 @@ TF.DEFAULT_CALC = { scan: 'wl', lmin: 400, lmax: 900, angle: 0, amin: 0, amax: 8
 /* returns { x, series: { R, T, A }, xlabel, warn } */
 TF.scan = (stack, calc) => {
   const c = Object.assign({}, TF.DEFAULT_CALC, calc || {}), N = U.clamp(Math.round(c.points) || 301, 11, 2001);
-  const x = [], R = [], T = [], A = [], P = [], Dl = [];
+  const x = [], R = [], T = [], A = [], P = [], Dl = [], X = [];
   const wl = c.scan === 'wl', ell = /[PD]/.test(c.show || '');
   const lo = wl ? +c.lmin : +c.amin, hi = wl ? +c.lmax : +c.amax;
   for (let i = 0; i < N; i++) {
@@ -1559,14 +1751,14 @@ TF.scan = (stack, calc) => {
     x.push(wl && c.unit === 'um' ? v / 1000 : v);
     if (ell) { const e = TF.ellips(stack, lam, th); P.push(e.psi); Dl.push(e.delta); continue; }
     const res = TF.response(stack, lam, th, c.pol);
-    R.push(res.R); T.push(res.T); A.push(res.A);
+    R.push(res.R); T.push(res.T); A.push(res.A); X.push(res.X || 0);
   }
   // wavelengths outside a material's measured range
   const mats = [stack.inc, stack.sub].concat(stack.layers.map(l => l.m));
   const lam = wl ? [lo, hi] : [+c.lambda, +c.lambda];
   const warn = [...new Set(mats.filter(m => { const r = TF.range(m); return r && (lam[0] < r[0] * 0.995 || lam[1] > r[1] * 1.005); }).map(m => `${TF.name(m.mat)} (data ${U.fmt(TF.range(m)[0], 0)}–${U.fmt(TF.range(m)[1], 0)} nm)`))];
   const xlabel = wl ? (c.unit === 'um' ? 'Wavelength (µm)' : 'Wavelength (nm)') : 'Angle of incidence (°)';
-  return { x, series: ell ? { P, D: Dl } : { R, T, A }, xlabel, warn, calc: c, ellips: ell };
+  return { x, series: ell ? { P, D: Dl } : { R, T, A, X }, xlabel, warn, calc: c, ellips: ell };
 };
 /* deepest minimum of R (SPR dip) or highest maximum of A, refined by a parabola */
 TF.extremum = (x, y, kind = 'min') => {
@@ -3209,6 +3401,69 @@ NP.intensity = (r, x, z, h = 1e-4) => {
 
 </script>
 <script>
+/* js/engine/colour.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — engine/colour.js
+   The colour a person sees from a spectrum: CIE 1931 2° colour
+   matching functions (the multi-lobe Gaussian fit of Wyman,
+   Sloan & Shirley, JCGT 2(2), 1 (2013), within about 1 % of the
+   tabulated functions), the CIE D65 daylight illuminant
+   (10 nm table), XYZ → linear sRGB (IEC 61966-2-1) and gamma.
+   Used for the colour of a colloid in a cuvette (transmitted
+   light) and in dark field (scattered light).
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX = window.RNBX || {};
+const CO = RNBX.colour = {};
+
+const g = (x, mu, s1, s2) => { const t = (x - mu) / (x < mu ? s1 : s2); return Math.exp(-0.5 * t * t); };
+/* CIE 1931 x̄, ȳ, z̄ at λ (nm) */
+CO.cmf = l => [
+  1.056 * g(l, 599.8, 37.9, 31.0) + 0.362 * g(l, 442.0, 16.0, 26.7) - 0.065 * g(l, 501.1, 20.4, 26.2),
+  0.821 * g(l, 568.8, 46.9, 40.5) + 0.286 * g(l, 530.9, 16.3, 31.1),
+  1.217 * g(l, 437.0, 11.8, 36.0) + 0.681 * g(l, 459.0, 26.0, 13.8),
+];
+/* CIE standard illuminant D65, relative power, 380–780 nm every 10 nm */
+const D65 = [49.98, 54.65, 82.75, 91.49, 93.43, 86.68, 104.86, 117.01, 117.81, 114.86, 115.92, 108.81, 109.35, 107.80, 104.79, 107.69, 104.41, 104.05, 100.00, 96.33, 95.79, 88.69, 90.01, 89.60, 87.70, 83.29, 83.70, 80.03, 80.21, 82.28, 78.28, 69.72, 71.61, 74.35, 61.60, 69.89, 75.09, 63.59, 46.42, 66.81, 63.38];
+CO.d65 = l => { const t = (l - 380) / 10; if (t <= 0) return D65[0]; if (t >= 40) return D65[40]; const i = Math.floor(t), f = t - i; return D65[i] + (D65[i + 1] - D65[i]) * f; };
+
+/* XYZ of a reflectance / transmittance spectrum f(λ) (0–1) under D65, normalised so a perfect
+   white has Y = 1 */
+CO.xyz = f => {
+  let X = 0, Y = 0, Z = 0, N = 0;
+  for (let l = 380; l <= 780; l += 2) { const c = CO.cmf(l), e = CO.d65(l), v = f(l); X += c[0] * e * v; Y += c[1] * e * v; Z += c[2] * e * v; N += c[1] * e; }
+  return [X / N, Y / N, Z / N];
+};
+/* XYZ → sRGB (0–255), with the sRGB transfer curve; out-of-gamut colours are clipped */
+CO.srgb = xyz => {
+  const [X, Y, Z] = xyz, lin = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.2040 * Y + 1.0570 * Z];
+  return lin.map(v => { v = Math.min(1, Math.max(0, v)); return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); });
+};
+CO.hex = rgb => '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('');
+CO.chromaticity = xyz => { const s = xyz[0] + xyz[1] + xyz[2] || 1; return [xyz[0] / s, xyz[1] / s]; };
+/* colour of a spectrum given as arrays (x in nm, y), linearly interpolated (0 outside) */
+CO.interp = (x, y) => l => { if (l < x[0] || l > x[x.length - 1]) return null; let i = 0; while (i < x.length - 2 && x[i + 1] < l) i++; const t = (l - x[i]) / ((x[i + 1] - x[i]) || 1); return y[i] + (y[i + 1] - y[i]) * t; };
+/* a colloid in a cuvette: transmittance 10^(−A(λ)), A scaled so the peak absorbance is od;
+   wavelengths outside the calculated range count as fully transmitted */
+CO.transmitted = (x, ext, od) => {
+  const mx = Math.max(...ext) || 1, f = CO.interp(x, ext);
+  const xyz = CO.xyz(l => { const e = f(l); return e == null ? 1 : Math.pow(10, -od * e / mx); });
+  return { xyz, rgb: CO.srgb(xyz), hex: CO.hex(CO.srgb(xyz)), xy: CO.chromaticity(xyz) };
+};
+/* scattered light (dark field): the colour of the scattering spectrum under white light,
+   brightness normalised (only the hue and saturation are meaningful) */
+CO.scattered = (x, sca) => {
+  const mx = Math.max(...sca) || 1, f = CO.interp(x, sca);
+  const xyz = CO.xyz(l => { const e = f(l); return e == null ? 0 : e / mx; }), k = 0.9 / Math.max(1e-9, ...CO.srgbLinear(xyz));
+  const xyz2 = xyz.map(v => v * k);
+  return { xyz: xyz2, rgb: CO.srgb(xyz2), hex: CO.hex(CO.srgb(xyz2)), xy: CO.chromaticity(xyz) };
+};
+CO.srgbLinear = xyz => { const [X, Y, Z] = xyz; return [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.2040 * Y + 1.0570 * Z]; };
+})();
+
+</script>
+<script>
 /* js/engine/bem.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — engine/bem.js
@@ -3678,6 +3933,9 @@ RNBX.trace = function trace(doc) {
     const acc = h.fields[key] = h.fields[key] || [C.c(0), C.c(0)];
     acc[0] = C.add(acc[0], f[0]); acc[1] = C.add(acc[1], f[1]);
     (h.parts[key] = h.parts[key] || []).push({ f, P: ray.P, lambda: ray.lambda });
+    // polarisation state: polarised light adds coherently per source and wavelength, unpolarised light apart
+    if (ray.E) { const pf = (h.pfields = h.pfields || {})[key] = (h.pfields || {})[key] || [C.c(0), C.c(0)]; pf[0] = C.add(pf[0], f[0]); pf[1] = C.add(pf[1], f[1]); }
+    else h.unpol = (h.unpol || 0) + ray.P;
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
     // ray bundles: where each ray lands across the detector (for the spot readout)
     if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }
@@ -17622,6 +17880,14 @@ function readout(obj) {
       const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
       html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
     }
+    { const st = RNBX.optics.stokes(h);
+      if (st && (st.dop > 0.02 || !(h.unpol > 0))) {
+        // polarisation ellipse (p horizontal, s vertical), as seen looking into the beam
+        const a = U.rad(st.azimuth), b = U.rad(st.ellipticity), ax = 13, bx = 13 * Math.abs(Math.tan(b)), pts = [];
+        for (let i = 0; i <= 48; i++) { const t = i / 48 * 2 * Math.PI, x = ax * Math.cos(t), y = bx * Math.sin(t); pts.push([16 + x * Math.cos(a) - y * Math.sin(a), 16 - (x * Math.sin(a) + y * Math.cos(a))]); }
+        const ell = `<svg viewBox="0 0 32 32" width="32" height="32" style="vertical-align:middle;margin-right:6px"><line x1="2" y1="16" x2="30" y2="16" stroke="#9aa1ab" stroke-width="0.5"/><line x1="16" y1="2" x2="16" y2="30" stroke="#9aa1ab" stroke-width="0.5"/><path d="M ${pts.map(q => q[0].toFixed(2) + ' ' + q[1].toFixed(2)).join(' L ')}" fill="none" stroke="#d62728" stroke-width="1.6" opacity="${(0.35 + 0.65 * st.dop).toFixed(2)}"/></svg>`;
+        html += `<br>${ell}<b>Polarisation</b>: ${U.esc(RNBX.optics.describePol(st))} · Stokes (S₁, S₂, S₃)/S₀ = (${st.s.map(v => U.fmt(v, 3)).join(', ')}) · degree of polarisation ${U.fmt(st.dop * 100, 1)} %`;
+      } }
     if (h.w) html += `<br>Gaussian beam radius here: <b>${h.w >= 1 ? U.fmt(h.w, 3) + ' mm' : U.fmt(h.w * 1000, 1) + ' µm'}</b>`;
     return el('div', { class: 'readout', html });
   }
@@ -18878,7 +19144,7 @@ const KEY = 'rnbx-studio-v1';
 
 /* ---------- materials: short names and drawing colours ---------- */
 const SUB = { 2: '₂', 3: '₃', 4: '₄' };
-const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
+const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m === 'aniso' ? 'Birefringent' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
 const COLORS = { Ag: '#b3bac4', 'Ag-IR': '#b3bac4', Au: '#d6a83a', 'Au-IR': '#d6a83a', Al: '#c9ced6', Cu: '#c8784a', Cr: '#8d939b', Ti: '#9aa0a8', Ni: '#a9a59a', Pt: '#c7c9cc', W: '#7d8189',
   SiO2: '#8fc9b9', TiO2: '#f0d27a', Al2O3: '#e8a13a', HfO2: '#c3a6e0', MgF2: '#bfe3f0', Si3N4: '#9fb7e3', 'Si3N4-IR': '#9fb7e3', ZnO: '#e9e3b0', ZnS: '#f2c7a5', CaF2: '#d6eef7',
   Si: '#6c7a89', Ge: '#59606b', H2O: '#bfdcf5', EtOH: '#d5e8f7', MeOH: '#d5e8f7', Acetone: '#dbe9f5', PDMS: '#d9ead3', PMMA: '#e6f0ea', air: '#ffffff', custom: '#c8c8c8' };
@@ -18916,7 +19182,8 @@ const flat = items => items.reduce((a, it) => a.concat(it.group ? Array.from({ l
 ST.flat = d => flat(d.items);
 /* a film's material for the solver; a mixture (effective medium) carries its two parts */
 const emaOf = l => { const e = l.ema || {}; return { a: { mat: e.a || 'SiO2', n: e.an, k: e.ak }, b: { mat: e.b || 'air', n: e.bn, k: e.bk }, f: e.f == null ? 0.3 : +e.f, model: e.model || 'bruggeman' }; };
-const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : { mat: l.mat, n: l.n, k: l.k });
+const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : l.mat === 'aniso' ? Object.assign({ mat: 'aniso' }, ST.ANISO_DEFAULT, l.aniso || {}) : { mat: l.mat, n: l.n, k: l.k });
+ST.ANISO_DEFAULT = { no: 1.53, ko: 0, ne: 1.71, ke: 0, tilt: 90, az: 45 };
 ST.EMA_DEFAULT = { a: 'SiO2', b: 'air', f: 0.3, model: 'bruggeman' };
 /* roughness: a 50 % void Bruggeman layer between a film (or the substrate) and what lies above it */
 const roughLayer = (below, above, nm, l) => ({ m: { mat: 'ema', ema: { a: below, b: above, f: 0.5, model: 'bruggeman' } }, d: nm, rough: true, l: { name: 'roughness', color: U.mix(l.color || colorOf(l.mat), '#ffffff', 0.55), mat: 'ema', nm } });
@@ -18975,8 +19242,8 @@ const fmt = (v, st) => { const dd = Math.max(0, -Math.floor(Math.log10(st) + 1e-
 const f1 = (v, d = 1) => (isFinite(v) ? (+v).toFixed(d) : '–');
 const VIRIDIS = ['#440154', '#472c7a', '#3b518b', '#2c718e', '#21908d', '#27ad81', '#5cc863', '#aadc32', '#fde725'].map(U.hexToRgb);
 const cmap = v => { const t = U.clamp(v, 0, 1) * (VIRIDIS.length - 1), i = Math.min(VIRIDIS.length - 2, Math.floor(t)), u = t - i, a = VIRIDIS[i], b = VIRIDIS[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
-const QCOL = { R: '#1f77b4', T: '#2ca02c', A: '#d62728' };
-const QNAME = { R: 'Reflectance', T: 'Transmittance', A: 'Absorptance' };
+const QCOL = { R: '#1f77b4', T: '#2ca02c', A: '#d62728', X: '#9467bd' };
+const QNAME = { R: 'Reflectance', T: 'Transmittance', A: 'Absorptance', X: 'T converted s↔p' };
 
 /* an SVG chart in pixel units: { svg, X, Y, inv } */
 const chart = o => {
@@ -19072,9 +19339,9 @@ function render() {
     el('span', { class: 'st-grow' }),
     el('button', { class: 'btn primary', type: 'button', text: target ? 'Update the stack' : 'Insert into figure', onclick: insertDialog }),
     D.iconBtn('close', 'Close (Esc): the design is kept for next time', ST.close));
-  views = { list: el('div', { class: 'st-list' }), cross: el('div', { class: 'st-cross' }), spec: el('div', { class: 'st-spec' }), map: el('div', { class: 'st-map' }), absorb: el('div', { class: 'st-absorb' }) };
+  views = { list: el('div', { class: 'st-list' }), cross: el('div', { class: 'st-cross' }), spec: el('div', { class: 'st-spec' }), map: el('div', { class: 'st-map' }), absorb: el('div', { class: 'st-absorb' }), modes: el('div', { class: 'st-modes' }) };
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Structure' }), sideControls(), views.list, substrateRow(), el('div', { class: 'hint', text: 'Top of the list = top of the stack. ⧉ duplicates, ↑↓ move, λ/4 sets a quarter-wave thickness at the design wavelength. Tick films and press “Repeat” for a periodic group.' }));
-  const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Cross-section and field |E|²' }), fieldControls(), views.cross, views.absorb);
+  const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Cross-section and field |E|²' }), fieldControls(), views.cross, views.absorb, el('h4', { text: 'Guided modes' }), modeControls(), views.modes);
   const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Optical response' }), specControls(), views.spec, el('h4', { text: 'Wavelength × angle map' }), mapControls(), views.map, el('h4', { text: 'Fit to a measurement' }), RNBX.layerFit ? RNBX.layerFit.panel() : null);
   root.append(head, el('div', { class: 'st-body' }, left, mid, right));
   buildList();
@@ -19085,7 +19352,15 @@ function render() {
 const fld = (label, input, wide) => el('label', { class: 'st-f' + (wide ? ' wide' : '') }, el('span', { text: label }), input);
 const num = (get, set, o = {}) => { const i = el('input', { type: 'number', value: get(), step: o.step || 1, min: o.min, max: o.max, oninput: () => { const v = parseFloat(i.value); if (isFinite(v)) change(() => set(o.min != null ? Math.max(o.min, o.max != null ? Math.min(o.max, v) : v) : v), o.key || Math.random()); } }); return i; };
 const sel1 = (opts, get, set, key, structural) => { const s = el('select', { onchange: () => change(() => set(s.value), key, structural) }, opts.map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] }))); s.value = get(); return s; };
-const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)']]) : TF().options(), get, set, key, true);
+const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)'], ['aniso', 'Birefringent / liquid crystal (uniaxial)']]) : TF().options(), get, set, key, true);
+/* a uniaxial film: indices, and the optic axis (tilt from the normal, azimuth from the plane of incidence) */
+const anisoRow = l => {
+  l.aniso = Object.assign({}, ST.ANISO_DEFAULT, l.aniso || {});
+  const a = l.aniso, n4 = (k, lab, o) => [el('span', { class: 'hint', style: { margin: 0 }, text: lab }), num(() => a[k], v => { a[k] = v; }, Object.assign({ step: 0.001, key: k + Math.random() }, o || {}))];
+  const pre = el('select', { onchange: () => { const q = TF().ANISO_PRESETS.find(x => x[0] === pre.value); if (q) change(() => Object.assign(a, q[2]), null, true); } }, [el('option', { value: '', text: 'Preset…' })].concat(TF().ANISO_PRESETS.map(q => el('option', { value: q[0], text: q[1] }))));
+  return el('div', { class: 'st-row2 st-ema' }, pre, ...n4('no', 'nₒ'), ...n4('ne', 'nₑ'), ...n4('ko', 'kₒ', { min: 0 }), ...n4('ke', 'kₑ', { min: 0 }), ...n4('tilt', 'axis tilt °', { step: 1, min: 0, max: 90 }), ...n4('az', 'azimuth °', { step: 1, min: -180, max: 180 }),
+    el('span', { class: 'hint', style: { margin: 0 }, text: 'Tilt 0° = optic axis along the normal; 90° with azimuth 45° = an in-plane retarder at 45° to the plane of incidence.' }));
+};
 /* the two parts of a mixture, the fraction of B and the model */
 const emaRow = l => {
   l.ema = Object.assign({}, ST.EMA_DEFAULT, l.ema || {});
@@ -19130,7 +19405,7 @@ function layerCard(l, arr, i, inGroup) {
   const k = 'L' + (inGroup ? 'g' : '') + i + Math.random().toString(36).slice(2, 5);
   const c = el('input', { type: 'color', value: (l.color || '#cccccc').slice(0, 7), title: 'Colour in the drawing', oninput: () => change(() => { l.color = c.value; }, k + 'c') });
   const nmI = el('input', { type: 'text', value: l.name || '', title: 'Name', oninput: () => change(() => { l.name = nmI.value; }, k + 'n') });
-  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); }, k + 'm', true);
+  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); if (v === 'aniso' && !l.aniso) l.aniso = Object.assign({}, ST.ANISO_DEFAULT); if (v === 'aniso') l.name = 'Birefringent'; }, k + 'm', true);
   const rough = num(() => l.rough || 0, v => { l.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: k + 'r' });
   rough.className = 'st-rough'; rough.title = 'Roughness of the top surface (nm): a 50 % void Bruggeman layer above the film';
   const th = num(() => l.nm, v => { l.nm = Math.max(0, v); }, { min: 0, max: 1e6, key: k + 't' });
@@ -19148,6 +19423,7 @@ function layerCard(l, arr, i, inGroup) {
   const card = el('div', { class: 'st-layer' }, el('div', { class: 'st-row' }, c, nmI, ms), row2);
   if (l.mat === 'custom') card.append(nkRow(l));
   if (l.mat === 'ema') card.append(emaRow(l));
+  if (l.mat === 'aniso') card.append(anisoRow(l));
   return card;
 }
 let grpEl = null;
@@ -19198,7 +19474,7 @@ function specControls() {
   if (wl) kids.push(fld('From (nm)', num(() => c.lmin, v => { c.lmin = v; }, { min: 100, key: 'lmin' })), fld('To (nm)', num(() => c.lmax, v => { c.lmax = v; }, { min: 100, key: 'lmax' })), fld('Angle (°)', num(() => c.angle, v => { c.angle = v; }, { min: 0, max: 89.9, step: 0.5, key: 'cang' })));
   else kids.push(fld('From (°)', num(() => c.amin, v => { c.amin = v; }, { min: 0, max: 89.9, key: 'amin' })), fld('To (°)', num(() => c.amax, v => { c.amax = v; }, { min: 0, max: 89.9, key: 'amax' })), fld('Wavelength (nm)', num(() => c.lambda, v => { c.lambda = v; }, { min: 100, key: 'clam' })));
   kids.push(fld('Polarisation', sel1([['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']], () => c.pol, v => { c.pol = v; }, 'cpol')),
-    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
+    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['RTX', 'R, T and polarisation-converted T (birefringent films)'], ['TX', 'T and converted T'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
     fld('Points', sel1([['301', '301'], ['1201', '1201'], ['4001', '4001 (sharp modes)']], () => String(c.points || 1201), v => { c.points = +v; }, 'cpts')));
   return el('div', { class: 'st-grid' }, ...kids);
 }
@@ -19210,6 +19486,63 @@ function mapControls() {
     fld('Polarisation', sel1([['p', 'p (TM)'], ['s', 's (TE)'], ['avg', 'Unpolarised']], () => mp.pol, v => { mp.pol = v; }, 'mpol')),
     fld('λ from', num(() => mp.lmin, v => { mp.lmin = v; }, { min: 100, key: 'mlmin' })), fld('λ to', num(() => mp.lmax, v => { mp.lmax = v; }, { min: 100, key: 'mlmax' })),
     fld('θ from', num(() => mp.amin, v => { mp.amin = v; }, { min: 0, max: 89, key: 'mamin' })), fld('θ to', num(() => mp.amax, v => { mp.amax = v; }, { min: 1, max: 89.9, key: 'mamax' })));
+}
+
+/* ---------- guided modes ---------- */
+const MD = () => (d.modes = Object.assign({ nm: d.field.nm || 633, pol: 'both', prism: 1.78, ain: 0, sel: 0, disp: false }, d.modes || {}));
+function modeControls() {
+  const o = MD();
+  return el('div', { class: 'st-grid' },
+    fld('Wavelength (nm)', num(() => o.nm, v => { o.nm = v; }, { min: 100, max: 30000, key: 'mnm' })),
+    fld('Modes', sel1([['both', 'TE and TM'], ['s', 'TE (s)'], ['p', 'TM (p)']], () => o.pol, v => { o.pol = v; }, 'mpol')),
+    fld('Prism index (coupling)', num(() => o.prism, v => { o.prism = v; }, { min: 1, max: 5, step: 0.01, key: 'mpr' })),
+    fld('Grating: incidence (°)', num(() => o.ain, v => { o.ain = v; }, { min: -89, max: 89, step: 1, key: 'main' })),
+    el('label', { class: 'st-f row' }, el('input', { type: 'checkbox', checked: !!o.disp, onchange: e => change(() => { o.disp = e.target.checked; }) }), el('span', { text: 'n_eff against wavelength' })));
+}
+ST.modesOf = (dd = d, nm, pol) => {
+  const st = ST.stack(dd), out = [];
+  (pol === 'both' ? ['s', 'p'] : [pol]).forEach(p => out.push(...TF().modes(st, nm, p)));
+  // number the modes per polarisation: TE0, TE1 … (highest n_eff first)
+  ['s', 'p'].forEach(p => out.filter(m => m.pol === p).sort((a, b) => b.n[0] - a.n[0]).forEach((m, i) => { m.name = (p === 's' ? 'TE' : 'TM') + i; }));
+  return out.sort((a, b) => b.n[0] - a.n[0]);
+};
+const lenTxt = L => (!isFinite(L) ? 'lossless' : L >= 1e6 ? f1(L / 1e6, 2) + ' mm' : L >= 1e3 ? f1(L / 1e3, 1) + ' µm' : f1(L, 0) + ' nm');
+let modeTok = 0;
+function drawModes() {
+  const host = views.modes, o = MD(), tok = ++modeTok; if (!host) return;
+  host.innerHTML = '<div class="hint">Searching for modes…</div>';
+  setTimeout(() => {
+    if (tok !== modeTok || !root) return;
+    let ms;
+    try { ms = ST.modesOf(d, o.nm, o.pol); } catch (e) { host.textContent = 'Mode search failed: ' + e.message; return; }
+    host.innerHTML = '';
+    if (!ms.length) { host.append(el('div', { class: 'hint', text: `No guided mode at ${o.nm} nm: no film has a higher index than both sides, and no metal surface carries a plasmon. (Leaky modes, below the cladding index, are not listed.)` })); if (o.disp) drawDispersion(host); return; }
+    o.sel = Math.min(o.sel || 0, ms.length - 1);
+    const sinI = Math.sin(o.ain * Math.PI / 180), rows = ms.map((m, i) => {
+      const ne = m.n[0], th = ne < o.prism ? Math.asin(ne / o.prism) * 180 / Math.PI : NaN, per = o.nm / (ne - sinI);
+      return el('tr', { class: i === o.sel ? 'st-sel' : '', style: { cursor: 'pointer' }, onclick: () => { o.sel = i; save(); drawModes(); } },
+        el('td', { html: `<b>${m.name}</b>` }), el('td', { text: ne.toFixed(5) + (m.n[1] > 0 ? ` + ${m.n[1].toExponential(2)}i` : '') }), el('td', { text: lenTxt(m.Lprop) }),
+        el('td', { text: isFinite(th) ? f1(th, 2) + '°' : '—' }), el('td', { text: per > 0 && isFinite(per) ? f1(per, 1) + ' nm' : '—' }));
+    });
+    host.append(el('table', { class: 'st-tab' }, el('tr', {}, ...['Mode', 'n_eff', 'Propagation length (1/e power)', `Prism coupling angle (n = ${o.prism})`, `Grating period (1st order, ${o.ain}°)`].map(t => el('th', { text: t }))), ...rows));
+    // profile of the chosen mode
+    const m = ms[o.sel], st = ST.stack(d), fr = TF().modeField(st, o.nm, m), w = Math.max(300, host.clientWidth || 440), lo = lightOrder();
+    const bands = []; let z0 = 0; lo.films.forEach(l => { bands.push([z0, z0 + +l.nm, l.color || colorOf(l.mat)]); z0 += +l.nm; });
+    const ch = chart({ id: 'st-mode', w, h: 200, xr: [fr.z[0], fr.z[fr.z.length - 1]], yr: [0, 1.05], xlabel: 'Depth z (nm), light-entry side at 0', ylabel: m.pol === 'p' ? '|H_y|² (norm.)' : '|E_y|² (norm.)',
+      under: (X, Y, L, R, T, B) => bands.map(b => `<rect x="${X(b[0])}" y="${T}" width="${Math.max(0.5, X(b[1]) - X(b[0]))}" height="${B - T}" fill="${b[2]}" fill-opacity="0.45"/>`).join(''),
+      series: [{ x: fr.z, y: fr.f, color: m.pol === 'p' ? '#d62728' : '#1f77b4', w: 1.8 }] });
+    host.append(el('div', { html: ch.svg }), el('div', { class: 'hint', text: `${m.name}: n_eff = ${m.n[0].toFixed(5)}${m.n[1] > 0 ? ` + ${m.n[1].toExponential(3)}i (lossy; propagation length ${lenTxt(m.Lprop)})` : ''}. The mode decays into both sides. Prism coupling (Otto / Kretschmann, attenuated total reflection) at sin θ = n_eff / n_prism; a grating couples it when n_eff = sin θ + λ/Λ. Exact zeros of the transfer-matrix dispersion relation; roughness layers and mixtures included.` }));
+    if (o.disp) drawDispersion(host);
+  }, 20);
+}
+function drawDispersion(host) {
+  const o = MD(), c = d.calc, lo = Math.min(c.lmin, c.lmax), hi = Math.max(c.lmin, c.lmax), pts = { s: [], p: [] };
+  for (let i = 0; i <= 30; i++) { const lam = lo + (hi - lo) * i / 30; ST.modesOf(d, lam, o.pol).forEach(m => pts[m.pol].push([lam, m.n[0]])); }
+  const all = pts.s.concat(pts.p); if (!all.length) return;
+  const y0 = Math.min(...all.map(q => q[1])), y1 = Math.max(...all.map(q => q[1])), pad = (y1 - y0) * 0.08 || 0.05, w = Math.max(300, host.clientWidth || 440);
+  const dots = (X, Y) => ['s', 'p'].map(p => pts[p].map(q => `<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="2.2" fill="${p === 's' ? '#1f77b4' : '#d62728'}"/>`).join('')).join('');
+  const ch = chart({ id: 'st-disp', w, h: 200, xr: [lo, hi], yr: [y0 - pad, y1 + pad], xlabel: 'Wavelength (nm)', ylabel: 'n_eff', over: dots, legend: [{ name: 'TE', color: '#1f77b4' }, { name: 'TM', color: '#d62728' }] });
+  host.append(el('div', { html: ch.svg }), el('div', { class: 'hint', text: `Guided modes from ${lo} to ${hi} nm (the Optical response range), 31 wavelengths.` }));
 }
 
 /* ---------- calculations ---------- */
@@ -19228,7 +19561,7 @@ let refreshT = 0;
 function refresh() {
   if (!root) return;
   clearTimeout(refreshT);
-  refreshT = setTimeout(() => { drawSpectrum(); drawCross(); scheduleMap(); }, 30);
+  refreshT = setTimeout(() => { drawSpectrum(); drawCross(); scheduleMap(); drawModes(); }, 30);
 }
 
 /* spectrum */
@@ -19314,7 +19647,7 @@ function drawCross() {
   }
   host.innerHTML = s + '</svg>';
   const A = fr.absorbed.reduce((a, b) => a + b, 0), r = TF().response(ST.stack(d), f.nm, f.angle, f.pol);
-  views.absorb.innerHTML = `<div class="readout">At ${f1(f.nm, 0)} nm, ${f1(f.angle, 1)}°: R ${f1(r.R * 100)} %, T ${f1(r.T * 100)} %, A ${f1(r.A * 100)} % (in the films ${f1(A * 100)} %). Peak |E|² ${f1(mx, 2)}. Total thickness ${f1(total, 0)} nm in ${o.films.length} film${o.films.length === 1 ? '' : 's'}.${d.side === 'bottom' ? ' Light from below: drawn with the substrate at the bottom, light entering from there.' : ''}</div>`;
+  views.absorb.innerHTML = `<div class="readout">At ${f1(f.nm, 0)} nm, ${f1(f.angle, 1)}°: R ${f1(r.R * 100)} %, T ${f1(r.T * 100)} %, A ${f1(r.A * 100)} % (in the films ${f1(A * 100)} %). Peak |E|² ${f1(mx, 2)}. Total thickness ${f1(total, 0)} nm in ${o.films.length} film${o.films.length === 1 ? '' : 's'}.${d.side === 'bottom' ? ' Light from below: drawn with the substrate at the bottom, light entering from there.' : ''}${TF().hasAniso(ST.stack(d)) ? ' Birefringent films: R, T, A and ellipsometry are exact (4 × 4 method); this field profile and the mode search use their ordinary index.' : ''}</div>`;
 }
 
 /* wavelength × angle map, calculated in slices so the page stays responsive */
@@ -20553,8 +20886,31 @@ PT.point = (dd, lam, N) => {
   const c = MIE().cross(Sx), hs = PT.hotSpot(dd), E2 = MIE().intensity(MIE().field(Sx, hs[0], hs[1], hs[2]));
   return { lam, Cext: c.Cext, Csca: c.Csca, Cabs: c.Cabs, E2, S: Sx };
 };
+/* a size distribution (single spheres, core–shell or rods): Gaussian in size with σ = spread %,
+   the whole particle scaled, 11 nodes from −2.5σ to +2.5σ; cross-sections averaged per particle */
+PT.samples = dd => {
+  const sp = +dd.spread || 0;
+  if (!(sp > 0) || !(dd.kind === 'single' || dd.kind === 'rod')) return [{ dd, w: 1 }];
+  const out = [];
+  for (let t = -2.5; t <= 2.501; t += 0.5) {
+    const f = 1 + sp / 100 * t; if (f < 0.15) continue;
+    const c = JSON.parse(JSON.stringify(dd)); c.spread = 0;
+    if (dd.kind === 'rod') { c.rod.L = dd.rod.L * f; c.rod.D = dd.rod.D * f; c.core.d = dd.core.d * f; }
+    else { c.core.d = dd.core.d * f; c.shells.forEach(q => { q.t = (+q.t || 0) * f; }); }
+    out.push({ dd: c, w: Math.exp(-t * t / 2) });
+  }
+  const W = out.reduce((a, q) => a + q.w, 0); out.forEach(q => { q.w /= W; });
+  return out;
+};
+PT.ensemble = (dd, lam, lo) => {
+  const S = PT.samples(dd);
+  if (S.length === 1) return PT.point(dd, lam, PT.order(dd, lo || lam));
+  const r = { lam, Cext: 0, Csca: 0, Cabs: 0, E2: 0 };
+  S.forEach(q => { const p = PT.point(q.dd, lam, PT.order(q.dd, lo || lam)); ['Cext', 'Csca', 'Cabs', 'E2'].forEach(k => { r[k] += q.w * (isFinite(p[k]) ? p[k] : 0); }); });
+  return r;
+};
 const ramanNm = (lam, shift) => 1 / (1 / lam - shift * 1e-7);
-PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
+PT.sig = dd => JSON.stringify([+dd.spread || 0, dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
 
 /* ---------- state ---------- */
 let d = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, views = {};
@@ -20594,13 +20950,14 @@ PT.render = host => {
     el('span', { class: 'st-grow' }),
     el('button', { class: 'btn primary', type: 'button', text: 'Insert into figure', onclick: insertDialog }),
     D.iconBtn('close', 'Close (Esc): the design is kept for next time', ST().close)));
-  views = { left: el('div', {}), sketch: el('div', { class: 'st-cross' }), field: el('div', { class: 'st-field' }), fieldInfo: el('div', { class: 'readout' }), spec: el('div', { class: 'st-spec' }), hot: el('div', { class: 'st-spec' }), sweep: el('div', { class: 'st-spec' }), status: el('div', { class: 'hint' }) };
+  views = { left: el('div', {}), sketch: el('div', { class: 'st-cross' }), field: el('div', { class: 'st-field' }), fieldInfo: el('div', { class: 'readout' }), spec: el('div', { class: 'st-spec' }), hot: el('div', { class: 'st-spec' }), colour: el('div', { class: 'pt-colour' }), sweep: el('div', { class: 'st-spec' }), status: el('div', { class: 'hint' }) };
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Particle' }), views.left);
   const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Geometry' }), views.sketch, el('h4', { text: 'Near field |E|²' }), probeControls(), views.field, views.fieldInfo);
   const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Extinction, scattering, absorption' }), specControls(), views.status, views.spec,
+    el('h4', { text: 'Colour of the colloid' }), views.colour,
     el('h4', { text: 'Hot spot and SERS enhancement' }), views.hot, hasGap() ? el('h4', { text: 'Field against the gap' }) : null, hasGap() ? sweepControls() : null, hasGap() ? views.sweep : null);
   root.append(el('div', { class: 'st-body' }, left, mid, right));
-  buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep();
+  buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep(); drawColour();
   runAll();
 };
 const hasGap = () => d.kind === 'dimer' || d.kind === 'mirror' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
@@ -20623,6 +20980,7 @@ function buildLeft() {
     g.push(fld('Rods', sel1([['one', 'One rod'], ['tip', 'Two, end to end (tip gap)'], ['side', 'Two, side by side']], () => ro.pair, v => { d.rod.pair = v; if (v !== 'one' && !(+d.rod.gap > 0)) d.rod.gap = 2; if (v !== 'one') d.orient = 'long'; }, 'pair', 'all')),
       fld('Ends', sel1([['round', 'Rounded (hemispherical caps)'], ['spheroid', 'Spheroid']], () => ro.ends, v => { d.rod.ends = v; }, 'ends')),
       fld('Orientation', sel1([['random', 'Random (in solution)'], ['long', 'Light polarised along the rods'], ['trans', 'Polarised across the rods']], () => d.orient || 'random', v => { d.orient = v; }, 'ori')));
+    if (ro.pair === 'one') g.push(fld('Size spread σ (%)', num(() => +d.spread || 0, v => { d.spread = U.clamp(v, 0, 35); }, { step: 1, min: 0, max: 35, key: 'spread', title: 'Gaussian spread of length and width together (same aspect ratio); 0 = all the same size' })));
     if (ro.pair !== 'one') g.push(fld('Gap g (nm)', num(() => ro.gap, v => { d.rod.gap = Math.max(0.1, v); }, { step: 0.1, min: 0.1, max: 500, key: 'rgap', title: ro.pair === 'tip' ? 'Tip-to-tip distance' : 'Side-to-side distance' })));
     host.append(el('div', { class: 'st-grid' }, ...g));
     const box = el('div', { class: 'st-group st-player' }, el('div', { class: 'st-cap', text: ro.pair === 'one' ? 'Rod' : 'Each rod' }),
@@ -20661,6 +21019,7 @@ function buildLeft() {
     el('button', { class: 'btn small', type: 'button', text: '+ Shell', title: 'Add a shell outside the particle', onclick: () => change(() => d.shells.push(shell('SiO2', 5)), null, 'list') }),
     el('span', {})));
   const R = outerR(d);
+  if (d.kind === 'single') host.append(el('div', { class: 'st-grid' }, fld('Size spread σ (%)', num(() => +d.spread || 0, v => { d.spread = U.clamp(v, 0, 35); }, { step: 1, min: 0, max: 35, key: 'spread', title: 'Gaussian spread of the diameter (whole particle scaled); 0 = all the same size' }))));
   if (d.kind === 'mirror') host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm, ${UI().f1(+d.gap, 2)} nm above the substrate. Multipole image method (Wind, Vlieger & Bedeaux 1987): the sphere's multipoles and their images in the substrate, solved together (${PT.order(d, d.calc.lmin)} orders for this gap), with the dipole from exact Mie theory so the size red-shift and radiation damping are kept. The medium fills the gap and the space around: for a nanoparticle-on-mirror set it to the spacer's index (e.g. 1.45 for a SAM), which sets the gap mode. The exciting field is the local field (incident plus reflected); “normal” drives the gap mode seen in dark-field with p-polarised light. Checked against exact two-sphere Mie theory (a perfect mirror is equivalent to a dimer). Scattering includes the image dipole; extinction is that of the particle.` }));
   else host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
 }
@@ -20694,12 +21053,12 @@ async function runSpec() {
   spec = out;
   for (let i = 0; i < n; i++) {
     if (run !== specRun) return;
-    const lam = lo + (hi - lo) * i / (n - 1), p = PT.point(dd, lam, N);
+    const lam = lo + (hi - lo) * i / (n - 1), p = +dd.spread > 0 ? PT.ensemble(dd, lam, lo) : PT.point(dd, lam, N);
     out.x.push(lam); out.Cext.push(p.Cext); out.Csca.push(p.Csca); out.Cabs.push(p.Cabs); out.E2.push(p.E2);
     if (views.status) views.status.textContent = `Calculating… ${Math.round(100 * (i + 1) / n)} %` + (dd.kind === 'rod' ? '' : ` (${N} multipole orders)`);
     if (i % 3 === 2 || i === n - 1) { drawSpec(); await later(); }
   }
-  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? PT.rodModel(dd) + '.' : `${N} multipole orders.`); drawSpec();
+  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? PT.rodModel(dd) + '.' : `${N} multipole orders.`) + (PT.samples(dd).length > 1 ? ` Averaged over a size distribution (σ = ${dd.spread} %, ${PT.samples(dd).length} sizes).` : ''); drawSpec(); drawColour();
 }
 async function runRaman() {
   const run = ++fieldRun, dd = d; await later(); if (run !== fieldRun) return;
@@ -20863,6 +21222,26 @@ function drawHot() {
   const r = raman;
   host.append(el('div', { class: 'readout', html: r ? `Hot spot ${where}: at ${UI().f1(r.lam, 1)} nm |E|² = <b>${fmtE(r.E2a)}</b>; at the Raman line ${UI().f1(r.lr, 1)} nm (${d.probe.shift} cm⁻¹) |E|² = ${fmtE(r.E2b)}.<br>SERS enhancement |E(λ)|²·|E(λ<sub>R</sub>)|² ≈ <b>${fmtE(r.EF)}</b> (the |E|⁴ approximation; chemical enhancement not included).` : 'Calculating the hot spot…' }));
 }
+/* the colour of the colloid: transmitted through a cuvette (absorbance scaled to an optical
+   density at the extinction peak) and scattered in dark field (engine/colour.js) */
+function drawColour() {
+  const host = views.colour; if (!host) return;
+  if (!spec || !spec.done) { host.innerHTML = '<div class="hint">After the spectrum.</div>'; return; }
+  const CO = RNBX.colour, od = d.colourOD == null ? 1 : +d.colourOD;
+  const t = CO.transmitted(spec.x, spec.Cext, od), sc = CO.scattered(spec.x, spec.Csca), lo = Math.min(...spec.x), hi = Math.max(...spec.x);
+  const part = lo > 400 || hi < 700;
+  const cuv = `<svg viewBox="0 0 120 120" width="120" height="120" xmlns="http://www.w3.org/2000/svg"><rect x="34" y="8" width="52" height="104" rx="3" fill="#ffffff" stroke="#9aa1ab"/><rect x="37" y="30" width="46" height="79" fill="${t.hex}"/><rect x="37" y="30" width="46" height="4" fill="#ffffff" opacity="0.35"/><text x="60" y="22" text-anchor="middle" font-size="9" fill="#555" font-family="Arial">1 cm</text></svg>`;
+  const df = `<svg viewBox="0 0 120 120" width="120" height="120" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="pt-df"><stop offset="0" stop-color="#ffffff"/><stop offset="0.25" stop-color="${sc.hex}"/><stop offset="1" stop-color="${sc.hex}" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="6" fill="#05070b"/><circle cx="60" cy="60" r="34" fill="url(#pt-df)"/></svg>`;
+  const odIn = el('input', { type: 'number', value: od, min: 0.05, max: 5, step: 0.1, style: { width: '70px' }, oninput: () => { const v = parseFloat(odIn.value); if (v > 0) { d.colourOD = v; save(); drawColour(); } } });
+  host.innerHTML = '';
+  host.append(el('div', { class: 'row', style: { gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' } },
+    el('div', { style: { textAlign: 'center' } }, el('div', { html: cuv }), el('div', { class: 'hint', style: { margin: 0 }, text: 'In a cuvette ' + t.hex })),
+    el('div', { style: { textAlign: 'center' } }, el('div', { html: df }), el('div', { class: 'hint', style: { margin: 0 }, text: 'Dark field ' + sc.hex })),
+    el('div', { style: { flex: '1 1 160px' } }, el('label', { class: 'st-f' }, el('span', { text: 'Optical density at the peak (1 cm)' }), odIn),
+      el('div', { class: 'hint', text: `Transmitted daylight (CIE D65) through the colloid, with the absorbance scaled to this optical density at the extinction peak; CIE 1931 colour matching, sRGB. Chromaticity x ${UI().f1(t.xy[0], 3)}, y ${UI().f1(t.xy[1], 3)}. Dark field: the colour of the scattered light (hue only).` + (part ? ' The spectrum does not cover 400–700 nm: wavelengths outside it count as not absorbed.' : '') }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add a cuvette of it to the figure', onclick: () => { const o = RNBX.createObject('cuvette', S.doc.page.width / 2, S.doc.page.height / 2); o.props.liquid = t.hex; o.props.fill = 0.75; RNBX.addObject(o); RNBX.toast('Cuvette added to the figure (' + t.hex + ').'); } }))));
+}
+PT.colour = () => (spec && spec.done ? { t: RNBX.colour.transmitted(spec.x, spec.Cext, d.colourOD == null ? 1 : +d.colourOD), s: RNBX.colour.scattered(spec.x, spec.Csca) } : null);
 const fmtE = v => (!isFinite(v) ? '–' : v >= 1e4 || v < 0.01 ? v.toExponential(2).replace('e+', ' × 10^').replace(/\^(\d+)/, (m, e) => '<sup>' + e + '</sup>').replace('e-', ' × 10^-') : UI().f1(v, v < 10 ? 2 : 0));
 const INFERNO = ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'].map(U.hexToRgb);
 const hot = v => { const t = U.clamp(v, 0, 1) * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(t)), u = t - i, a = INFERNO[i], b = INFERNO[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };

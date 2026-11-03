@@ -200,6 +200,9 @@ RNBX.trace = function trace(doc) {
     const acc = h.fields[key] = h.fields[key] || [C.c(0), C.c(0)];
     acc[0] = C.add(acc[0], f[0]); acc[1] = C.add(acc[1], f[1]);
     (h.parts[key] = h.parts[key] || []).push({ f, P: ray.P, lambda: ray.lambda });
+    // polarisation state: polarised light adds coherently per source and wavelength, unpolarised light apart
+    if (ray.E) { const pf = (h.pfields = h.pfields || {})[key] = (h.pfields || {})[key] || [C.c(0), C.c(0)]; pf[0] = C.add(pf[0], f[0]); pf[1] = C.add(pf[1], f[1]); }
+    else h.unpol = (h.unpol || 0) + ray.P;
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
     // ray bundles: where each ray lands across the detector (for the spot readout)
     if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }

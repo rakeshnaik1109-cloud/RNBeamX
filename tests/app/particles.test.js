@@ -36,7 +36,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   await page.waitForFunction(() => /multipole orders\./.test((document.querySelector('.st-right .hint') || {}).textContent || ''), null, { timeout: 90000 });
   // gap sweep: the field grows as the gap closes
   await page.click('text=Calculate gap sweep');
-  await page.waitForFunction(() => /At \d/.test((document.querySelectorAll('.st-right .hint')[2] || {}).textContent || '') && !/calculating/.test(document.querySelectorAll('.st-right .hint')[2].textContent), null, { timeout: 120000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.st-right .hint')].some(h => /^At \d.*rises steeply/.test(h.textContent) && !/calculating/.test(h.textContent)), null, { timeout: 120000 });
   // insert the panels and the map
   const ins = await page.evaluate(async () => {
     const made = RNBX.particleStudio.insert({ spec: true, hot: true, field: true, sweep: true }); RNBX.studio.close();

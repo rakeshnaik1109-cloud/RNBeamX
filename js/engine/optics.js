@@ -32,6 +32,23 @@ O.jones = (pol, angleDeg = 0) => {
     default: return null; // unpolarised
   }
 };
+/* Stokes parameters of the light at a detector (tracer hit): polarised parts per source and
+   wavelength add as fields, separate ones and unpolarised light as powers.
+   S1 = |E_p|² − |E_s|², S2 = 2 Re(E_p E_s*), S3 = 2 Im(E_p E_s*) (S3 = +1 for "Right circular" here) */
+O.stokes = h => {
+  if (!h) return null;
+  let S0 = h.unpol || 0, S1 = 0, S2 = 0, S3 = 0;
+  Object.values(h.pfields || {}).forEach(E => { const a = E[0], b = E[1], ab = C.mul(a, C.conj(b)), pa = C.abs2(a), pb = C.abs2(b); S0 += pa + pb; S1 += pa - pb; S2 += 2 * ab.re; S3 += 2 * ab.im; });
+  if (!(S0 > 0)) return null;
+  const Ip = Math.hypot(S1, S2, S3), dop = Math.min(1, Ip / S0);
+  return { S: [S0, S1, S2, S3], s: [S1 / S0, S2 / S0, S3 / S0], dop, azimuth: 0.5 * Math.atan2(S2, S1) * 180 / Math.PI, ellipticity: Ip > 0 ? 0.5 * Math.asin(Math.max(-1, Math.min(1, S3 / Ip))) * 180 / Math.PI : 0 };
+};
+O.describePol = st => {
+  if (!st) return '';
+  if (st.dop < 0.02) return 'unpolarised';
+  const e = st.ellipticity, a = st.azimuth, kind = Math.abs(e) > 44 ? (e > 0 ? 'right circular' : 'left circular') : Math.abs(e) < 1 ? `linear at ${a.toFixed(1)}° from p` : `elliptical (${e > 0 ? 'right' : 'left'}), major axis at ${a.toFixed(1)}°, ellipticity ${Math.abs(e).toFixed(1)}°`;
+  return (st.dop > 0.98 ? '' : `partially polarised (${(st.dop * 100).toFixed(0)} %), `) + kind;
+};
 O.scaleJ = (E, k) => E && [C.scale(E[0], k), C.scale(E[1], k)];
 O.powerJ = E => C.abs2(E[0]) + C.abs2(E[1]);
 O.applyM = (M, E) => [C.add(C.mul(M[0][0], E[0]), C.mul(M[0][1], E[1])), C.add(C.mul(M[1][0], E[0]), C.mul(M[1][1], E[1]))];
