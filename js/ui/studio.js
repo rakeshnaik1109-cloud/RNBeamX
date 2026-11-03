@@ -26,7 +26,7 @@ const KEY = 'rnbx-studio-v1';
 
 /* ---------- materials: short names and drawing colours ---------- */
 const SUB = { 2: '₂', 3: '₃', 4: '₄' };
-const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
+const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
 const COLORS = { Ag: '#b3bac4', 'Ag-IR': '#b3bac4', Au: '#d6a83a', 'Au-IR': '#d6a83a', Al: '#c9ced6', Cu: '#c8784a', Cr: '#8d939b', Ti: '#9aa0a8', Ni: '#a9a59a', Pt: '#c7c9cc', W: '#7d8189',
   SiO2: '#8fc9b9', TiO2: '#f0d27a', Al2O3: '#e8a13a', HfO2: '#c3a6e0', MgF2: '#bfe3f0', Si3N4: '#9fb7e3', 'Si3N4-IR': '#9fb7e3', ZnO: '#e9e3b0', ZnS: '#f2c7a5', CaF2: '#d6eef7',
   Si: '#6c7a89', Ge: '#59606b', H2O: '#bfdcf5', EtOH: '#d5e8f7', MeOH: '#d5e8f7', Acetone: '#dbe9f5', PDMS: '#d9ead3', PMMA: '#e6f0ea', air: '#ffffff', custom: '#c8c8c8' };
@@ -62,12 +62,35 @@ ST.PRESETS = PRESETS;
 /* films in the order top → bottom, repeats expanded */
 const flat = items => items.reduce((a, it) => a.concat(it.group ? Array.from({ length: Math.max(1, Math.round(it.repeat) || 1) }, () => it.items).reduce((b, g) => b.concat(flat(g)), []) : [it]), []);
 ST.flat = d => flat(d.items);
-const m = l => ({ mat: l.mat, n: l.n, k: l.k });
+/* a film's material for the solver; a mixture (effective medium) carries its two parts */
+const emaOf = l => { const e = l.ema || {}; return { a: { mat: e.a || 'SiO2', n: e.an, k: e.ak }, b: { mat: e.b || 'air', n: e.bn, k: e.bk }, f: e.f == null ? 0.3 : +e.f, model: e.model || 'bruggeman' }; };
+const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : { mat: l.mat, n: l.n, k: l.k });
+ST.EMA_DEFAULT = { a: 'SiO2', b: 'air', f: 0.3, model: 'bruggeman' };
+/* roughness: a 50 % void Bruggeman layer between a film (or the substrate) and what lies above it */
+const roughLayer = (below, above, nm, l) => ({ m: { mat: 'ema', ema: { a: below, b: above, f: 0.5, model: 'bruggeman' } }, d: nm, rough: true, l: { name: 'roughness', color: U.mix(l.color || colorOf(l.mat), '#ffffff', 0.55), mat: 'ema', nm } });
+/* the films top → bottom as the solver sees them, roughness layers included */
+const solverFilms = d => {
+  const out = [];
+  let above = { mat: d.ambient, n: d.ambientN, k: 0 };
+  flat(d.items).filter(l => +l.nm > 0).forEach(l => { const ml = m(l); if (+l.rough > 0) out.push(roughLayer(ml, above, +l.rough, l)); out.push({ m: ml, d: +l.nm, l }); above = ml; });
+  if (+d.substrate.rough > 0 && d.substrate.mat !== 'air') out.push(roughLayer(m(d.substrate), above, +d.substrate.rough, d.substrate));
+  return out;
+};
 /* the stack the solver sees (same convention as the Multilayer stack part) */
 ST.stack = d => {
-  const films = flat(d.items).filter(l => +l.nm > 0).map(l => ({ m: m(l), d: +l.nm }));
+  const films = solverFilms(d).map(f => ({ m: f.m, d: f.d }));
   const amb = { mat: d.ambient, n: d.ambientN, k: 0 }, sub = m(d.substrate);
-  return d.side === 'bottom' ? { inc: sub, layers: films.slice().reverse(), sub: amb } : { inc: amb, layers: films, sub };
+  if (d.side === 'bottom') return { inc: sub, layers: films.slice().reverse(), sub: amb };
+  const st = { inc: amb, layers: films, sub };
+  // a thick substrate: its back side adds an incoherent reflection
+  if (d.substrate.back && d.substrate.mat !== 'air') st.back = { d: (+d.substrate.thick || 1) * 1e6, exit: { mat: 'air' } };
+  return st;
+};
+/* the stack of a Multilayer part made here (keeps roughness, mixtures and the substrate back side) */
+ST.stackFromProps = p => {
+  if (!p || !p.studio || !p.studio.items) return null;
+  if (sig(ST.toProps(p.studio).layers) !== sig(p.layers || [])) return null;
+  return ST.stack(Object.assign({}, p.studio, { ambient: p.ambient || 'air', ambientN: p.ambientN, side: p.side || 'top' }));
 };
 
 /* ---------- design ⇄ Multilayer stack part ---------- */
@@ -77,7 +100,7 @@ const drawnT = (films, mode) => {
 };
 ST.toProps = (d, mode = 'compressed') => {
   const films = flat(d.items), t = drawnT(films, mode), air = d.substrate.mat === 'air';
-  const lay = films.map((l, i) => ({ name: l.name, color: l.color, t: t[i], tag: l.tag || '', mat: l.mat, nm: +l.nm || 0, n: l.n, k: l.k })).reverse();
+  const lay = films.map((l, i) => ({ name: l.name, color: l.color, t: t[i], tag: l.tag || '', mat: l.mat, nm: +l.nm || 0, n: l.n, k: l.k, ema: l.ema, rough: l.rough })).reverse();
   if (!air) lay.unshift({ name: d.substrate.name, color: d.substrate.color, t: Math.max(3, Math.min(6, t.reduce((a, b) => a + b, 0) * 0.8)), tag: d.substrate.tag || '', mat: d.substrate.mat, nm: 0, n: d.substrate.n, k: d.substrate.k });
   return { layers: lay, ambient: d.ambient, ambientN: d.ambientN, side: d.side, bottomMode: air ? 'film' : 'semi', calc: Object.assign({}, d.calc), studio: U.deepClone(d) };
 };
@@ -210,7 +233,17 @@ function render() {
 const fld = (label, input, wide) => el('label', { class: 'st-f' + (wide ? ' wide' : '') }, el('span', { text: label }), input);
 const num = (get, set, o = {}) => { const i = el('input', { type: 'number', value: get(), step: o.step || 1, min: o.min, max: o.max, oninput: () => { const v = parseFloat(i.value); if (isFinite(v)) change(() => set(o.min != null ? Math.max(o.min, o.max != null ? Math.min(o.max, v) : v) : v), o.key || Math.random()); } }); return i; };
 const sel1 = (opts, get, set, key, structural) => { const s = el('select', { onchange: () => change(() => set(s.value), key, structural) }, opts.map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] }))); s.value = get(); return s; };
-const matSelect = (get, set, key) => sel1(TF().options(), get, set, key, true);
+const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)']]) : TF().options(), get, set, key, true);
+/* the two parts of a mixture, the fraction of B and the model */
+const emaRow = l => {
+  l.ema = Object.assign({}, ST.EMA_DEFAULT, l.ema || {});
+  const e = l.ema, mats = TF().options(false);
+  return el('div', { class: 'st-row2 st-ema' },
+    el('span', { text: 'A' }), sel1(mats, () => e.a, v => { e.a = v; }, 'ea' + Math.random(), true),
+    el('span', { text: '+ B' }), sel1(mats, () => e.b, v => { e.b = v; }, 'eb' + Math.random(), true),
+    num(() => U.round((e.f || 0) * 100, 2), v => { e.f = U.clamp(v / 100, 0, 1); }, { min: 0, max: 100, step: 1, key: 'ef' + Math.random() }), el('span', { class: 'hint', style: { margin: 0 }, text: '% B' }),
+    sel1(TF().EMA_MODELS, () => e.model, v => { e.model = v; }, 'em' + Math.random()));
+};
 
 function sideControls() {
   const amb = sel1(TF().options(false), () => d.ambient, v => { d.ambient = v; }, 'amb', true);
@@ -224,8 +257,17 @@ function substrateRow() {
   const c = el('input', { type: 'color', value: (s.color || '#cccccc').slice(0, 7), oninput: () => change(() => { s.color = c.value; }, 'subc') });
   const nmI = el('input', { type: 'text', value: s.name || '', oninput: () => change(() => { s.name = nmI.value; }, 'subn') });
   const ms = matSelect(() => s.mat, v => { s.mat = v; s.name = shortName(v); s.color = colorOf(v); }, 'subm');
-  const card = el('div', { class: 'st-layer st-sub' }, el('div', { class: 'st-row' }, c, nmI, ms), el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: s.mat === 'air' ? 'No substrate: a free-standing film' : 'Substrate (thick, semi-infinite)' })));
+  const card = el('div', { class: 'st-layer st-sub' }, el('div', { class: 'st-row' }, c, nmI, ms), el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: s.mat === 'air' ? 'No substrate: a free-standing film' : s.back && d.side !== 'bottom' ? 'Substrate (thick: both faces count)' : 'Substrate (thick, semi-infinite)' })));
   if (s.mat === 'custom') card.append(nkRow(s));
+  if (s.mat !== 'air') {
+    const rough = num(() => s.rough || 0, v => { s.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: 'subr' });
+    rough.className = 'st-rough'; rough.title = 'Roughness of the substrate surface (nm)';
+    const back = el('input', { type: 'checkbox', checked: !!s.back, disabled: d.side === 'bottom', onchange: () => change(() => { s.back = back.checked; }, null, true) });
+    const row = el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: 'rough' }), rough, el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }),
+      el('label', { class: 'st-f row', title: 'Adds the reflection from the back face of a thick substrate (incoherent: no fringes). Off = the substrate continues for ever, as an index-matched or roughened back.' }, back, el('span', { text: 'Back-side reflection' })));
+    if (s.back && d.side !== 'bottom') row.append(num(() => s.thick || 1, v => { s.thick = Math.max(0.001, v); }, { min: 0.001, max: 100, step: 0.1, key: 'subt' }), el('span', { class: 'hint', style: { margin: 0 }, text: 'mm thick' }));
+    card.append(row);
+  }
   return el('div', {}, el('div', { class: 'st-cap', text: 'Substrate' }), card);
 }
 const nkRow = l => el('div', { class: 'st-row2' }, el('span', { text: 'n' }), num(() => l.n == null ? 1.5 : l.n, v => { l.n = v; }, { step: 0.001, key: 'n' + Math.random() }), el('span', { text: 'k' }), num(() => l.k || 0, v => { l.k = Math.max(0, v); }, { step: 0.001, min: 0, key: 'k' + Math.random() }));
@@ -236,7 +278,9 @@ function layerCard(l, arr, i, inGroup) {
   const k = 'L' + (inGroup ? 'g' : '') + i + Math.random().toString(36).slice(2, 5);
   const c = el('input', { type: 'color', value: (l.color || '#cccccc').slice(0, 7), title: 'Colour in the drawing', oninput: () => change(() => { l.color = c.value; }, k + 'c') });
   const nmI = el('input', { type: 'text', value: l.name || '', title: 'Name', oninput: () => change(() => { l.name = nmI.value; }, k + 'n') });
-  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; }, k + 'm');
+  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); }, k + 'm', true);
+  const rough = num(() => l.rough || 0, v => { l.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: k + 'r' });
+  rough.className = 'st-rough'; rough.title = 'Roughness of the top surface (nm): a 50 % void Bruggeman layer above the film';
   const th = num(() => l.nm, v => { l.nm = Math.max(0, v); }, { min: 0, max: 1e6, key: k + 't' });
   th.title = 'Real thickness (nm)';
   const tag = el('input', { type: 'text', value: l.tag || '', placeholder: 'tag', title: 'Tag for the layer key, e.g. M₁', class: 'st-tag', oninput: () => change(() => { l.tag = tag.value; }, k + 'g') });
@@ -244,13 +288,14 @@ function layerCard(l, arr, i, inGroup) {
   const row2 = el('div', { class: 'st-row2' }, th, el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'λ/4', title: 'Quarter-wave thickness at λ₀', onclick: () => change(() => { l.nm = qw(l.mat, d.lambda0, 1, l.n); }, null, true) }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'λ/2', title: 'Half-wave thickness at λ₀', onclick: () => change(() => { l.nm = qw(l.mat, d.lambda0, 2, l.n); }, null, true) }),
-    tag, el('span', { class: 'st-grow' }), chk,
+    tag, el('span', { class: 'hint', style: { margin: 0 }, text: 'rough' }), rough, el('span', { class: 'st-grow' }), chk,
     D.iconBtn('up', 'Move up', () => change(() => moveIn(arr, i, -1), null, true)),
     D.iconBtn('down', 'Move down', () => change(() => moveIn(arr, i, 1), null, true)),
     el('button', { class: 'icon-btn', type: 'button', text: '⧉', title: 'Duplicate', onclick: () => change(() => arr.splice(i + 1, 0, U.deepClone(l)), null, true) }),
     D.iconBtn('trash', 'Remove', () => change(() => { arr.splice(i, 1); sel.delete(l); }, null, true)));
   const card = el('div', { class: 'st-layer' }, el('div', { class: 'st-row' }, c, nmI, ms), row2);
   if (l.mat === 'custom') card.append(nkRow(l));
+  if (l.mat === 'ema') card.append(emaRow(l));
   return card;
 }
 let grpEl = null;
@@ -301,7 +346,7 @@ function specControls() {
   if (wl) kids.push(fld('From (nm)', num(() => c.lmin, v => { c.lmin = v; }, { min: 100, key: 'lmin' })), fld('To (nm)', num(() => c.lmax, v => { c.lmax = v; }, { min: 100, key: 'lmax' })), fld('Angle (°)', num(() => c.angle, v => { c.angle = v; }, { min: 0, max: 89.9, step: 0.5, key: 'cang' })));
   else kids.push(fld('From (°)', num(() => c.amin, v => { c.amin = v; }, { min: 0, max: 89.9, key: 'amin' })), fld('To (°)', num(() => c.amax, v => { c.amax = v; }, { min: 0, max: 89.9, key: 'amax' })), fld('Wavelength (nm)', num(() => c.lambda, v => { c.lambda = v; }, { min: 100, key: 'clam' })));
   kids.push(fld('Polarisation', sel1([['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']], () => c.pol, v => { c.pol = v; }, 'cpol')),
-    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A']], () => c.show, v => { c.show = v; }, 'cshow')),
+    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
     fld('Points', sel1([['301', '301'], ['1201', '1201'], ['4001', '4001 (sharp modes)']], () => String(c.points || 1201), v => { c.points = +v; }, 'cpts')));
   return el('div', { class: 'st-grid' }, ...kids);
 }
@@ -323,7 +368,7 @@ ST.fieldOf = (dd = d) => {
   return Object.assign({}, a, { e2: a.e2.map((v, i) => (v + b.e2[i]) / 2), absorbed: a.absorbed.map((v, i) => (v + b.absorbed[i]) / 2), R: (a.R + b.R) / 2 });
 };
 const lightOrder = () => {
-  const films = flat(d.items).filter(l => +l.nm > 0), amb = { name: TF().name(d.ambient), color: colorOf(d.ambient), mat: d.ambient };
+  const films = solverFilms(d).map(f => f.l), amb = { name: TF().name(d.ambient), color: colorOf(d.ambient), mat: d.ambient };
   return d.side === 'bottom' ? { inc: d.substrate, films: films.slice().reverse(), sub: amb } : { inc: amb, films, sub: d.substrate };
 };
 
@@ -339,10 +384,11 @@ function drawSpectrum() {
   const c = d.calc, host = views.spec, w = Math.max(280, host.clientWidth || 420), h = 230;
   let res;
   try { res = TF().scan(ST.stack(d), c); } catch (e) { host.textContent = 'Calculation failed: ' + e.message; return; }
+  if (res.ellips) { drawEllips(res); return; }
   const q = c.show.split('').filter(v => QCOL[v]), wl = c.scan === 'wl';
   const cross = wl ? (Math.abs((+d.field.angle || 0) - (+c.angle || 0)) < 1e-6 ? d.field.nm : null) : (Math.abs(d.field.nm - c.lambda) < 1e-6 ? d.field.angle : null);
   // a loaded measurement on the same axis (Fit to a measurement)
-  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.angle === !wl;
+  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.y && ov.angle === !wl;
   const ovSeries = showOv ? [{ x: ov.x.map(v => (wl && c.unit === 'um' ? v / 1000 : v)), y: ov.y, color: '#555555', w: 1.1 }] : [];
   const leg = q.map(k => ({ name: QNAME[k], color: QCOL[k] })).concat(showOv ? [{ name: 'Measured ' + ov.q, color: '#555555' }] : []);
   const ch = chart({ id: 'st-spec', w, h, xr: [res.x[0], res.x[res.x.length - 1]], yr: [0, 1], xlabel: res.xlabel, ylabel: q.length === 1 ? QNAME[q[0]] : 'R, T, A',
@@ -353,6 +399,21 @@ function drawSpectrum() {
   const svg = host.querySelector('svg');
   svg.style.cursor = 'crosshair';
   svg.onclick = e => { const r = svg.getBoundingClientRect(), v = ch.inv((e.clientX - r.left) * w / r.width); change(() => { if (wl) { d.field.nm = U.round(v, 1); d.field.angle = +c.angle || 0; } else { d.field.angle = U.round(U.clamp(v, 0, 89.9), 2); d.field.nm = +c.lambda; } }, null, true); };
+}
+
+/* ellipsometry: Ψ on the left axis (0–90°), Δ on the right (0–360°, drawn at a quarter scale) */
+function drawEllips(res) {
+  const c = d.calc, host = views.spec, w = Math.max(280, host.clientWidth || 420), h = 230, wl = c.scan === 'wl';
+  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.angle === !wl && (ov.q === 'PD' || ov.q === 'P' || ov.q === 'D');
+  const ovS = [];
+  if (showOv) { const x = ov.x.map(v => (wl && c.unit === 'um' ? v / 1000 : v)); if (ov.psi) ovS.push({ x, y: ov.psi, color: '#555555', w: 1.1 }); if (ov.delta) ovS.push({ x, y: ov.delta.map(v => v / 4), color: '#999999', w: 1.1 }); }
+  const ch = chart({ id: 'st-spec', w, h, rightPad: 40, xr: [res.x[0], res.x[res.x.length - 1]], yr: [0, 90], xlabel: res.xlabel, ylabel: 'Ψ (°)',
+    series: ovS.concat([{ x: res.x, y: res.series.P, color: '#6a3d9a' }, { x: res.x, y: res.series.D.map(v => v / 4), color: '#e08214' }]),
+    legend: [{ name: 'Ψ', color: '#6a3d9a' }, { name: 'Δ (right axis)', color: '#e08214' }].concat(showOv ? [{ name: 'Measured', color: '#555555' }] : []),
+    extra: (X, Y, L, R, T, B) => [0, 90, 180, 270, 360].map(v => `<line x1="${R}" y1="${Y(v / 4)}" x2="${R - 4}" y2="${Y(v / 4)}" stroke="currentColor"/><text x="${R + 4}" y="${Y(v / 4) + 4}" fill="#e08214">${v}</text>`).join('') + `<text transform="translate(${w - 6} ${(T + B) / 2}) rotate(90)" text-anchor="middle" fill="#e08214">Δ (°)</text>` });
+  host.innerHTML = ch.svg;
+  const at = wl ? `${f1(c.angle, 1)}°` : `${f1(c.lambda, 0)} nm`;
+  host.append(el('div', { class: 'readout', html: `Spectroscopic ellipsometry at ${at}: ρ = r<sub>p</sub>/r<sub>s</sub> = tan Ψ · e<sup>iΔ</sup> (Δ = 180° for a bare dielectric below Brewster's angle). Reflection from the front only: the back side of a thick substrate is taken as suppressed.` + (res.warn.length ? `<br><span style="color:var(--danger)">Outside the measured data: ${U.esc(res.warn.join(', '))}</span>` : '') }));
 }
 
 /* cross-section with |E|² */

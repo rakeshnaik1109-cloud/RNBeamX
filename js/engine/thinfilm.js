@@ -38,7 +38,7 @@ TF.options = (withCustom = true) => {
   if (withCustom) out.push(['custom', 'Custom n, k…']);
   return out;
 };
-TF.name = id => id === 'air' ? 'Air' : id === 'custom' ? 'Custom' : id && id.startsWith('glass:') ? GLASS[id.slice(6)] : DATA[id] ? DATA[id].name : String(id);
+TF.name = id => id === 'air' ? 'Air' : id === 'custom' ? 'Custom' : id === 'ema' ? 'Mixture (EMA)' : id && id.startsWith('glass:') ? GLASS[id.slice(6)] : DATA[id] ? DATA[id].name : String(id);
 TF.ref = id => DATA[id] ? `${DATA[id].src}. ${DATA[id].ref}` : id && id.startsWith('glass:') ? 'Sellmeier formula (manufacturer data).' : '';
 
 /* n, k of a material at a wavelength in nm. m: { mat, n, k } (n, k for custom).
@@ -47,6 +47,7 @@ TF.nk = (m, nm) => {
   const id = m && m.mat;
   if (!id || id === 'air') return { n: 1, k: 0 };
   if (id === 'custom') return { n: +m.n || 1, k: Math.max(0, +m.k || 0) };
+  if (id === 'ema') return TF.emaNk(m.ema || {}, nm);
   if (id.startsWith('glass:')) return { n: RNBX.optics.index(id.slice(6), nm), k: 0 };
   const d = DATA[id];
   if (!d) return { n: 1, k: 0, missing: true };
@@ -59,6 +60,29 @@ TF.nk = (m, nm) => {
   return { n: a[lo * 3 + 1] + t * (a[hi * 3 + 1] - a[lo * 3 + 1]), k: a[lo * 3 + 2] + t * (a[hi * 3 + 2] - a[lo * 3 + 2]) };
 };
 TF.range = m => { const d = m && DATA[m.mat]; return d ? [d.range[0] * 1000, d.range[1] * 1000] : null; };
+
+/* ---------- effective-medium mixtures ----------
+   ema: { a: material, b: material, f: volume fraction of b, model: 'bruggeman' | 'mg' | 'linear' }
+   Bruggeman (symmetric; also the usual model of surface roughness, 50 % voids),
+   Maxwell Garnett (b as small inclusions in host a) or a linear average of ε. */
+TF.EMA_MODELS = [['bruggeman', 'Bruggeman'], ['mg', 'Maxwell Garnett (B inside A)'], ['linear', 'Linear (ε average)']];
+TF.emaEps = (ea, eb, f, model) => {
+  f = Math.min(1, Math.max(0, +f || 0));
+  if (model === 'linear') return add(mul([1 - f, 0], ea), mul([f, 0], eb));
+  if (model === 'mg') { const d = sub(eb, ea), num = add(add(eb, mul([2, 0], ea)), mul([2 * f, 0], d)), den = sub(add(eb, mul([2, 0], ea)), mul([f, 0], d)); return mul(ea, div(num, den)); }
+  // Bruggeman: 2ε² − Bε − εa εb = 0 with B = (3fa − 1) εa + (3fb − 1) εb; the root with Im ε ≥ 0
+  const B = add(mul([3 * (1 - f) - 1, 0], ea), mul([3 * f - 1, 0], eb)), rt = csqrt(add(mul(B, B), mul([8, 0], mul(ea, eb))));
+  const r1 = mul([0.25, 0], add(B, rt)), r2 = mul([0.25, 0], sub(B, rt));
+  if (r1[1] < -1e-12 && r2[1] >= -1e-12) return r2;
+  if (r2[1] < -1e-12 && r1[1] >= -1e-12) return r1;
+  return r1[0] >= r2[0] ? r1 : r2;
+};
+TF.emaNk = (e, nm) => {
+  const A = TF.nk(e.a || { mat: 'air' }, nm), B = TF.nk(e.b || { mat: 'air' }, nm);
+  const eps = TF.emaEps(mul([A.n, A.k], [A.n, A.k]), mul([B.n, B.k], [B.n, B.k]), e.f, e.model);
+  const N = csqrt(eps);
+  return { n: N[0], k: Math.max(0, N[1]), out: A.out || B.out };
+};
 
 /* ---------- complex arithmetic on [re, im] ---------- */
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
@@ -105,11 +129,37 @@ TF.solve = (stack, nm, thetaDeg, pol) => {
   T = Math.min(1 - R, T);
   return { R, T, A: Math.max(0, 1 - R - T), r };
 };
+/* A thick substrate (stack.back = { d: nm, exit: material }) adds its back-side reflection
+   incoherently (intensities, multiple passes, absorption in the substrate):
+     R = Rf + Tf² a² Rb / (1 − Rf′ Rb a²),  T = Tf a Tb / (1 − Rf′ Rb a²),  a = e^(−α d / cos θs).
+   Rf′ is the stack seen from inside the substrate; Tf is the same both ways (reciprocity). */
+TF.solveThick = (stack, nm, thetaDeg, pol) => {
+  const f = TF.solve(stack, nm, thetaDeg, pol), bk = stack.back;
+  if (!bk || !(bk.d > 0)) return f;
+  const n0 = TF.nk(stack.inc, nm).n, sk = TF.nk(stack.sub, nm), ns = sk.n, Kx = n0 * Math.sin(U.rad(thetaDeg));
+  if (Kx >= ns) return f;   // totally reflected at the front: no light reaches the back
+  const ths = Math.asin(Kx / ns), cs = Math.cos(ths), a = Math.exp(-4 * Math.PI * sk.k * bk.d / (nm * cs));
+  const back = TF.solve({ inc: { mat: 'custom', n: ns, k: 0 }, layers: [], sub: bk.exit || { mat: 'air' } }, nm, U.deg(ths), pol);
+  const rev = TF.solve({ inc: { mat: 'custom', n: ns, k: 0 }, layers: stack.layers.slice().reverse(), sub: stack.inc }, nm, U.deg(ths), pol);
+  const den = 1 - rev.R * back.R * a * a;
+  const R = f.R + f.T * f.T * a * a * back.R / den, T = f.T * a * back.T / den;
+  return { R: Math.min(1, R), T: Math.max(0, T), A: Math.max(0, 1 - R - T), r: f.r };
+};
 /* polarisation 's', 'p' or 'avg' (unpolarised) */
 TF.response = (stack, nm, thetaDeg, pol) => {
-  if (pol !== 'avg') return TF.solve(stack, nm, thetaDeg, pol);
-  const s = TF.solve(stack, nm, thetaDeg, 's'), p = TF.solve(stack, nm, thetaDeg, 'p');
+  if (pol !== 'avg') return TF.solveThick(stack, nm, thetaDeg, pol);
+  const s = TF.solveThick(stack, nm, thetaDeg, 's'), p = TF.solveThick(stack, nm, thetaDeg, 'p');
   return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2 };
+};
+/* Spectroscopic ellipsometry: ρ = rp / rs = tan Ψ · e^{iΔ}, in the convention of commercial
+   instruments (Δ = 180° for a bare dielectric below Brewster's angle, 0° above; metals 0–180°).
+   Coherent reflection from the front; the back side of a thick substrate is assumed suppressed. */
+TF.ellips = (stack, nm, thetaDeg) => {
+  const rs = TF.solve(stack, nm, thetaDeg, 's').r, rp = mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
+  const rho = div(rp, rs);
+  let delta = -U.deg(Math.atan2(rho[1], rho[0]));
+  delta = ((delta % 360) + 360) % 360;
+  return { psi: U.deg(Math.atan(Math.hypot(rho[0], rho[1]))), delta, rho };
 };
 
 /* ---------- field inside the stack ----------
@@ -177,20 +227,22 @@ TF.DEFAULT_CALC = { scan: 'wl', lmin: 400, lmax: 900, angle: 0, amin: 0, amax: 8
 /* returns { x, series: { R, T, A }, xlabel, warn } */
 TF.scan = (stack, calc) => {
   const c = Object.assign({}, TF.DEFAULT_CALC, calc || {}), N = U.clamp(Math.round(c.points) || 301, 11, 2001);
-  const x = [], R = [], T = [], A = [];
-  const wl = c.scan === 'wl';
+  const x = [], R = [], T = [], A = [], P = [], Dl = [];
+  const wl = c.scan === 'wl', ell = /[PD]/.test(c.show || '');
   const lo = wl ? +c.lmin : +c.amin, hi = wl ? +c.lmax : +c.amax;
   for (let i = 0; i < N; i++) {
-    const v = lo + (hi - lo) * i / (N - 1);
-    const res = wl ? TF.response(stack, v, +c.angle || 0, c.pol) : TF.response(stack, +c.lambda, Math.min(89.99, v), c.pol);
-    x.push(wl && c.unit === 'um' ? v / 1000 : v); R.push(res.R); T.push(res.T); A.push(res.A);
+    const v = lo + (hi - lo) * i / (N - 1), lam = wl ? v : +c.lambda, th = wl ? +c.angle || 0 : Math.min(89.99, v);
+    x.push(wl && c.unit === 'um' ? v / 1000 : v);
+    if (ell) { const e = TF.ellips(stack, lam, th); P.push(e.psi); Dl.push(e.delta); continue; }
+    const res = TF.response(stack, lam, th, c.pol);
+    R.push(res.R); T.push(res.T); A.push(res.A);
   }
   // wavelengths outside a material's measured range
   const mats = [stack.inc, stack.sub].concat(stack.layers.map(l => l.m));
   const lam = wl ? [lo, hi] : [+c.lambda, +c.lambda];
   const warn = [...new Set(mats.filter(m => { const r = TF.range(m); return r && (lam[0] < r[0] * 0.995 || lam[1] > r[1] * 1.005); }).map(m => `${TF.name(m.mat)} (data ${U.fmt(TF.range(m)[0], 0)}–${U.fmt(TF.range(m)[1], 0)} nm)`))];
   const xlabel = wl ? (c.unit === 'um' ? 'Wavelength (µm)' : 'Wavelength (nm)') : 'Angle of incidence (°)';
-  return { x, series: { R, T, A }, xlabel, warn, calc: c };
+  return { x, series: ell ? { P, D: Dl } : { R, T, A }, xlabel, warn, calc: c, ellips: ell };
 };
 /* deepest minimum of R (SPR dip) or highest maximum of A, refined by a parabola */
 TF.extremum = (x, y, kind = 'min') => {

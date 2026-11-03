@@ -229,6 +229,10 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-row2 .btn.small { padding: 2px 6px; }
 .st-row2 .icon-btn { width: 24px; height: 24px; }
 .studio .st-row2 input.st-tag { width: 52px; flex: 0 0 52px; }
+.studio .st-row2 input.st-rough { width: 58px; flex: 0 0 58px; }
+.studio .st-ema { flex-wrap: wrap; row-gap: 4px; }
+.studio .st-ema select { flex: 1 1 90px; min-width: 0; }
+.studio .st-ema input[type=number] { width: 52px; flex: 0 0 52px; }
 .st-group { border: 1.5px dashed var(--accent); border-radius: 10px; padding: 6px; margin-bottom: 6px; background: var(--accent-soft); }
 .st-ghead { display: flex; align-items: center; gap: 3px; margin-bottom: 5px; font-weight: 600; flex-wrap: wrap; }
 .st-ghead .icon-btn, .st-row2 .icon-btn { width: 22px; height: 22px; }

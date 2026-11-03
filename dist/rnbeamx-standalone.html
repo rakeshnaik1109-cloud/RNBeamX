@@ -248,6 +248,10 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .st-row2 .btn.small { padding: 2px 6px; }
 .st-row2 .icon-btn { width: 24px; height: 24px; }
 .studio .st-row2 input.st-tag { width: 52px; flex: 0 0 52px; }
+.studio .st-row2 input.st-rough { width: 58px; flex: 0 0 58px; }
+.studio .st-ema { flex-wrap: wrap; row-gap: 4px; }
+.studio .st-ema select { flex: 1 1 90px; min-width: 0; }
+.studio .st-ema input[type=number] { width: 52px; flex: 0 0 52px; }
 .st-group { border: 1.5px dashed var(--accent); border-radius: 10px; padding: 6px; margin-bottom: 6px; background: var(--accent-soft); }
 .st-ghead { display: flex; align-items: center; gap: 3px; margin-bottom: 5px; font-weight: 600; flex-wrap: wrap; }
 .st-ghead .icon-btn, .st-row2 .icon-btn { width: 22px; height: 22px; }
@@ -1358,7 +1362,7 @@ TF.options = (withCustom = true) => {
   if (withCustom) out.push(['custom', 'Custom n, k…']);
   return out;
 };
-TF.name = id => id === 'air' ? 'Air' : id === 'custom' ? 'Custom' : id && id.startsWith('glass:') ? GLASS[id.slice(6)] : DATA[id] ? DATA[id].name : String(id);
+TF.name = id => id === 'air' ? 'Air' : id === 'custom' ? 'Custom' : id === 'ema' ? 'Mixture (EMA)' : id && id.startsWith('glass:') ? GLASS[id.slice(6)] : DATA[id] ? DATA[id].name : String(id);
 TF.ref = id => DATA[id] ? `${DATA[id].src}. ${DATA[id].ref}` : id && id.startsWith('glass:') ? 'Sellmeier formula (manufacturer data).' : '';
 
 /* n, k of a material at a wavelength in nm. m: { mat, n, k } (n, k for custom).
@@ -1367,6 +1371,7 @@ TF.nk = (m, nm) => {
   const id = m && m.mat;
   if (!id || id === 'air') return { n: 1, k: 0 };
   if (id === 'custom') return { n: +m.n || 1, k: Math.max(0, +m.k || 0) };
+  if (id === 'ema') return TF.emaNk(m.ema || {}, nm);
   if (id.startsWith('glass:')) return { n: RNBX.optics.index(id.slice(6), nm), k: 0 };
   const d = DATA[id];
   if (!d) return { n: 1, k: 0, missing: true };
@@ -1379,6 +1384,29 @@ TF.nk = (m, nm) => {
   return { n: a[lo * 3 + 1] + t * (a[hi * 3 + 1] - a[lo * 3 + 1]), k: a[lo * 3 + 2] + t * (a[hi * 3 + 2] - a[lo * 3 + 2]) };
 };
 TF.range = m => { const d = m && DATA[m.mat]; return d ? [d.range[0] * 1000, d.range[1] * 1000] : null; };
+
+/* ---------- effective-medium mixtures ----------
+   ema: { a: material, b: material, f: volume fraction of b, model: 'bruggeman' | 'mg' | 'linear' }
+   Bruggeman (symmetric; also the usual model of surface roughness, 50 % voids),
+   Maxwell Garnett (b as small inclusions in host a) or a linear average of ε. */
+TF.EMA_MODELS = [['bruggeman', 'Bruggeman'], ['mg', 'Maxwell Garnett (B inside A)'], ['linear', 'Linear (ε average)']];
+TF.emaEps = (ea, eb, f, model) => {
+  f = Math.min(1, Math.max(0, +f || 0));
+  if (model === 'linear') return add(mul([1 - f, 0], ea), mul([f, 0], eb));
+  if (model === 'mg') { const d = sub(eb, ea), num = add(add(eb, mul([2, 0], ea)), mul([2 * f, 0], d)), den = sub(add(eb, mul([2, 0], ea)), mul([f, 0], d)); return mul(ea, div(num, den)); }
+  // Bruggeman: 2ε² − Bε − εa εb = 0 with B = (3fa − 1) εa + (3fb − 1) εb; the root with Im ε ≥ 0
+  const B = add(mul([3 * (1 - f) - 1, 0], ea), mul([3 * f - 1, 0], eb)), rt = csqrt(add(mul(B, B), mul([8, 0], mul(ea, eb))));
+  const r1 = mul([0.25, 0], add(B, rt)), r2 = mul([0.25, 0], sub(B, rt));
+  if (r1[1] < -1e-12 && r2[1] >= -1e-12) return r2;
+  if (r2[1] < -1e-12 && r1[1] >= -1e-12) return r1;
+  return r1[0] >= r2[0] ? r1 : r2;
+};
+TF.emaNk = (e, nm) => {
+  const A = TF.nk(e.a || { mat: 'air' }, nm), B = TF.nk(e.b || { mat: 'air' }, nm);
+  const eps = TF.emaEps(mul([A.n, A.k], [A.n, A.k]), mul([B.n, B.k], [B.n, B.k]), e.f, e.model);
+  const N = csqrt(eps);
+  return { n: N[0], k: Math.max(0, N[1]), out: A.out || B.out };
+};
 
 /* ---------- complex arithmetic on [re, im] ---------- */
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
@@ -1425,11 +1453,37 @@ TF.solve = (stack, nm, thetaDeg, pol) => {
   T = Math.min(1 - R, T);
   return { R, T, A: Math.max(0, 1 - R - T), r };
 };
+/* A thick substrate (stack.back = { d: nm, exit: material }) adds its back-side reflection
+   incoherently (intensities, multiple passes, absorption in the substrate):
+     R = Rf + Tf² a² Rb / (1 − Rf′ Rb a²),  T = Tf a Tb / (1 − Rf′ Rb a²),  a = e^(−α d / cos θs).
+   Rf′ is the stack seen from inside the substrate; Tf is the same both ways (reciprocity). */
+TF.solveThick = (stack, nm, thetaDeg, pol) => {
+  const f = TF.solve(stack, nm, thetaDeg, pol), bk = stack.back;
+  if (!bk || !(bk.d > 0)) return f;
+  const n0 = TF.nk(stack.inc, nm).n, sk = TF.nk(stack.sub, nm), ns = sk.n, Kx = n0 * Math.sin(U.rad(thetaDeg));
+  if (Kx >= ns) return f;   // totally reflected at the front: no light reaches the back
+  const ths = Math.asin(Kx / ns), cs = Math.cos(ths), a = Math.exp(-4 * Math.PI * sk.k * bk.d / (nm * cs));
+  const back = TF.solve({ inc: { mat: 'custom', n: ns, k: 0 }, layers: [], sub: bk.exit || { mat: 'air' } }, nm, U.deg(ths), pol);
+  const rev = TF.solve({ inc: { mat: 'custom', n: ns, k: 0 }, layers: stack.layers.slice().reverse(), sub: stack.inc }, nm, U.deg(ths), pol);
+  const den = 1 - rev.R * back.R * a * a;
+  const R = f.R + f.T * f.T * a * a * back.R / den, T = f.T * a * back.T / den;
+  return { R: Math.min(1, R), T: Math.max(0, T), A: Math.max(0, 1 - R - T), r: f.r };
+};
 /* polarisation 's', 'p' or 'avg' (unpolarised) */
 TF.response = (stack, nm, thetaDeg, pol) => {
-  if (pol !== 'avg') return TF.solve(stack, nm, thetaDeg, pol);
-  const s = TF.solve(stack, nm, thetaDeg, 's'), p = TF.solve(stack, nm, thetaDeg, 'p');
+  if (pol !== 'avg') return TF.solveThick(stack, nm, thetaDeg, pol);
+  const s = TF.solveThick(stack, nm, thetaDeg, 's'), p = TF.solveThick(stack, nm, thetaDeg, 'p');
   return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2 };
+};
+/* Spectroscopic ellipsometry: ρ = rp / rs = tan Ψ · e^{iΔ}, in the convention of commercial
+   instruments (Δ = 180° for a bare dielectric below Brewster's angle, 0° above; metals 0–180°).
+   Coherent reflection from the front; the back side of a thick substrate is assumed suppressed. */
+TF.ellips = (stack, nm, thetaDeg) => {
+  const rs = TF.solve(stack, nm, thetaDeg, 's').r, rp = mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
+  const rho = div(rp, rs);
+  let delta = -U.deg(Math.atan2(rho[1], rho[0]));
+  delta = ((delta % 360) + 360) % 360;
+  return { psi: U.deg(Math.atan(Math.hypot(rho[0], rho[1]))), delta, rho };
 };
 
 /* ---------- field inside the stack ----------
@@ -1497,20 +1551,22 @@ TF.DEFAULT_CALC = { scan: 'wl', lmin: 400, lmax: 900, angle: 0, amin: 0, amax: 8
 /* returns { x, series: { R, T, A }, xlabel, warn } */
 TF.scan = (stack, calc) => {
   const c = Object.assign({}, TF.DEFAULT_CALC, calc || {}), N = U.clamp(Math.round(c.points) || 301, 11, 2001);
-  const x = [], R = [], T = [], A = [];
-  const wl = c.scan === 'wl';
+  const x = [], R = [], T = [], A = [], P = [], Dl = [];
+  const wl = c.scan === 'wl', ell = /[PD]/.test(c.show || '');
   const lo = wl ? +c.lmin : +c.amin, hi = wl ? +c.lmax : +c.amax;
   for (let i = 0; i < N; i++) {
-    const v = lo + (hi - lo) * i / (N - 1);
-    const res = wl ? TF.response(stack, v, +c.angle || 0, c.pol) : TF.response(stack, +c.lambda, Math.min(89.99, v), c.pol);
-    x.push(wl && c.unit === 'um' ? v / 1000 : v); R.push(res.R); T.push(res.T); A.push(res.A);
+    const v = lo + (hi - lo) * i / (N - 1), lam = wl ? v : +c.lambda, th = wl ? +c.angle || 0 : Math.min(89.99, v);
+    x.push(wl && c.unit === 'um' ? v / 1000 : v);
+    if (ell) { const e = TF.ellips(stack, lam, th); P.push(e.psi); Dl.push(e.delta); continue; }
+    const res = TF.response(stack, lam, th, c.pol);
+    R.push(res.R); T.push(res.T); A.push(res.A);
   }
   // wavelengths outside a material's measured range
   const mats = [stack.inc, stack.sub].concat(stack.layers.map(l => l.m));
   const lam = wl ? [lo, hi] : [+c.lambda, +c.lambda];
   const warn = [...new Set(mats.filter(m => { const r = TF.range(m); return r && (lam[0] < r[0] * 0.995 || lam[1] > r[1] * 1.005); }).map(m => `${TF.name(m.mat)} (data ${U.fmt(TF.range(m)[0], 0)}–${U.fmt(TF.range(m)[1], 0)} nm)`))];
   const xlabel = wl ? (c.unit === 'um' ? 'Wavelength (µm)' : 'Wavelength (nm)') : 'Angle of incidence (°)';
-  return { x, series: { R, T, A }, xlabel, warn, calc: c };
+  return { x, series: ell ? { P, D: Dl } : { R, T, A }, xlabel, warn, calc: c, ellips: ell };
 };
 /* deepest minimum of R (SPR dip) or highest maximum of A, refined by a parabola */
 TF.extremum = (x, y, kind = 'min') => {
@@ -3030,6 +3086,124 @@ MIE.sideBySide = (sp, a, b, d, lam, em) => {
   const kap = cdiv(cscale(V, 1 / (2 * a)), L.alpha), ret = cmul([Math.cos(k * d), Math.sin(k * d)], [1 - (k * d) ** 2, -k * d]);
   const kr = cmul(kap, ret);
   return cdiv(L.alpha, csub([1, 0], cmul(L.alpha, kr)));
+};
+})();
+
+</script>
+<script>
+/* js/engine/npom.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — engine/npom.js
+   A (layered) sphere above a flat substrate or mirror, gap g:
+   nanoparticle-on-mirror (NPoM) gap plasmons, particles on glass
+   or silicon.
+
+   Quasi-static multipole image method (Wind, Vlieger & Bedeaux,
+   Physica A 141, 33 (1987); Bedeaux & Vlieger, Optical Properties
+   of Surfaces). The sphere's multipoles A_l (axis normal to the
+   substrate) see the applied field plus the field of their own
+   image in the substrate (image factor −β (−1)^{l+m},
+   β = (εs − εm)/(εs + εm)), re-expanded about the sphere centre:
+     (I − diag(α) M) A = α G₀,
+     M_{l l'} = −β (−1)^{l'+m} (−1)^{l+m} (l+l')! / ((l+m)! (l'−m)!) / S^{l+l'+1}
+   with lengths in units of the sphere radius and S = 2(R + g)/R.
+   α_l are the static multipole responses of the layered sphere;
+   the dipole term is replaced by the exact Mie dipole
+   (−3i a₁ / 2x³), which keeps retardation (red shift with size)
+   and radiation damping. The applied field E₀ is the local
+   exciting field (incident plus reflected): normal to the
+   substrate (m = 0, the gap mode) or parallel to it (m = 1).
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX = window.RNBX || {};
+const NP = RNBX.npom = {};
+
+const cadd = (a, b) => [a[0] + b[0], a[1] + b[1]];
+const csub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+const cdiv = (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; };
+const eps = n => [n[0] * n[0] - n[1] * n[1], 2 * n[0] * n[1]];
+
+let LF = [0];
+const lfact = n => { while (LF.length <= n) LF.push(LF[LF.length - 1] + Math.log(LF.length)); return LF[n]; };
+
+/* static l-pole response of a layered sphere (radii scaled so the outer radius is 1):
+   outside φ = G (r^l + α r^{−l−1}) P_l^m; carried outwards with t = y / r^{2l+1} (no overflow) */
+NP.alphaStatic = (layers, em, l) => {
+  const R = layers[layers.length - 1].r;
+  let t = [0, 0];
+  for (let i = 0; i < layers.length; i++) {
+    const ei = eps(layers[i].n), eo = i === layers.length - 1 ? [em, 0] : eps(layers[i + 1].n);
+    const one = cadd([1, 0], t);
+    const Q = cdiv(csub(cmul(eo, [l * one[0], l * one[1]]), cmul(ei, csub([l, 0], [(l + 1) * t[0], (l + 1) * t[1]]))), [eo[0] * (2 * l + 1), eo[1] * (2 * l + 1)]);
+    t = cdiv(Q, csub(one, Q));
+    if (i < layers.length - 1) { const k = Math.pow(layers[i].r / layers[i + 1].r, 2 * l + 1); t = [t[0] * k, t[1] * k]; }
+  }
+  void R;
+  return t;
+};
+/* how many multipoles: the image coupling decays like (S − 1)^{−l} */
+NP.order = (R, g) => { const q = 1 / (2 * (R + g) / R - 1); return Math.max(10, Math.min(260, Math.ceil(Math.log(1e-8) / (3 * Math.log(q))) + 10)); };   // checked: relative change < 1e-6 against 300 orders
+
+/* opts: { layers: [{ r (nm), n: [n, k] }] (Mie convention), nMed, lam (nm), nSub: [n, k], gap (nm), pol: 'z' (normal) | 'x' (parallel), L } */
+NP.solve = o => {
+  const layers = o.layers, R = layers[layers.length - 1].r, em = o.nMed * o.nMed, m = o.pol === 'x' ? 1 : 0;
+  const es = eps(o.nSub), beta = cdiv(csub(es, [em, 0]), cadd(es, [em, 0]));
+  const S = 2 * (R + o.gap) / R, L = o.L || NP.order(R, o.gap), lnS = Math.log(S);
+  const alpha = [];
+  for (let l = 1; l <= L; l++) alpha[l] = NP.alphaStatic(layers, em, l);
+  // the dipole from Mie theory (retarded, radiation-damped)
+  const k = 2 * Math.PI * o.nMed / o.lam, x = k * R;
+  if (RNBX.mie && o.retard !== false) { const N = RNBX.mie.order(x) + 2, c = RNBX.mie.coeffs(layers, o.nMed, o.lam, N), a1 = c.a[1], f = 3 / (2 * x * x * x); alpha[1] = [f * a1[1], -f * a1[0]]; /* −(3i/2x³) a₁ */ }
+  // (I − diag(α) M) A = α G₀, G₀ = −1 at l = 1
+  const n = L, Ar = new Float64Array(n * n), Ai = new Float64Array(n * n), br = new Float64Array(n), bi = new Float64Array(n);
+  for (let l = 1; l <= L; l++) {
+    const r = l - 1, al = alpha[l];
+    for (let lp = 1; lp <= L; lp++) {
+      const c = (((l + lp) % 2 === 0) ? 1 : -1) * Math.exp(lfact(l + lp) - lfact(l + m) - lfact(lp - m) - (l + lp + 1) * lnS);   // (−1)^{l'+m}(−1)^{l+m} = (−1)^{l+l'}
+      const Mv = cmul([-beta[0] * c, -beta[1] * c], al);
+      Ar[r * n + lp - 1] = (l === lp ? 1 : 0) - Mv[0]; Ai[r * n + lp - 1] = -Mv[1];
+    }
+    if (l === 1) { br[0] = -al[0]; bi[0] = -al[1]; }
+  }
+  const sol = RNBX.mie.csolve(n, Ar, Ai, br, bi), A = [null];
+  for (let l = 1; l <= L; l++) A[l] = [sol.re[l - 1], sol.im[l - 1]];
+  const img = l => { const s = -(((l + m) % 2 === 0) ? 1 : -1); return cmul([s * beta[0], s * beta[1]], A[l]); };   // −β (−1)^{l+m} A_l
+  const A1 = A[1], Atot = cadd(A1, img(1)), R3 = R * R * R;
+  const res = { A, L, m, beta, R, S, gap: o.gap, k, img,
+    Cext: 4 * Math.PI * k * R3 * A1[1],
+    Csca: 8 * Math.PI / 3 * Math.pow(k, 4) * R3 * R3 * (Atot[0] * Atot[0] + Atot[1] * Atot[1]),
+    Csca0: 8 * Math.PI / 3 * Math.pow(k, 4) * R3 * R3 * (A1[0] * A1[0] + A1[1] * A1[1]) };
+  res.Cabs = Math.max(0, res.Cext - res.Csca0);
+  res.E2gap = NP.intensity(res, 0, -1 - o.gap / (2 * R));
+  return res;
+};
+
+/* potential (units E₀R) at (x, z) in the y = 0 plane, lengths in units of R, sphere centre at 0;
+   null inside the sphere or the substrate */
+const legendre = (c, L) => { const P = [1, c], dP = [0, 1]; for (let l = 1; l < L; l++) { P[l + 1] = ((2 * l + 1) * c * P[l] - l * P[l - 1]) / (l + 1); dP[l + 1] = dP[l - 1] + (2 * l + 1) * P[l]; } return { P, dP }; };
+NP.potential = (r, x, z) => {
+  const zs = -r.S, u = Math.hypot(x, z);
+  if (u < 1 || z < -r.S / 2) return null;
+  const up = Math.hypot(x, z - zs), c = z / u, cp = (z - zs) / up, A = r.A, L = r.L;
+  const P = legendre(c, L), Pp = legendre(cp, L);
+  let re = 0, im = 0, ur = 1 / u, upr = 1 / up;
+  for (let l = 1; l <= L; l++) {
+    ur /= u; upr /= up;
+    const ang = r.m === 0 ? P.P[l] : (x / u) * P.dP[l], angp = r.m === 0 ? Pp.P[l] : (x / up) * Pp.dP[l], I = r.img(l);
+    re += A[l][0] * ur * ang + I[0] * upr * angp; im += A[l][1] * ur * ang + I[1] * upr * angp;
+    if (ur < 1e-300) break;
+  }
+  return [re - (r.m === 0 ? z : x), im];
+};
+/* |E|² / |E₀|² by central differences */
+NP.intensity = (r, x, z, h = 1e-4) => {
+  const f = (a, b) => NP.potential(r, a, b);
+  const px = f(x + h, z), mx = f(x - h, z), pz = f(x, z + h), mz = f(x, z - h);
+  if (!px || !mx || !pz || !mz) return NaN;
+  const ex = [(mx[0] - px[0]) / (2 * h), (mx[1] - px[1]) / (2 * h)], ez = [(mz[0] - pz[0]) / (2 * h), (mz[1] - pz[1]) / (2 * h)];
+  return ex[0] * ex[0] + ex[1] * ex[1] + ez[0] * ez[0] + ez[1] * ez[1];
 };
 })();
 
@@ -6737,7 +6911,7 @@ DataIO.apply = (obj, d) => {
 };
 
 /* ---------- panels calculated live from a layer stack or SPR prism ---------- */
-const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'] };
+const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'], P: ['Ψ (°)', '#6a3d9a'], D: ['Δ (°)', '#e08214'] };
 /* one entry point for every calculation: flat films (transfer matrix,
    instant) or a grating (RCWA, in the background: returns the last
    result with pending: true, or { pending, progress }, until done) */
@@ -6959,7 +7133,7 @@ lib.register({
       else if (res && res.pending) { series = []; busy = res.progress || 0; }
       else { series = []; lost = true; }
       if (res && res.pending && res.x) busy = res.progress || 0;
-      if (p.mark && res && res.x && !res.pending) {
+      if (p.mark && res && res.x && !res.pending && !res.ellips) {
         // live resonance marker: follows the dip as the stack changes or animates
         const c = res.calc, u = DataIO.resUnit(c), wl = c.scan === 'wl', dip = c.show.includes('R') || !c.show.includes('A');
         const e = RNBX.thinfilm.extremum(res.x, dip ? res.series.R : res.series.A, dip ? 'min' : 'max');
@@ -7108,7 +7282,10 @@ lib.guessMat = name => {
 };
 /* the planar stack seen by the thin-film solver */
 const layerStack = p => {
-  const L = (p.layers || []).map(l => ({ m: { mat: l.mat || lib.guessMat(l.name), n: l.n, k: l.k }, d: +l.nm || 0 }));
+  // made in Layer Studio: its own stack keeps roughness, mixtures and the substrate back side
+  const fromStudio = RNBX.studio && RNBX.studio.stackFromProps ? RNBX.studio.stackFromProps(p) : null;
+  if (fromStudio) return fromStudio;
+  const L = (p.layers || []).map(l => ({ m: l.mat === 'ema' && l.ema ? { mat: 'ema', ema: { a: { mat: l.ema.a }, b: { mat: l.ema.b }, f: l.ema.f, model: l.ema.model } } : { mat: l.mat || lib.guessMat(l.name), n: l.n, k: l.k }, d: +l.nm || 0 }));
   if (!L.length) return null;
   const amb = { mat: p.ambient || 'air', n: p.ambientN, k: 0 };
   const semi = p.bottomMode !== 'film';
@@ -18701,7 +18878,7 @@ const KEY = 'rnbx-studio-v1';
 
 /* ---------- materials: short names and drawing colours ---------- */
 const SUB = { 2: '₂', 3: '₃', 4: '₄' };
-const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
+const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
 const COLORS = { Ag: '#b3bac4', 'Ag-IR': '#b3bac4', Au: '#d6a83a', 'Au-IR': '#d6a83a', Al: '#c9ced6', Cu: '#c8784a', Cr: '#8d939b', Ti: '#9aa0a8', Ni: '#a9a59a', Pt: '#c7c9cc', W: '#7d8189',
   SiO2: '#8fc9b9', TiO2: '#f0d27a', Al2O3: '#e8a13a', HfO2: '#c3a6e0', MgF2: '#bfe3f0', Si3N4: '#9fb7e3', 'Si3N4-IR': '#9fb7e3', ZnO: '#e9e3b0', ZnS: '#f2c7a5', CaF2: '#d6eef7',
   Si: '#6c7a89', Ge: '#59606b', H2O: '#bfdcf5', EtOH: '#d5e8f7', MeOH: '#d5e8f7', Acetone: '#dbe9f5', PDMS: '#d9ead3', PMMA: '#e6f0ea', air: '#ffffff', custom: '#c8c8c8' };
@@ -18737,12 +18914,35 @@ ST.PRESETS = PRESETS;
 /* films in the order top → bottom, repeats expanded */
 const flat = items => items.reduce((a, it) => a.concat(it.group ? Array.from({ length: Math.max(1, Math.round(it.repeat) || 1) }, () => it.items).reduce((b, g) => b.concat(flat(g)), []) : [it]), []);
 ST.flat = d => flat(d.items);
-const m = l => ({ mat: l.mat, n: l.n, k: l.k });
+/* a film's material for the solver; a mixture (effective medium) carries its two parts */
+const emaOf = l => { const e = l.ema || {}; return { a: { mat: e.a || 'SiO2', n: e.an, k: e.ak }, b: { mat: e.b || 'air', n: e.bn, k: e.bk }, f: e.f == null ? 0.3 : +e.f, model: e.model || 'bruggeman' }; };
+const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : { mat: l.mat, n: l.n, k: l.k });
+ST.EMA_DEFAULT = { a: 'SiO2', b: 'air', f: 0.3, model: 'bruggeman' };
+/* roughness: a 50 % void Bruggeman layer between a film (or the substrate) and what lies above it */
+const roughLayer = (below, above, nm, l) => ({ m: { mat: 'ema', ema: { a: below, b: above, f: 0.5, model: 'bruggeman' } }, d: nm, rough: true, l: { name: 'roughness', color: U.mix(l.color || colorOf(l.mat), '#ffffff', 0.55), mat: 'ema', nm } });
+/* the films top → bottom as the solver sees them, roughness layers included */
+const solverFilms = d => {
+  const out = [];
+  let above = { mat: d.ambient, n: d.ambientN, k: 0 };
+  flat(d.items).filter(l => +l.nm > 0).forEach(l => { const ml = m(l); if (+l.rough > 0) out.push(roughLayer(ml, above, +l.rough, l)); out.push({ m: ml, d: +l.nm, l }); above = ml; });
+  if (+d.substrate.rough > 0 && d.substrate.mat !== 'air') out.push(roughLayer(m(d.substrate), above, +d.substrate.rough, d.substrate));
+  return out;
+};
 /* the stack the solver sees (same convention as the Multilayer stack part) */
 ST.stack = d => {
-  const films = flat(d.items).filter(l => +l.nm > 0).map(l => ({ m: m(l), d: +l.nm }));
+  const films = solverFilms(d).map(f => ({ m: f.m, d: f.d }));
   const amb = { mat: d.ambient, n: d.ambientN, k: 0 }, sub = m(d.substrate);
-  return d.side === 'bottom' ? { inc: sub, layers: films.slice().reverse(), sub: amb } : { inc: amb, layers: films, sub };
+  if (d.side === 'bottom') return { inc: sub, layers: films.slice().reverse(), sub: amb };
+  const st = { inc: amb, layers: films, sub };
+  // a thick substrate: its back side adds an incoherent reflection
+  if (d.substrate.back && d.substrate.mat !== 'air') st.back = { d: (+d.substrate.thick || 1) * 1e6, exit: { mat: 'air' } };
+  return st;
+};
+/* the stack of a Multilayer part made here (keeps roughness, mixtures and the substrate back side) */
+ST.stackFromProps = p => {
+  if (!p || !p.studio || !p.studio.items) return null;
+  if (sig(ST.toProps(p.studio).layers) !== sig(p.layers || [])) return null;
+  return ST.stack(Object.assign({}, p.studio, { ambient: p.ambient || 'air', ambientN: p.ambientN, side: p.side || 'top' }));
 };
 
 /* ---------- design ⇄ Multilayer stack part ---------- */
@@ -18752,7 +18952,7 @@ const drawnT = (films, mode) => {
 };
 ST.toProps = (d, mode = 'compressed') => {
   const films = flat(d.items), t = drawnT(films, mode), air = d.substrate.mat === 'air';
-  const lay = films.map((l, i) => ({ name: l.name, color: l.color, t: t[i], tag: l.tag || '', mat: l.mat, nm: +l.nm || 0, n: l.n, k: l.k })).reverse();
+  const lay = films.map((l, i) => ({ name: l.name, color: l.color, t: t[i], tag: l.tag || '', mat: l.mat, nm: +l.nm || 0, n: l.n, k: l.k, ema: l.ema, rough: l.rough })).reverse();
   if (!air) lay.unshift({ name: d.substrate.name, color: d.substrate.color, t: Math.max(3, Math.min(6, t.reduce((a, b) => a + b, 0) * 0.8)), tag: d.substrate.tag || '', mat: d.substrate.mat, nm: 0, n: d.substrate.n, k: d.substrate.k });
   return { layers: lay, ambient: d.ambient, ambientN: d.ambientN, side: d.side, bottomMode: air ? 'film' : 'semi', calc: Object.assign({}, d.calc), studio: U.deepClone(d) };
 };
@@ -18885,7 +19085,17 @@ function render() {
 const fld = (label, input, wide) => el('label', { class: 'st-f' + (wide ? ' wide' : '') }, el('span', { text: label }), input);
 const num = (get, set, o = {}) => { const i = el('input', { type: 'number', value: get(), step: o.step || 1, min: o.min, max: o.max, oninput: () => { const v = parseFloat(i.value); if (isFinite(v)) change(() => set(o.min != null ? Math.max(o.min, o.max != null ? Math.min(o.max, v) : v) : v), o.key || Math.random()); } }); return i; };
 const sel1 = (opts, get, set, key, structural) => { const s = el('select', { onchange: () => change(() => set(s.value), key, structural) }, opts.map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] }))); s.value = get(); return s; };
-const matSelect = (get, set, key) => sel1(TF().options(), get, set, key, true);
+const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)']]) : TF().options(), get, set, key, true);
+/* the two parts of a mixture, the fraction of B and the model */
+const emaRow = l => {
+  l.ema = Object.assign({}, ST.EMA_DEFAULT, l.ema || {});
+  const e = l.ema, mats = TF().options(false);
+  return el('div', { class: 'st-row2 st-ema' },
+    el('span', { text: 'A' }), sel1(mats, () => e.a, v => { e.a = v; }, 'ea' + Math.random(), true),
+    el('span', { text: '+ B' }), sel1(mats, () => e.b, v => { e.b = v; }, 'eb' + Math.random(), true),
+    num(() => U.round((e.f || 0) * 100, 2), v => { e.f = U.clamp(v / 100, 0, 1); }, { min: 0, max: 100, step: 1, key: 'ef' + Math.random() }), el('span', { class: 'hint', style: { margin: 0 }, text: '% B' }),
+    sel1(TF().EMA_MODELS, () => e.model, v => { e.model = v; }, 'em' + Math.random()));
+};
 
 function sideControls() {
   const amb = sel1(TF().options(false), () => d.ambient, v => { d.ambient = v; }, 'amb', true);
@@ -18899,8 +19109,17 @@ function substrateRow() {
   const c = el('input', { type: 'color', value: (s.color || '#cccccc').slice(0, 7), oninput: () => change(() => { s.color = c.value; }, 'subc') });
   const nmI = el('input', { type: 'text', value: s.name || '', oninput: () => change(() => { s.name = nmI.value; }, 'subn') });
   const ms = matSelect(() => s.mat, v => { s.mat = v; s.name = shortName(v); s.color = colorOf(v); }, 'subm');
-  const card = el('div', { class: 'st-layer st-sub' }, el('div', { class: 'st-row' }, c, nmI, ms), el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: s.mat === 'air' ? 'No substrate: a free-standing film' : 'Substrate (thick, semi-infinite)' })));
+  const card = el('div', { class: 'st-layer st-sub' }, el('div', { class: 'st-row' }, c, nmI, ms), el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: s.mat === 'air' ? 'No substrate: a free-standing film' : s.back && d.side !== 'bottom' ? 'Substrate (thick: both faces count)' : 'Substrate (thick, semi-infinite)' })));
   if (s.mat === 'custom') card.append(nkRow(s));
+  if (s.mat !== 'air') {
+    const rough = num(() => s.rough || 0, v => { s.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: 'subr' });
+    rough.className = 'st-rough'; rough.title = 'Roughness of the substrate surface (nm)';
+    const back = el('input', { type: 'checkbox', checked: !!s.back, disabled: d.side === 'bottom', onchange: () => change(() => { s.back = back.checked; }, null, true) });
+    const row = el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: 'rough' }), rough, el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }),
+      el('label', { class: 'st-f row', title: 'Adds the reflection from the back face of a thick substrate (incoherent: no fringes). Off = the substrate continues for ever, as an index-matched or roughened back.' }, back, el('span', { text: 'Back-side reflection' })));
+    if (s.back && d.side !== 'bottom') row.append(num(() => s.thick || 1, v => { s.thick = Math.max(0.001, v); }, { min: 0.001, max: 100, step: 0.1, key: 'subt' }), el('span', { class: 'hint', style: { margin: 0 }, text: 'mm thick' }));
+    card.append(row);
+  }
   return el('div', {}, el('div', { class: 'st-cap', text: 'Substrate' }), card);
 }
 const nkRow = l => el('div', { class: 'st-row2' }, el('span', { text: 'n' }), num(() => l.n == null ? 1.5 : l.n, v => { l.n = v; }, { step: 0.001, key: 'n' + Math.random() }), el('span', { text: 'k' }), num(() => l.k || 0, v => { l.k = Math.max(0, v); }, { step: 0.001, min: 0, key: 'k' + Math.random() }));
@@ -18911,7 +19130,9 @@ function layerCard(l, arr, i, inGroup) {
   const k = 'L' + (inGroup ? 'g' : '') + i + Math.random().toString(36).slice(2, 5);
   const c = el('input', { type: 'color', value: (l.color || '#cccccc').slice(0, 7), title: 'Colour in the drawing', oninput: () => change(() => { l.color = c.value; }, k + 'c') });
   const nmI = el('input', { type: 'text', value: l.name || '', title: 'Name', oninput: () => change(() => { l.name = nmI.value; }, k + 'n') });
-  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; }, k + 'm');
+  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); }, k + 'm', true);
+  const rough = num(() => l.rough || 0, v => { l.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: k + 'r' });
+  rough.className = 'st-rough'; rough.title = 'Roughness of the top surface (nm): a 50 % void Bruggeman layer above the film';
   const th = num(() => l.nm, v => { l.nm = Math.max(0, v); }, { min: 0, max: 1e6, key: k + 't' });
   th.title = 'Real thickness (nm)';
   const tag = el('input', { type: 'text', value: l.tag || '', placeholder: 'tag', title: 'Tag for the layer key, e.g. M₁', class: 'st-tag', oninput: () => change(() => { l.tag = tag.value; }, k + 'g') });
@@ -18919,13 +19140,14 @@ function layerCard(l, arr, i, inGroup) {
   const row2 = el('div', { class: 'st-row2' }, th, el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'λ/4', title: 'Quarter-wave thickness at λ₀', onclick: () => change(() => { l.nm = qw(l.mat, d.lambda0, 1, l.n); }, null, true) }),
     el('button', { class: 'btn small ghost', type: 'button', text: 'λ/2', title: 'Half-wave thickness at λ₀', onclick: () => change(() => { l.nm = qw(l.mat, d.lambda0, 2, l.n); }, null, true) }),
-    tag, el('span', { class: 'st-grow' }), chk,
+    tag, el('span', { class: 'hint', style: { margin: 0 }, text: 'rough' }), rough, el('span', { class: 'st-grow' }), chk,
     D.iconBtn('up', 'Move up', () => change(() => moveIn(arr, i, -1), null, true)),
     D.iconBtn('down', 'Move down', () => change(() => moveIn(arr, i, 1), null, true)),
     el('button', { class: 'icon-btn', type: 'button', text: '⧉', title: 'Duplicate', onclick: () => change(() => arr.splice(i + 1, 0, U.deepClone(l)), null, true) }),
     D.iconBtn('trash', 'Remove', () => change(() => { arr.splice(i, 1); sel.delete(l); }, null, true)));
   const card = el('div', { class: 'st-layer' }, el('div', { class: 'st-row' }, c, nmI, ms), row2);
   if (l.mat === 'custom') card.append(nkRow(l));
+  if (l.mat === 'ema') card.append(emaRow(l));
   return card;
 }
 let grpEl = null;
@@ -18976,7 +19198,7 @@ function specControls() {
   if (wl) kids.push(fld('From (nm)', num(() => c.lmin, v => { c.lmin = v; }, { min: 100, key: 'lmin' })), fld('To (nm)', num(() => c.lmax, v => { c.lmax = v; }, { min: 100, key: 'lmax' })), fld('Angle (°)', num(() => c.angle, v => { c.angle = v; }, { min: 0, max: 89.9, step: 0.5, key: 'cang' })));
   else kids.push(fld('From (°)', num(() => c.amin, v => { c.amin = v; }, { min: 0, max: 89.9, key: 'amin' })), fld('To (°)', num(() => c.amax, v => { c.amax = v; }, { min: 0, max: 89.9, key: 'amax' })), fld('Wavelength (nm)', num(() => c.lambda, v => { c.lambda = v; }, { min: 100, key: 'clam' })));
   kids.push(fld('Polarisation', sel1([['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']], () => c.pol, v => { c.pol = v; }, 'cpol')),
-    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A']], () => c.show, v => { c.show = v; }, 'cshow')),
+    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
     fld('Points', sel1([['301', '301'], ['1201', '1201'], ['4001', '4001 (sharp modes)']], () => String(c.points || 1201), v => { c.points = +v; }, 'cpts')));
   return el('div', { class: 'st-grid' }, ...kids);
 }
@@ -18998,7 +19220,7 @@ ST.fieldOf = (dd = d) => {
   return Object.assign({}, a, { e2: a.e2.map((v, i) => (v + b.e2[i]) / 2), absorbed: a.absorbed.map((v, i) => (v + b.absorbed[i]) / 2), R: (a.R + b.R) / 2 });
 };
 const lightOrder = () => {
-  const films = flat(d.items).filter(l => +l.nm > 0), amb = { name: TF().name(d.ambient), color: colorOf(d.ambient), mat: d.ambient };
+  const films = solverFilms(d).map(f => f.l), amb = { name: TF().name(d.ambient), color: colorOf(d.ambient), mat: d.ambient };
   return d.side === 'bottom' ? { inc: d.substrate, films: films.slice().reverse(), sub: amb } : { inc: amb, films, sub: d.substrate };
 };
 
@@ -19014,10 +19236,11 @@ function drawSpectrum() {
   const c = d.calc, host = views.spec, w = Math.max(280, host.clientWidth || 420), h = 230;
   let res;
   try { res = TF().scan(ST.stack(d), c); } catch (e) { host.textContent = 'Calculation failed: ' + e.message; return; }
+  if (res.ellips) { drawEllips(res); return; }
   const q = c.show.split('').filter(v => QCOL[v]), wl = c.scan === 'wl';
   const cross = wl ? (Math.abs((+d.field.angle || 0) - (+c.angle || 0)) < 1e-6 ? d.field.nm : null) : (Math.abs(d.field.nm - c.lambda) < 1e-6 ? d.field.angle : null);
   // a loaded measurement on the same axis (Fit to a measurement)
-  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.angle === !wl;
+  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.y && ov.angle === !wl;
   const ovSeries = showOv ? [{ x: ov.x.map(v => (wl && c.unit === 'um' ? v / 1000 : v)), y: ov.y, color: '#555555', w: 1.1 }] : [];
   const leg = q.map(k => ({ name: QNAME[k], color: QCOL[k] })).concat(showOv ? [{ name: 'Measured ' + ov.q, color: '#555555' }] : []);
   const ch = chart({ id: 'st-spec', w, h, xr: [res.x[0], res.x[res.x.length - 1]], yr: [0, 1], xlabel: res.xlabel, ylabel: q.length === 1 ? QNAME[q[0]] : 'R, T, A',
@@ -19028,6 +19251,21 @@ function drawSpectrum() {
   const svg = host.querySelector('svg');
   svg.style.cursor = 'crosshair';
   svg.onclick = e => { const r = svg.getBoundingClientRect(), v = ch.inv((e.clientX - r.left) * w / r.width); change(() => { if (wl) { d.field.nm = U.round(v, 1); d.field.angle = +c.angle || 0; } else { d.field.angle = U.round(U.clamp(v, 0, 89.9), 2); d.field.nm = +c.lambda; } }, null, true); };
+}
+
+/* ellipsometry: Ψ on the left axis (0–90°), Δ on the right (0–360°, drawn at a quarter scale) */
+function drawEllips(res) {
+  const c = d.calc, host = views.spec, w = Math.max(280, host.clientWidth || 420), h = 230, wl = c.scan === 'wl';
+  const ov = RNBX.layerFit && RNBX.layerFit.overlay(), showOv = ov && ov.angle === !wl && (ov.q === 'PD' || ov.q === 'P' || ov.q === 'D');
+  const ovS = [];
+  if (showOv) { const x = ov.x.map(v => (wl && c.unit === 'um' ? v / 1000 : v)); if (ov.psi) ovS.push({ x, y: ov.psi, color: '#555555', w: 1.1 }); if (ov.delta) ovS.push({ x, y: ov.delta.map(v => v / 4), color: '#999999', w: 1.1 }); }
+  const ch = chart({ id: 'st-spec', w, h, rightPad: 40, xr: [res.x[0], res.x[res.x.length - 1]], yr: [0, 90], xlabel: res.xlabel, ylabel: 'Ψ (°)',
+    series: ovS.concat([{ x: res.x, y: res.series.P, color: '#6a3d9a' }, { x: res.x, y: res.series.D.map(v => v / 4), color: '#e08214' }]),
+    legend: [{ name: 'Ψ', color: '#6a3d9a' }, { name: 'Δ (right axis)', color: '#e08214' }].concat(showOv ? [{ name: 'Measured', color: '#555555' }] : []),
+    extra: (X, Y, L, R, T, B) => [0, 90, 180, 270, 360].map(v => `<line x1="${R}" y1="${Y(v / 4)}" x2="${R - 4}" y2="${Y(v / 4)}" stroke="currentColor"/><text x="${R + 4}" y="${Y(v / 4) + 4}" fill="#e08214">${v}</text>`).join('') + `<text transform="translate(${w - 6} ${(T + B) / 2}) rotate(90)" text-anchor="middle" fill="#e08214">Δ (°)</text>` });
+  host.innerHTML = ch.svg;
+  const at = wl ? `${f1(c.angle, 1)}°` : `${f1(c.lambda, 0)} nm`;
+  host.append(el('div', { class: 'readout', html: `Spectroscopic ellipsometry at ${at}: ρ = r<sub>p</sub>/r<sub>s</sub> = tan Ψ · e<sup>iΔ</sup> (Δ = 180° for a bare dielectric below Brewster's angle). Reflection from the front only: the back side of a thick substrate is taken as suppressed.` + (res.warn.length ? `<br><span style="color:var(--danger)">Outside the measured data: ${U.esc(res.warn.join(', '))}</span>` : '') }));
 }
 
 /* cross-section with |E|² */
@@ -20226,7 +20464,7 @@ const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, TF = () => RNBX.thinfil
 /* ---------- designs ---------- */
 const shell = (mat, t) => ({ mat, t });
 const design = (name, o) => Object.assign({
-  name, kind: 'single', core: { mat: 'Au', d: 40 }, shells: [], medium: 'H2O', mediumN: 1.33, gap: 2, pol: 'z', orders: 0, rod: { L: 40, D: 10 }, orient: 'random',
+  name, kind: 'single', core: { mat: 'Au', d: 40 }, shells: [], medium: 'H2O', mediumN: 1.33, gap: 2, pol: 'z', orders: 0, rod: { L: 40, D: 10 }, orient: 'random', substrate: { mat: 'Au' },
   calc: { lmin: 400, lmax: 900, points: 51, show: 'C' }, probe: { nm: 633, shift: 1000 }, view: { span: 0, log: true, res: 'medium' }, sweep: { gmin: 0.5, gmax: 20 },
 }, o || {});
 const PRESETS = [
@@ -20243,6 +20481,9 @@ const PRESETS = [
   { id: 'rodtip', name: 'Au nanorod dimer, end to end, 2 nm gap', make: () => design('Au rods end to end, 2 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'tip', gap: 2 }, orient: 'long', calc: { lmin: 500, lmax: 1200, points: 71, show: 'C' }, probe: { nm: 900, shift: 1000 } }) },
   { id: 'rodside', name: 'Au nanorods side by side, 5 nm gap', make: () => design('Au rods side by side, 5 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'side', gap: 5 }, orient: 'long', calc: { lmin: 500, lmax: 1100, points: 121, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
   { id: 'agrod', name: 'Ag nanorod 60 × 20 nm', make: () => design('Ag nanorod 60 × 20 nm', { kind: 'rod', core: { mat: 'Ag', d: 20 }, rod: { L: 60, D: 20 }, calc: { lmin: 300, lmax: 900, points: 121, show: 'C' }, probe: { nm: 633, shift: 1000 } }) },
+  { id: 'npom', name: 'Au nanoparticle on a Au mirror, 80 nm, 1 nm gap (NPoM)', make: () => design('Au NPoM, 1 nm gap', { kind: 'mirror', core: { mat: 'Au', d: 80 }, gap: 1, medium: 'custom', mediumN: 1.45, substrate: { mat: 'Au' }, calc: { lmin: 450, lmax: 1000, points: 56, show: 'C' }, probe: { nm: 785, shift: 1000 }, sweep: { gmin: 0.5, gmax: 20 } }) },
+  { id: 'auglass', name: 'Au nanoparticle on glass, 60 nm (in air)', make: () => design('Au on glass', { kind: 'mirror', core: { mat: 'Au', d: 60 }, gap: 0.5, medium: 'air', substrate: { mat: 'glass:N-BK7' }, calc: { lmin: 400, lmax: 800, points: 41, show: 'C' }, probe: { nm: 550, shift: 1000 } }) },
+  { id: 'agsi', name: 'Ag nanoparticle on silicon, 60 nm, 2 nm oxide gap', make: () => design('Ag on Si', { kind: 'mirror', core: { mat: 'Ag', d: 60 }, gap: 2, medium: 'air', substrate: { mat: 'Si' }, calc: { lmin: 350, lmax: 900, points: 56, show: 'C' }, probe: { nm: 532, shift: 1000 } }) },
   { id: 'audimer80', name: 'Au dimer, 80 nm, 5 nm gap (785 nm excitation)', make: () => design('Au dimer 80 nm', { kind: 'dimer', core: { mat: 'Au', d: 80 }, gap: 5, calc: { lmin: 450, lmax: 1000, points: 41, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
 ];
 PT.PRESETS = PRESETS;
@@ -20292,19 +20533,28 @@ PT.rodPoint = (dd, lam, gapOv) => {
   return { lam, Cext: pick('Cext'), Csca: pick('Csca'), Cabs: pick('Cabs'), E2, rod: sp, bem };
 };
 PT.rodModel = dd => { const ro = rodOpt(dd); return ro.pair === 'side' ? 'coupled spheroids (approximate)' : ro.pair === 'one' && ro.ends === 'spheroid' ? 'spheroid model with size corrections' : 'boundary elements (exact shape) with size corrections'; };
+/* a sphere above a substrate or mirror (engine/npom.js): normal polarisation drives the gap mode */
+const mirrorPoint = (dd, lam, gap) => {
+  const layers = PT.parts(dd, lam)[0].layers, R = layers[layers.length - 1].r, g = Math.max(0.05, gap != null ? gap : +dd.gap || 0.05);
+  const r = RNBX.npom.solve({ layers, nMed: medN(dd, lam), lam, nSub: nkOf(dd.substrate || { mat: 'Au' }, lam), gap: g, pol: dd.pol === 'z' ? 'z' : 'x' });
+  const E2 = dd.pol === 'z' ? r.E2gap : RNBX.npom.intensity(r, 1 + 0.5 / R, 0);
+  return { lam, Cext: r.Cext, Csca: r.Csca, Cabs: r.Cabs, E2, np: r };
+};
+PT.mirrorPoint = mirrorPoint;
 /* the hot spot: gap centre, or 0.5 nm outside the surface on the polarisation axis */
 PT.hotSpot = dd => (dd.kind === 'dimer' ? [0, 0, 0] : dd.pol === 'z' ? [0, 0, outerR(dd) + 0.5] : [0, outerR(dd) + 0.5, 0]);
-PT.order = (dd, lam) => (dd.kind === 'rod' ? 0 : +dd.orders > 0 ? +dd.orders : MIE().autoOrder(PT.parts(dd, lam), lam, medN(dd, lam)));
+PT.order = (dd, lam) => (dd.kind === 'rod' ? 0 : dd.kind === 'mirror' ? RNBX.npom.order(outerR(dd), Math.max(0.05, +dd.gap || 0.05)) : +dd.orders > 0 ? +dd.orders : MIE().autoOrder(PT.parts(dd, lam), lam, medN(dd, lam)));
 /* one wavelength: cross-sections (nm²) and the hot-spot |E|² */
 PT.point = (dd, lam, N) => {
   if (dd.kind === 'rod') return PT.rodPoint(dd, lam, dd._gap);
+  if (dd.kind === 'mirror') return mirrorPoint(dd, lam);
   const parts = PT.parts(dd, lam), nm = medN(dd, lam);
   const Sx = MIE().solve(parts, nm, lam, dd.pol, N || PT.order(dd, Math.min(lam, dd.calc.lmin)));
   const c = MIE().cross(Sx), hs = PT.hotSpot(dd), E2 = MIE().intensity(MIE().field(Sx, hs[0], hs[1], hs[2]));
   return { lam, Cext: c.Cext, Csca: c.Csca, Cabs: c.Cabs, E2, S: Sx };
 };
 const ramanNm = (lam, shift) => 1 / (1 / lam - shift * 1e-7);
-PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient]);
+PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
 
 /* ---------- state ---------- */
 let d = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, views = {};
@@ -20353,14 +20603,20 @@ PT.render = host => {
   buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep();
   runAll();
 };
-const hasGap = () => d.kind === 'dimer' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
+const hasGap = () => d.kind === 'dimer' || d.kind === 'mirror' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
 function buildLeft() {
   const host = views.left; if (!host) return; host.innerHTML = '';
   const g = [
-    fld('Particles', sel1([['single', 'One sphere (or core–shell)'], ['dimer', 'Dimer (two spheres, with a gap)'], ['rod', 'Nanorod']], () => d.kind, v => { d.kind = v; if (v === 'rod' && !d.rod) d.rod = { L: 40, D: 10 }; }, 'kind', 'all')),
+    fld('Particles', sel1([['single', 'One sphere (or core–shell)'], ['dimer', 'Dimer (two spheres, with a gap)'], ['mirror', 'Sphere on a substrate / mirror (gap)'], ['rod', 'Nanorod']], () => d.kind, v => { d.kind = v; if (v === 'rod' && !d.rod) d.rod = { L: 40, D: 10 }; if (v === 'mirror' && !d.substrate) d.substrate = { mat: 'Au' }; }, 'kind', 'all')),
     fld('Medium around', sel1(TF().options(true), () => d.medium, v => { d.medium = v; }, 'med', 'list'))];
   if (d.medium === 'custom') g.push(fld('Its index n', num(() => d.mediumN, v => { d.mediumN = v; }, { step: 0.001, min: 1, key: 'medn' })));
   if (d.kind === 'dimer') g.push(fld('Gap g (nm)', num(() => d.gap, v => { d.gap = v; }, { step: 0.1, min: 0.1, max: 500, key: 'gap', title: 'Surface-to-surface distance' })));
+  if (d.kind === 'mirror') {
+    d.substrate = d.substrate || { mat: 'Au' };
+    g.push(fld('Substrate / mirror', matSel(() => d.substrate.mat, v => { d.substrate.mat = v; }, 'subm')),
+      fld('Gap g (nm)', num(() => d.gap, v => { d.gap = v; }, { step: 0.1, min: 0.05, max: 500, key: 'gap', title: 'Particle surface to substrate (a spacer: molecules, oxide, SAM)' })));
+    if (d.substrate.mat === 'custom') g.push(fld('Substrate n', num(() => d.substrate.n == null ? 1.5 : d.substrate.n, v => { d.substrate.n = v; }, { step: 0.001, key: 'subn' })), fld('k', num(() => d.substrate.k || 0, v => { d.substrate.k = Math.max(0, v); }, { step: 0.001, min: 0, key: 'subk' })));
+  }
   if (d.kind === 'rod') {
     d.rod = d.rod || { L: 40, D: 10 };
     const ro = rodOpt(d);
@@ -20384,8 +20640,9 @@ function buildLeft() {
     host.append(el('div', { class: 'hint', text: `Aspect ratio ${UI().f1(r.a / r.b, 2)}. ${model} Light polarised across the rods uses uncoupled spheroids. Random orientation averages one longitudinal and two transverse responses.` }));
     return;
   }
-  g.push(fld('Polarisation', sel1([['z', d.kind === 'dimer' ? 'Along the dimer axis (hot spot)' : 'Along z'], ['y', d.kind === 'dimer' ? 'Across the axis' : 'Along y']], () => d.pol, v => { d.pol = v; }, 'pol')),
-    fld('Multipole orders', sel1([['0', 'Automatic'], ['10', '10'], ['15', '15'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']], () => String(d.orders || 0), v => { d.orders = +v; }, 'ord')));
+  const mir = d.kind === 'mirror';
+  g.push(fld(mir ? 'Exciting field' : 'Polarisation', sel1([['z', mir ? 'Normal to the substrate (gap mode)' : d.kind === 'dimer' ? 'Along the dimer axis (hot spot)' : 'Along z'], ['y', mir ? 'Parallel to the substrate' : d.kind === 'dimer' ? 'Across the axis' : 'Along y']], () => d.pol, v => { d.pol = v; }, 'pol')));
+  if (!mir) g.push(fld('Multipole orders', sel1([['0', 'Automatic'], ['10', '10'], ['15', '15'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']], () => String(d.orders || 0), v => { d.orders = +v; }, 'ord')));
   host.append(el('div', { class: 'st-grid' }, ...g));
   // core and shells, inside → out
   const card = (title, o, isCore, i) => {
@@ -20404,7 +20661,8 @@ function buildLeft() {
     el('button', { class: 'btn small', type: 'button', text: '+ Shell', title: 'Add a shell outside the particle', onclick: () => change(() => d.shells.push(shell('SiO2', 5)), null, 'list') }),
     el('span', {})));
   const R = outerR(d);
-  host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
+  if (d.kind === 'mirror') host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm, ${UI().f1(+d.gap, 2)} nm above the substrate. Multipole image method (Wind, Vlieger & Bedeaux 1987): the sphere's multipoles and their images in the substrate, solved together (${PT.order(d, d.calc.lmin)} orders for this gap), with the dipole from exact Mie theory so the size red-shift and radiation damping are kept. The medium fills the gap and the space around: for a nanoparticle-on-mirror set it to the spacer's index (e.g. 1.45 for a SAM), which sets the gap mode. The exciting field is the local field (incident plus reflected); “normal” drives the gap mode seen in dark-field with p-polarised light. Checked against exact two-sphere Mie theory (a perfect mirror is equivalent to a dimer). Scattering includes the image dipole; extinction is that of the particle.` }));
+  else host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
 }
 function probeControls() {
   return el('div', { class: 'st-grid' },
@@ -20455,6 +20713,7 @@ async function runRaman() {
 const RES = { low: 64, medium: 110, high: 170 };
 async function runField(keep) {
   if (d.kind === 'rod') return runRodField(keep);
+  if (d.kind === 'mirror') return runMirrorField(keep);
   const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm, N = PT.order(dd, Math.min(lam, d.calc.lmin));
   const Sx = MIE().solve(PT.parts(dd, lam), medN(dd, lam), lam, dd.pol, N);
   const R = outerR(dd), zc = dd.kind === 'dimer' ? R + (+dd.gap || 0) / 2 : 0, hz = zc + R * 1.6, hx = R * 1.6;
@@ -20465,6 +20724,27 @@ async function runField(keep) {
     if (run !== fieldRun) return;
     const x = -hx + 2 * hx * (j + 0.5) / nx;
     for (let i = 0; i < nz; i++) { const z = -hz + 2 * hz * (i + 0.5) / nz, v = MIE().intensity(MIE().field(Sx, x, 0, z)); map[j * nz + i] = v; if (v > out.max) out.max = v; }
+    if (j % 6 === 5) { drawField(); await later(); }
+  }
+  out.done = true; drawField();
+}
+/* sphere over a substrate: x across (horizontal), height up; the substrate below */
+async function runMirrorField(keep) {
+  const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm;
+  await later(); if (run !== fieldRun) return;
+  const pt = mirrorPoint(dd, lam), np = pt.np, R = outerR(dd), g = Math.max(0.05, +dd.gap || 0.05);
+  const hz = R * 1.5, hx = (R + g) * 1.25, nz = RES[dd.view.res] || 110, nx = Math.max(24, Math.round(nz * hx / hz)), map = new Float64Array(nx * nz).fill(NaN);
+  const out = { nx, nz, hx, hz, map, lam, done: false, max: 0, mirror: true, subCol: UI().colorOf((dd.substrate || {}).mat || 'Au') };
+  field = out;
+  for (let j = 0; j < nx; j++) {
+    if (run !== fieldRun) return;
+    const height = -(-hx + 2 * hx * (j + 0.5) / nx);   // drawn top = above
+    for (let i = 0; i < nz; i++) {
+      const x = -hz + 2 * hz * (i + 0.5) / nz;
+      if (height < -(R + g)) { map[j * nz + i] = -1; continue; }
+      const v = RNBX.npom.intensity(np, x / R, height / R);
+      map[j * nz + i] = v; if (v > out.max) out.max = v;
+    }
     if (j % 6 === 5) { drawField(); await later(); }
   }
   out.done = true; drawField();
@@ -20508,6 +20788,7 @@ const COL = { Cext: '#1f77b4', Csca: '#2ca02c', Cabs: '#d62728', E2: '#9467bd', 
 function drawSketch() {
   const host = views.sketch; if (!host) return;
   if (d.kind === 'rod') return drawRodSketch(host);
+  if (d.kind === 'mirror') return drawMirrorSketch(host);
   const w = Math.max(300, host.clientWidth || 440), h = 150, R = outerR(d), parts = d.kind === 'dimer' ? [-1, 1] : [0];
   const c = d.kind === 'dimer' ? R + (+d.gap || 0) / 2 : 0, sc = Math.min((w - 120) / ((c + R) * 2), (h - 40) / (2 * R)), cx = w / 2, cy = h / 2 + 4;
   const rs = [d.core.d / 2]; d.shells.forEach(s => rs.push(rs[rs.length - 1] + (+s.t || 0)));
@@ -20521,6 +20802,18 @@ function drawSketch() {
   s += d.pol === 'z' ? `<line x1="34" y1="${h - 14}" x2="70" y2="${h - 14}" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="76" y="${h - 10}" fill="#d62728">E</text>` : `<circle cx="44" cy="${h - 16}" r="5" fill="none" stroke="#d62728" stroke-width="1.4"/><circle cx="44" cy="${h - 16}" r="1.6" fill="#d62728"/><text x="54" y="${h - 12}" fill="#d62728">E (out of page)</text>`;
   s += `<defs><marker id="pt-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d62728"/></marker></defs>`;
   s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#666">${U.esc(mats.map(m => TF().name(m.mat)).join(' / '))} in ${U.esc(TF().name(d.medium))}</text>`;
+  host.innerHTML = s + '</svg>';
+}
+ function drawMirrorSketch(host) {
+  const w = Math.max(300, host.clientWidth || 440), h = 150, R = outerR(d), g = Math.max(0.05, +d.gap || 0), sc = Math.min((w - 160) / (2 * R), (h - 52) / (2 * R + g)), cx = w / 2, cy = 16 + R * sc;
+  const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0))); const mats = [d.core].concat(d.shells), ys = cy + (R + g) * sc;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="10.5" class="st-chart">`;
+  s += `<rect x="0" y="0" width="${w}" height="${ys}" fill="${d.medium === 'air' ? '#f7f9fc' : UI().colorOf(d.medium)}" fill-opacity="0.25"/><rect x="0" y="${ys}" width="${w}" height="${h - ys}" fill="${UI().colorOf((d.substrate || {}).mat || 'Au')}"/>`;
+  for (let k = rs.length - 1; k >= 0; k--) s += `<circle cx="${cx}" cy="${cy}" r="${Math.max(0.8, rs[k] * sc)}" fill="${UI().colorOf(mats[k].mat)}" stroke="#00000066" stroke-width="0.7"/>`;
+  s += `<text x="${cx + R * sc + 8}" y="${ys - 4}" fill="#333">g = ${UI().f1(g, g < 10 ? 2 : 0)} nm</text>`;
+  s += d.pol === 'z' ? `<line x1="40" y1="${ys - 8}" x2="40" y2="20" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="46" y="30" fill="#d62728">E₀ (normal)</text>` : `<line x1="24" y1="30" x2="70" y2="30" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="24" y="22" fill="#d62728">E₀ (parallel)</text>`;
+  s += `<defs><marker id="pt-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d62728"/></marker></defs>`;
+  s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#fff">${U.esc(mats.map(m => TF().name(m.mat)).join(' / '))} on ${U.esc(TF().name((d.substrate || {}).mat || 'Au'))}, in ${U.esc(TF().name(d.medium))}${d.medium === 'custom' ? ' (n ' + d.mediumN + ')' : ''}</text>`;
   host.innerHTML = s + '</svg>';
 }
 const capsulePath = (cx, cy, a, b, sc, ends) => (ends === 'spheroid'
@@ -20566,7 +20859,7 @@ function drawHot() {
   const ch = UI().chart({ id: 'pt-hot', w, h, xr: [lo, hi], yr: [ymin, ymax], xlabel: 'Wavelength (nm)', ylabel: 'log₁₀', cross: d.probe.nm,
     series: [{ x: spec.x, y: lg, color: COL.E2 }, { x: spec.x, y: ef, color: COL.EF }], legend: [{ name: '|E|² hot spot', color: COL.E2 }, { name: '|E|⁴ (SERS EF)', color: COL.EF }] });
   host.innerHTML = ch.svg;
-  const where = d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? (rodOpt(d).pair === 'side' ? 'not resolved by the side-by-side (coupled-spheroid) model' : (d.orient || 'random') === 'trans' ? (rodOpt(d).pair === 'one' ? '0.5 nm from the side of the rod (light polarised across it)' : 'calculated for light polarised along the rods') : rodOpt(d).pair === 'tip' ? 'at the centre of the gap between the tips (light polarised along the rods)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
+  const where = d.kind === 'mirror' ? (d.pol === 'z' ? 'in the middle of the gap between particle and substrate' : '0.5 nm from the side of the particle (field parallel to the substrate)') : d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? (rodOpt(d).pair === 'side' ? 'not resolved by the side-by-side (coupled-spheroid) model' : (d.orient || 'random') === 'trans' ? (rodOpt(d).pair === 'one' ? '0.5 nm from the side of the rod (light polarised across it)' : 'calculated for light polarised along the rods') : rodOpt(d).pair === 'tip' ? 'at the centre of the gap between the tips (light polarised along the rods)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
   const r = raman;
   host.append(el('div', { class: 'readout', html: r ? `Hot spot ${where}: at ${UI().f1(r.lam, 1)} nm |E|² = <b>${fmtE(r.E2a)}</b>; at the Raman line ${UI().f1(r.lr, 1)} nm (${d.probe.shift} cm⁻¹) |E|² = ${fmtE(r.E2b)}.<br>SERS enhancement |E(λ)|²·|E(λ<sub>R</sub>)|² ≈ <b>${fmtE(r.EF)}</b> (the |E|⁴ approximation; chemical enhancement not included).` : 'Calculating the hot spot…' }));
 }
@@ -20575,10 +20868,10 @@ const INFERNO = ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446
 const hot = v => { const t = U.clamp(v, 0, 1) * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(t)), u = t - i, a = INFERNO[i], b = INFERNO[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
 PT.fieldImage = (r, log, partCol) => {
   const cv = document.createElement('canvas'); cv.width = r.nz; cv.height = r.nx;
-  const cx = cv.getContext('2d'), im = cx.createImageData(r.nz, r.nx), vmax = r.max || 1, pc = U.hexToRgb(partCol || '#c9a227');
+  const cx = cv.getContext('2d'), im = cx.createImageData(r.nz, r.nx), vmax = r.max || 1, pc = U.hexToRgb(partCol || '#c9a227'), sc = U.hexToRgb(U.mix(r.subCol || '#9aa1ab', '#555555', 0.25));
   const norm = v => (log ? U.clamp(Math.log10(Math.max(v, 1e-3)) / Math.log10(Math.max(vmax, 10)), 0, 1) : v / vmax);
   for (let j = 0; j < r.nx; j++) for (let i = 0; i < r.nz; i++) {
-    const v = r.map[j * r.nz + i], o = (j * r.nz + i) * 4, c = isNaN(v) ? pc : hot(norm(v));
+    const v = r.map[j * r.nz + i], o = (j * r.nz + i) * 4, c = isNaN(v) ? pc : v < 0 ? sc : hot(norm(v));
     im.data[o] = c[0]; im.data[o + 1] = c[1]; im.data[o + 2] = c[2]; im.data[o + 3] = 255;
   }
   cx.putImageData(im, 0, 0);
@@ -20597,18 +20890,20 @@ function drawField() {
   // particle outlines
   const Rr = outerR(d), cz = d.kind === 'dimer' ? [-(Rr + (+d.gap || 0) / 2), Rr + (+d.gap || 0) / 2] : [0], sx = (R - L) / (2 * r.hz);
   if (d.kind === 'rod') { const rb = rodOf(d), ro = rodOpt(d); (ro.pair === 'tip' ? [-(rb.a + ro.gap / 2), rb.a + ro.gap / 2] : [0]).forEach(zc => { s += capsulePath(X(zc), Y(0), rb.a, rb.b, sx, ro.ends) + ` fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }); }
+  else if (r.mirror) { const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0))); rs.forEach(rr => { s += `<circle cx="${X(0)}" cy="${Y(0)}" r="${rr * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }); const ys = Y(Rr + Math.max(0.05, +d.gap || 0)); s += `<line x1="${L}" y1="${ys}" x2="${R}" y2="${ys}" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }
   else { const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0)));
     cz.forEach(z => rs.forEach(rr => { s += `<circle cx="${X(z)}" cy="${Y(0)}" r="${rr * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; })); }
   s += `<rect x="${L}" y="${T}" width="${R - L}" height="${hh}" fill="none" stroke="currentColor"/>`;
   [-r.hz, 0, r.hz].forEach(z => { s += `<text x="${X(z)}" y="${B + 13}" text-anchor="middle" fill="currentColor">${UI().f1(z, 0)}</text>`; });
-  [-r.hx, 0, r.hx].forEach(x => { s += `<text x="${L - 4}" y="${Y(x) + 4}" text-anchor="end" fill="currentColor">${UI().f1(x, 0)}</text>`; });
-  s += `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">z (nm) · ${d.kind === 'dimer' ? 'dimer axis' : d.kind === 'rod' ? 'rod axis' : 'particle centre at 0'}</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">x (nm)${d.kind === 'rod' ? '' : ', light ↓'}</text>`;
+  [-r.hx, 0, r.hx].forEach(x => { s += `<text x="${L - 4}" y="${Y(x) + 4}" text-anchor="end" fill="currentColor">${UI().f1(r.mirror ? -x : x, 0)}</text>`; });
+  s += r.mirror ? `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">x along the substrate (nm)</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">height (nm, centre at 0)</text>`
+    : `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">z (nm) · ${d.kind === 'dimer' ? 'dimer axis' : d.kind === 'rod' ? 'rod axis' : 'particle centre at 0'}</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">x (nm)${d.kind === 'rod' ? '' : ', light ↓'}</text>`;
   // colour bar
   const cbx = R + 10, cbw = 10;
   for (let k = 0; k < 40; k++) { const c = hot(1 - k / 39); s += `<rect x="${cbx}" y="${T + k * hh / 40}" width="${cbw}" height="${hh / 40 + 0.5}" fill="rgb(${c})"/>`; }
   s += `<text x="${cbx + cbw + 3}" y="${T + 9}" fill="currentColor">${fmtTxt(r.max)}</text><text x="${cbx + cbw + 3}" y="${B}" fill="currentColor">${d.view.log ? '1' : '0'}</text>`;
   host.innerHTML = s + '</svg>';
-  if (views.fieldInfo) views.fieldInfo.innerHTML = d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod${rodOpt(d).pair === 'tip' ? 's' : ''}, polarised ${r.pol === 'long' ? 'along' : 'across'} ${rodOpt(d).pair === 'tip' ? 'them' : 'it'} (${r.pol === 'long' && !(rodOpt(d).pair === 'one' && rodOpt(d).ends === 'spheroid') ? 'boundary-element solution of the exact shape, with size corrections' : 'quasi-static field of the spheroid, driven by the size-corrected internal field'})${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
+  if (views.fieldInfo) views.fieldInfo.innerHTML = r.mirror ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, exciting field ${d.pol === 'z' ? 'normal to' : 'parallel to'} the substrate (quasi-static multipoles with images; the field is that of the local exciting field E₀)${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod${rodOpt(d).pair === 'tip' ? 's' : ''}, polarised ${r.pol === 'long' ? 'along' : 'across'} ${rodOpt(d).pair === 'tip' ? 'them' : 'it'} (${r.pol === 'long' && !(rodOpt(d).pair === 'one' && rodOpt(d).ends === 'spheroid') ? 'boundary-element solution of the exact shape, with size corrections' : 'quasi-static field of the spheroid, driven by the size-corrected internal field'})${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
 }
 const fmtTxt = v => (v >= 1e4 ? v.toExponential(1) : UI().f1(v, v < 10 ? 1 : 0));
 function drawSweep() {
@@ -20688,36 +20983,56 @@ LF.params = dd => {
   const fs = filmsOf(dd), P = [];
   fs.forEach((x, i) => {
     P.push({ key: 't' + i, label: x.label + ' — thickness', unit: 'nm', get: d2 => +filmsOf(d2)[i].f.nm || 0, set: (d2, v) => { filmsOf(d2)[i].f.nm = v; }, lo: v => Math.max(0, v * 0.5), hi: v => Math.max(v * 1.5, v + 20) });
+    if (+x.f.rough > 0) P.push({ key: 'r' + i, label: x.label + ' — roughness', unit: 'nm', get: d2 => +filmsOf(d2)[i].f.rough || 0, set: (d2, v) => { filmsOf(d2)[i].f.rough = v; }, lo: () => 0, hi: v => Math.max(v * 2, 8) });
+    if (x.f.mat === 'ema') P.push({ key: 'f' + i, label: x.label + ' — fraction of B', unit: '', get: d2 => { const e = filmsOf(d2)[i].f.ema || {}; return e.f == null ? 0.3 : +e.f; }, set: (d2, v) => { const f = filmsOf(d2)[i].f; f.ema = Object.assign({}, ST().EMA_DEFAULT, f.ema || {}, { f: v }); }, lo: () => 0, hi: () => 1 });
     if (x.f.mat === 'custom') {
       P.push({ key: 'n' + i, label: x.label + ' — n', unit: '', get: d2 => +filmsOf(d2)[i].f.n || 1.5, set: (d2, v) => { filmsOf(d2)[i].f.n = v; }, lo: v => Math.max(1, v - 0.5), hi: v => v + 0.5 });
       P.push({ key: 'k' + i, label: x.label + ' — k', unit: '', get: d2 => +filmsOf(d2)[i].f.k || 0, set: (d2, v) => { filmsOf(d2)[i].f.k = v; }, lo: () => 0, hi: v => Math.max(0.5, v * 3) });
     }
   });
+  if (+dd.substrate.rough > 0) P.push({ key: 'sr', label: 'Substrate — roughness', unit: 'nm', get: d2 => +d2.substrate.rough || 0, set: (d2, v) => { d2.substrate.rough = v; }, lo: () => 0, hi: v => Math.max(v * 2, 8) });
+  if (ELL(opts && opts.q)) return P;   // scale and offset belong to intensity measurements
   P.push({ key: 'scale', label: 'Scale factor (measurement calibration)', unit: '×', get: () => 1, set: null, lo: () => 0.7, hi: () => 1.3 });
   P.push({ key: 'offset', label: 'Offset (stray light, background)', unit: '', get: () => 0, set: null, lo: () => -0.1, hi: () => 0.1 });
   return P;
 };
-/* the measured points used (in nm or degrees, as fractions) */
+/* the measured points used (in nm or degrees, as fractions; Ψ and Δ in degrees: [x, Ψ, Δ]) */
+const ELL = q => q === 'PD' || q === 'P' || q === 'D';
+LF.ELL = ELL;
 LF.points = () => {
   if (!meas) return null;
   const s = meas.series[opts.series] || meas.series[0]; if (!s) return null;
-  const k = opts.xkind === 'um' ? 1000 : 1, f = opts.ypct ? 0.01 : 1, lo = opts.xmin == null ? -Infinity : +opts.xmin, hi = opts.xmax == null ? Infinity : +opts.xmax;
-  const pts = []; s.x.forEach((x, i) => { const X = x * k; if (X >= lo * (opts.xkind === 'um' ? 1000 : 1) && X <= hi * (opts.xkind === 'um' ? 1000 : 1) && isFinite(s.y[i])) pts.push([X, s.y[i] * f]); });
+  const s2 = opts.q === 'PD' ? meas.series[opts.series2 == null ? opts.series + 1 : opts.series2] : null;
+  if (opts.q === 'PD' && !s2) return null;
+  const ell = ELL(opts.q), k = opts.xkind === 'um' ? 1000 : 1, f = opts.ypct && !ell ? 0.01 : 1, lo = opts.xmin == null ? -Infinity : +opts.xmin, hi = opts.xmax == null ? Infinity : +opts.xmax;
+  const pts = []; s.x.forEach((x, i) => { const X = x * k; if (X >= lo * (opts.xkind === 'um' ? 1000 : 1) && X <= hi * (opts.xkind === 'um' ? 1000 : 1) && isFinite(s.y[i])) { if (opts.q === 'PD') { const j = s2.x.length === s.x.length ? i : s2.x.indexOf(x); if (j >= 0 && isFinite(s2.y[j])) pts.push([X, s.y[i], s2.y[j]]); } else pts.push([X, s.y[i] * f]); } });
   pts.sort((a, b) => a[0] - b[0]);
   // at most 300 points for the fit (evenly thinned)
   const step = Math.max(1, Math.ceil(pts.length / 300));
   return { all: pts, fit: pts.filter((p, i) => i % step === 0), angle: opts.xkind === 'deg' };
 };
-/* model values at the points for a design and scale / offset */
+/* model values at the points for a design and scale / offset (ellipsometry: [Ψ, Δ] per point) */
 LF.model = (dd, pts, sc = 1, off = 0) => {
   const st = ST().stack(dd), c = dd.calc, q = opts.q;
+  if (ELL(q)) return pts.map(p => { const e = pts.angle ? TF().ellips(st, +c.lambda, Math.min(89.99, p[0])) : TF().ellips(st, p[0], +c.angle || 0); return [e.psi, e.delta]; });
   return pts.map(p => { const r = pts.angle ? TF().response(st, +c.lambda, Math.min(89.99, p[0]), c.pol) : TF().response(st, p[0], +c.angle || 0, c.pol); return sc * r[q] + off; });
 };
+/* residuals in degrees for Ψ / Δ (Δ wrapped to ±180°), fractions otherwise */
+const wrap = v => ((v + 540) % 360) - 180;
+const resid = (m, pts) => {
+  const q = opts.q;
+  if (q === 'PD') return m.map((v, i) => v[0] - pts[i][1]).concat(m.map((v, i) => wrap(v[1] - pts[i][2])));
+  if (q === 'P') return m.map((v, i) => v[0] - pts[i][1]);
+  if (q === 'D') return m.map((v, i) => wrap(v[1] - pts[i][1]));
+  return m.map((v, i) => v - pts[i][1]);
+};
+const targets = pts => (opts.q === 'PD' ? pts.map(p => p[1]).concat(pts.map(p => p[2])) : pts.map(p => p[1]));
 /* the measurement over the calculated spectrum (called by the Layers tab) */
 LF.overlay = () => {
   const P = meas && opts && LF.points(); if (!P || !P.all.length) return null;
   // shown corrected for a fitted scale and offset, so it lies on the model
   const sc = result ? (result.free.find(x => x.key === 'scale') || { v: 1 }).v : 1, off = result ? (result.free.find(x => x.key === 'offset') || { v: 0 }).v : 0;
+  if (ELL(opts.q)) return { x: P.all.map(p => p[0]), psi: opts.q === 'D' ? null : P.all.map(p => p[1]), delta: opts.q === 'PD' ? P.all.map(p => p[2]) : opts.q === 'D' ? P.all.map(p => p[1]) : null, q: opts.q, angle: P.angle };
   return { x: P.all.map(p => p[0]), y: P.all.map(p => (p[1] - off) / sc), q: opts.q, angle: P.angle, corrected: sc !== 1 || off !== 0 };
 };
 
@@ -20732,12 +21047,12 @@ LF.fit = async (dd, onStep) => {
   const f = pv => {
     let sc = 1, off = 0;
     free.forEach((p, i) => { if (p.key === 'scale') sc = pv[i]; else if (p.key === 'offset') off = pv[i]; else p.set(work, pv[i]); });
-    const m = LF.model(work, pts, sc, off); return m.map((v, i) => v - pts[i][1]);
+    return resid(LF.model(work, pts, sc, off), pts);
   };
   const r0 = f(p0), rms0 = Math.sqrt(r0.reduce((a, v) => a + v * v, 0) / r0.length);
   const res = await RNBX.fit.global(f, p0, lo, hi, { onStep });
-  const ybar = pts.reduce((a, p) => a + p[1], 0) / pts.length, sst = pts.reduce((a, p) => a + (p[1] - ybar) ** 2, 0);
-  return { free: free.map((p, i) => ({ key: p.key, label: p.label, unit: p.unit, v0: p0[i], v: res.p[i], s: res.sigma[i], lo: lo[i], hi: hi[i], atBound: Math.abs(res.p[i] - lo[i]) < 1e-6 * (hi[i] - lo[i] || 1) || Math.abs(res.p[i] - hi[i]) < 1e-6 * (hi[i] - lo[i] || 1) })), rms: res.rms, rms0, r2: 1 - res.ssr / (sst || 1), n: pts.length };
+  const tg = targets(pts), ybar = tg.reduce((a, v) => a + v, 0) / tg.length, sst = tg.reduce((a, v) => a + (v - ybar) ** 2, 0);
+  return { ell: ELL(opts.q), free: free.map((p, i) => ({ key: p.key, label: p.label, unit: p.unit, v0: p0[i], v: res.p[i], s: res.sigma[i], lo: lo[i], hi: hi[i], atBound: Math.abs(res.p[i] - lo[i]) < 1e-6 * (hi[i] - lo[i] || 1) || Math.abs(res.p[i] - hi[i]) < 1e-6 * (hi[i] - lo[i] || 1) })), rms: res.rms, rms0, r2: 1 - res.ssr / (sst || 1), n: pts.length };
 };
 /* write fitted thicknesses / n / k into a copy of the design (scale and offset stay with the fit) */
 LF.apply = (dd, fr) => { const out = JSON.parse(JSON.stringify(dd)), all = LF.params(out); fr.free.forEach(x => { const p = all.find(q => q.key === x.key); if (p && p.set) p.set(out, +x.v.toPrecision(6)); }); return out; };
@@ -20750,6 +21065,9 @@ const take = (data, name) => {
   opts.ypct = ymax > 1.5;
   opts.xkind = d.calc.scan === 'angle' ? 'deg' : xmax < 30 ? 'um' : 'nm';
   opts.q = (d.calc.show || 'R').replace(/[^RTA]/g, '')[0] || 'R';
+  // two value columns that look like Ψ (0–90°) and Δ (0–360°): an ellipsometry measurement
+  const s2 = meas.series[1];
+  if (s2 && (d.calc.show === 'PD' || /psi|ψ/i.test(s.name || '')) && Math.max(...s.y) <= 90 && Math.min(...s.y) >= 0 && Math.max(...s2.y) <= 360 && Math.min(...s2.y) >= -180) { opts.q = 'PD'; opts.series2 = 1; opts.ypct = false; }
   result = null; save(); LF.render(); ST().rerender();
 };
 LF.load = (data, name) => take(data, name);
@@ -20773,14 +21091,17 @@ LF.render = () => {
     el('button', { class: 'btn small', type: 'button', text: 'Paste…', onclick: fromPaste }),
     el('button', { class: 'btn small', type: 'button', text: 'From RNSpectraX', title: 'The spectrum sent with Export ▾ → RNBeamX', onclick: fromSpectraX }),
     meas ? el('button', { class: 'btn small ghost', type: 'button', text: 'Remove the measurement', onclick: () => { meas = null; result = null; save(); LF.render(); ST().rerender(); } }) : el('span')));
-  if (!meas) { host.append(el('div', { class: 'hint', text: 'Load a measured reflectance, transmittance or absorptance spectrum to compare it with the design and fit the film thicknesses (and n, k of custom films). Two columns: wavelength (or angle) and the value, as a fraction or in %.' })); return; }
+  if (!meas) { host.append(el('div', { class: 'hint', text: 'Load a measured reflectance, transmittance or absorptance spectrum, or ellipsometry data, to compare it with the design and fit film thicknesses, roughness, mixture fractions and n, k of custom films. Intensity: two columns, wavelength (or angle) and the value as a fraction or in %. Ellipsometry: three columns, wavelength, Ψ and Δ in degrees (set the angle of incidence under Optical response).' })); return; }
   opts = Object.assign(defaults(), opts || {});
   const s = meas.series[opts.series] || meas.series[0], d = ST().design();
   const g = [];
   if (meas.series.length > 1) g.push(fld('Series', sel(meas.series.map((q, i) => [String(i), q.name]), () => opts.series, v => { opts.series = +v; })));
-  g.push(fld('Measured', sel([['R', 'Reflectance R'], ['T', 'Transmittance T'], ['A', 'Absorptance A']], () => opts.q, v => { opts.q = v; })),
+  const ell = ELL(opts.q);
+  g.push(fld('Measured', sel([['R', 'Reflectance R'], ['T', 'Transmittance T'], ['A', 'Absorptance A'], ['PD', 'Ellipsometry Ψ and Δ'], ['P', 'Ellipsometry Ψ only'], ['D', 'Ellipsometry Δ only']], () => opts.q, v => { opts.q = v; if (v === 'PD' && opts.series2 == null) opts.series2 = Math.min(meas.series.length - 1, opts.series + 1); })));
+  if (opts.q === 'PD' && meas.series.length > 1) g.push(fld('Δ column', sel(meas.series.map((q, i) => [String(i), q.name]), () => (opts.series2 == null ? opts.series + 1 : opts.series2), v => { opts.series2 = +v; })));
+  g.push(
     fld('x is', sel([['nm', 'Wavelength (nm)'], ['um', 'Wavelength (µm)'], ['deg', 'Angle of incidence (°)']], () => opts.xkind, v => { opts.xkind = v; })),
-    fld('Values in', sel([['0', 'Fraction (0–1)'], ['1', 'Per cent']], () => (opts.ypct ? '1' : '0'), v => { opts.ypct = v === '1'; })),
+    ell ? el('span') : fld('Values in', sel([['0', 'Fraction (0–1)'], ['1', 'Per cent']], () => (opts.ypct ? '1' : '0'), v => { opts.ypct = v === '1'; })),
     fld('Fit from', numIn(() => opts.xmin, v => { opts.xmin = v; }, { ph: String(Math.min(...s.x)), redraw: true })), fld('to', numIn(() => opts.xmax, v => { opts.xmax = v; }, { ph: String(Math.max(...s.x)), redraw: true })));
   host.append(el('div', { class: 'st-grid' }, ...g));
   const P = LF.points();
@@ -20804,13 +21125,14 @@ LF.render = () => {
       if (run !== running) return;
       result = fr;
       ST().setDesign(LF.apply(ST().design(), fr));
-      RNBX.toast(`Fitted: RMS ${UI().f1(fr.rms * 100, 2)} % (was ${UI().f1(fr.rms0 * 100, 2)} %). Ctrl+Z undoes it.`);
+      RNBX.toast(fr.ell ? `Fitted: RMS ${UI().f1(fr.rms, 3)}° (was ${UI().f1(fr.rms0, 3)}°). Ctrl+Z undoes it.` : `Fitted: RMS ${UI().f1(fr.rms * 100, 2)} % (was ${UI().f1(fr.rms0 * 100, 2)} %). Ctrl+Z undoes it.`);
     } catch (e) { status.textContent = e.message || String(e); go.disabled = false; }
   } });
   host.append(el('div', { class: 'row', style: { gap: '8px', alignItems: 'center', margin: '6px 0' } }, go, status));
   if (result) {
     const rows = result.free.map(x => `<tr><td>${U.esc(x.label)}</td><td><b>${fmtV(x.v, x.unit)}</b> ± ${fmtV(x.s, x.unit)}</td><td>${fmtV(x.v0, x.unit)}</td><td>${x.atBound ? '<span style="color:var(--danger)">at a limit</span>' : ''}</td></tr>`).join('');
-    host.append(el('div', { class: 'readout', html: `Fit to ${result.n} points: RMS deviation ${UI().f1(result.rms * 100, 2)} % (was ${UI().f1(result.rms0 * 100, 2)} %), R² = ${UI().f1(result.r2, 4)}.<table class="st-tab"><tr><th>Parameter</th><th>Fitted ± 1σ</th><th>Before</th><th></th></tr>${rows}</table><span class="hint" style="margin:0">The values are in the design (Ctrl+Z restores the old ones). σ comes from the fit's covariance and assumes the material data are exact; a value at a limit means the range should be widened. Scale and offset describe the measurement, not the sample.</span>` }));
+    const rmsTxt = result.ell ? `${UI().f1(result.rms, 3)}° (was ${UI().f1(result.rms0, 3)}°)` : `${UI().f1(result.rms * 100, 2)} % (was ${UI().f1(result.rms0 * 100, 2)} %)`;
+    host.append(el('div', { class: 'readout', html: `Fit to ${result.n} points: RMS deviation ${rmsTxt}, R² = ${UI().f1(result.r2, 4)}.<table class="st-tab"><tr><th>Parameter</th><th>Fitted ± 1σ</th><th>Before</th><th></th></tr>${rows}</table><span class="hint" style="margin:0">The values are in the design (Ctrl+Z restores the old ones). σ comes from the fit's covariance and assumes the material data are exact; a value at a limit means the range should be widened. Scale and offset describe the measurement, not the sample.</span>` }));
     drawResidual();
   }
 };
@@ -20819,8 +21141,10 @@ function drawResidual() {
   const P = LF.points(); if (!P || !result) return;
   const d = ST().design(), sc = (result.free.find(x => x.key === 'scale') || { v: 1 }).v, off = (result.free.find(x => x.key === 'offset') || { v: 0 }).v;
   const pts = P.all.slice(); pts.angle = P.angle;
-  const m = LF.model(d, pts, sc, off), res = pts.map((p, i) => (p[1] - m[i]) * 100), w = Math.max(280, host.clientWidth || 400), mx = Math.max(0.5, ...res.map(Math.abs));
-  const ch = UI().chart({ id: 'lf-res', w, h: 130, xr: [pts[0][0], pts[pts.length - 1][0]], yr: [-mx * 1.1, mx * 1.1], xlabel: P.angle ? 'Angle (°)' : 'Wavelength (nm)', ylabel: 'Residual (%)', series: [{ x: pts.map(p => p[0]), y: res, color: '#7f7f7f', w: 1.2 }],
+  const m = LF.model(d, pts, sc, off), ell = ELL(opts.q), r = resid(m, pts).map(v => -v * (ell ? 1 : 100)), n = pts.length;
+  const sers = opts.q === 'PD' ? [{ x: pts.map(p => p[0]), y: r.slice(0, n), color: '#6a3d9a', w: 1.2 }, { x: pts.map(p => p[0]), y: r.slice(n), color: '#e08214', w: 1.2 }] : [{ x: pts.map(p => p[0]), y: r, color: '#7f7f7f', w: 1.2 }];
+  const w = Math.max(280, host.clientWidth || 400), mx = Math.max(ell ? 0.05 : 0.5, ...r.map(Math.abs));
+  const ch = UI().chart({ id: 'lf-res', w, h: 130, xr: [pts[0][0], pts[pts.length - 1][0]], yr: [-mx * 1.1, mx * 1.1], xlabel: P.angle ? 'Angle (°)' : 'Wavelength (nm)', ylabel: ell ? 'Residual (°)' : 'Residual (%)', series: sers,
     over: (X, Y) => `<line x1="${X(pts[0][0])}" x2="${X(pts[pts.length - 1][0])}" y1="${Y(0)}" y2="${Y(0)}" stroke="#d62728" stroke-dasharray="3 3"/>` });
   host.append(el('div', { html: ch.svg }));
 }

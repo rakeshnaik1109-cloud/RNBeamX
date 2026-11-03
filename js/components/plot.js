@@ -65,7 +65,7 @@ DataIO.apply = (obj, d) => {
 };
 
 /* ---------- panels calculated live from a layer stack or SPR prism ---------- */
-const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'] };
+const CALC_STYLE = { R: ['Reflectance', '#1f77b4'], T: ['Transmittance', '#2ca02c'], A: ['Absorptance', '#d62728'], P: ['Ψ (°)', '#6a3d9a'], D: ['Δ (°)', '#e08214'] };
 /* one entry point for every calculation: flat films (transfer matrix,
    instant) or a grating (RCWA, in the background: returns the last
    result with pending: true, or { pending, progress }, until done) */
@@ -287,7 +287,7 @@ lib.register({
       else if (res && res.pending) { series = []; busy = res.progress || 0; }
       else { series = []; lost = true; }
       if (res && res.pending && res.x) busy = res.progress || 0;
-      if (p.mark && res && res.x && !res.pending) {
+      if (p.mark && res && res.x && !res.pending && !res.ellips) {
         // live resonance marker: follows the dip as the stack changes or animates
         const c = res.calc, u = DataIO.resUnit(c), wl = c.scan === 'wl', dip = c.show.includes('R') || !c.show.includes('A');
         const e = RNBX.thinfilm.extremum(res.x, dip ? res.series.R : res.series.A, dip ? 'min' : 'max');

@@ -64,7 +64,10 @@ lib.guessMat = name => {
 };
 /* the planar stack seen by the thin-film solver */
 const layerStack = p => {
-  const L = (p.layers || []).map(l => ({ m: { mat: l.mat || lib.guessMat(l.name), n: l.n, k: l.k }, d: +l.nm || 0 }));
+  // made in Layer Studio: its own stack keeps roughness, mixtures and the substrate back side
+  const fromStudio = RNBX.studio && RNBX.studio.stackFromProps ? RNBX.studio.stackFromProps(p) : null;
+  if (fromStudio) return fromStudio;
+  const L = (p.layers || []).map(l => ({ m: l.mat === 'ema' && l.ema ? { mat: 'ema', ema: { a: { mat: l.ema.a }, b: { mat: l.ema.b }, f: l.ema.f, model: l.ema.model } } : { mat: l.mat || lib.guessMat(l.name), n: l.n, k: l.k }, d: +l.nm || 0 }));
   if (!L.length) return null;
   const amb = { mat: p.ambient || 'air', n: p.ambientN, k: 0 };
   const semi = p.bottomMode !== 'film';

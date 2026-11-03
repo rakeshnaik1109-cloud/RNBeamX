@@ -25,7 +25,7 @@ const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, TF = () => RNBX.thinfil
 /* ---------- designs ---------- */
 const shell = (mat, t) => ({ mat, t });
 const design = (name, o) => Object.assign({
-  name, kind: 'single', core: { mat: 'Au', d: 40 }, shells: [], medium: 'H2O', mediumN: 1.33, gap: 2, pol: 'z', orders: 0, rod: { L: 40, D: 10 }, orient: 'random',
+  name, kind: 'single', core: { mat: 'Au', d: 40 }, shells: [], medium: 'H2O', mediumN: 1.33, gap: 2, pol: 'z', orders: 0, rod: { L: 40, D: 10 }, orient: 'random', substrate: { mat: 'Au' },
   calc: { lmin: 400, lmax: 900, points: 51, show: 'C' }, probe: { nm: 633, shift: 1000 }, view: { span: 0, log: true, res: 'medium' }, sweep: { gmin: 0.5, gmax: 20 },
 }, o || {});
 const PRESETS = [
@@ -42,6 +42,9 @@ const PRESETS = [
   { id: 'rodtip', name: 'Au nanorod dimer, end to end, 2 nm gap', make: () => design('Au rods end to end, 2 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'tip', gap: 2 }, orient: 'long', calc: { lmin: 500, lmax: 1200, points: 71, show: 'C' }, probe: { nm: 900, shift: 1000 } }) },
   { id: 'rodside', name: 'Au nanorods side by side, 5 nm gap', make: () => design('Au rods side by side, 5 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'side', gap: 5 }, orient: 'long', calc: { lmin: 500, lmax: 1100, points: 121, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
   { id: 'agrod', name: 'Ag nanorod 60 × 20 nm', make: () => design('Ag nanorod 60 × 20 nm', { kind: 'rod', core: { mat: 'Ag', d: 20 }, rod: { L: 60, D: 20 }, calc: { lmin: 300, lmax: 900, points: 121, show: 'C' }, probe: { nm: 633, shift: 1000 } }) },
+  { id: 'npom', name: 'Au nanoparticle on a Au mirror, 80 nm, 1 nm gap (NPoM)', make: () => design('Au NPoM, 1 nm gap', { kind: 'mirror', core: { mat: 'Au', d: 80 }, gap: 1, medium: 'custom', mediumN: 1.45, substrate: { mat: 'Au' }, calc: { lmin: 450, lmax: 1000, points: 56, show: 'C' }, probe: { nm: 785, shift: 1000 }, sweep: { gmin: 0.5, gmax: 20 } }) },
+  { id: 'auglass', name: 'Au nanoparticle on glass, 60 nm (in air)', make: () => design('Au on glass', { kind: 'mirror', core: { mat: 'Au', d: 60 }, gap: 0.5, medium: 'air', substrate: { mat: 'glass:N-BK7' }, calc: { lmin: 400, lmax: 800, points: 41, show: 'C' }, probe: { nm: 550, shift: 1000 } }) },
+  { id: 'agsi', name: 'Ag nanoparticle on silicon, 60 nm, 2 nm oxide gap', make: () => design('Ag on Si', { kind: 'mirror', core: { mat: 'Ag', d: 60 }, gap: 2, medium: 'air', substrate: { mat: 'Si' }, calc: { lmin: 350, lmax: 900, points: 56, show: 'C' }, probe: { nm: 532, shift: 1000 } }) },
   { id: 'audimer80', name: 'Au dimer, 80 nm, 5 nm gap (785 nm excitation)', make: () => design('Au dimer 80 nm', { kind: 'dimer', core: { mat: 'Au', d: 80 }, gap: 5, calc: { lmin: 450, lmax: 1000, points: 41, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
 ];
 PT.PRESETS = PRESETS;
@@ -91,19 +94,28 @@ PT.rodPoint = (dd, lam, gapOv) => {
   return { lam, Cext: pick('Cext'), Csca: pick('Csca'), Cabs: pick('Cabs'), E2, rod: sp, bem };
 };
 PT.rodModel = dd => { const ro = rodOpt(dd); return ro.pair === 'side' ? 'coupled spheroids (approximate)' : ro.pair === 'one' && ro.ends === 'spheroid' ? 'spheroid model with size corrections' : 'boundary elements (exact shape) with size corrections'; };
+/* a sphere above a substrate or mirror (engine/npom.js): normal polarisation drives the gap mode */
+const mirrorPoint = (dd, lam, gap) => {
+  const layers = PT.parts(dd, lam)[0].layers, R = layers[layers.length - 1].r, g = Math.max(0.05, gap != null ? gap : +dd.gap || 0.05);
+  const r = RNBX.npom.solve({ layers, nMed: medN(dd, lam), lam, nSub: nkOf(dd.substrate || { mat: 'Au' }, lam), gap: g, pol: dd.pol === 'z' ? 'z' : 'x' });
+  const E2 = dd.pol === 'z' ? r.E2gap : RNBX.npom.intensity(r, 1 + 0.5 / R, 0);
+  return { lam, Cext: r.Cext, Csca: r.Csca, Cabs: r.Cabs, E2, np: r };
+};
+PT.mirrorPoint = mirrorPoint;
 /* the hot spot: gap centre, or 0.5 nm outside the surface on the polarisation axis */
 PT.hotSpot = dd => (dd.kind === 'dimer' ? [0, 0, 0] : dd.pol === 'z' ? [0, 0, outerR(dd) + 0.5] : [0, outerR(dd) + 0.5, 0]);
-PT.order = (dd, lam) => (dd.kind === 'rod' ? 0 : +dd.orders > 0 ? +dd.orders : MIE().autoOrder(PT.parts(dd, lam), lam, medN(dd, lam)));
+PT.order = (dd, lam) => (dd.kind === 'rod' ? 0 : dd.kind === 'mirror' ? RNBX.npom.order(outerR(dd), Math.max(0.05, +dd.gap || 0.05)) : +dd.orders > 0 ? +dd.orders : MIE().autoOrder(PT.parts(dd, lam), lam, medN(dd, lam)));
 /* one wavelength: cross-sections (nm²) and the hot-spot |E|² */
 PT.point = (dd, lam, N) => {
   if (dd.kind === 'rod') return PT.rodPoint(dd, lam, dd._gap);
+  if (dd.kind === 'mirror') return mirrorPoint(dd, lam);
   const parts = PT.parts(dd, lam), nm = medN(dd, lam);
   const Sx = MIE().solve(parts, nm, lam, dd.pol, N || PT.order(dd, Math.min(lam, dd.calc.lmin)));
   const c = MIE().cross(Sx), hs = PT.hotSpot(dd), E2 = MIE().intensity(MIE().field(Sx, hs[0], hs[1], hs[2]));
   return { lam, Cext: c.Cext, Csca: c.Csca, Cabs: c.Cabs, E2, S: Sx };
 };
 const ramanNm = (lam, shift) => 1 / (1 / lam - shift * 1e-7);
-PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient]);
+PT.sig = dd => JSON.stringify([dd.kind, dd.core, dd.shells, dd.medium, dd.mediumN, dd.gap, dd.pol, dd.orders, dd.rod, dd.orient, dd.kind === 'mirror' ? dd.substrate : 0]);
 
 /* ---------- state ---------- */
 let d = null, root = null, undo = [], redo = [], lastKey = '', lastAt = 0, views = {};
@@ -152,14 +164,20 @@ PT.render = host => {
   buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep();
   runAll();
 };
-const hasGap = () => d.kind === 'dimer' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
+const hasGap = () => d.kind === 'dimer' || d.kind === 'mirror' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
 function buildLeft() {
   const host = views.left; if (!host) return; host.innerHTML = '';
   const g = [
-    fld('Particles', sel1([['single', 'One sphere (or core–shell)'], ['dimer', 'Dimer (two spheres, with a gap)'], ['rod', 'Nanorod']], () => d.kind, v => { d.kind = v; if (v === 'rod' && !d.rod) d.rod = { L: 40, D: 10 }; }, 'kind', 'all')),
+    fld('Particles', sel1([['single', 'One sphere (or core–shell)'], ['dimer', 'Dimer (two spheres, with a gap)'], ['mirror', 'Sphere on a substrate / mirror (gap)'], ['rod', 'Nanorod']], () => d.kind, v => { d.kind = v; if (v === 'rod' && !d.rod) d.rod = { L: 40, D: 10 }; if (v === 'mirror' && !d.substrate) d.substrate = { mat: 'Au' }; }, 'kind', 'all')),
     fld('Medium around', sel1(TF().options(true), () => d.medium, v => { d.medium = v; }, 'med', 'list'))];
   if (d.medium === 'custom') g.push(fld('Its index n', num(() => d.mediumN, v => { d.mediumN = v; }, { step: 0.001, min: 1, key: 'medn' })));
   if (d.kind === 'dimer') g.push(fld('Gap g (nm)', num(() => d.gap, v => { d.gap = v; }, { step: 0.1, min: 0.1, max: 500, key: 'gap', title: 'Surface-to-surface distance' })));
+  if (d.kind === 'mirror') {
+    d.substrate = d.substrate || { mat: 'Au' };
+    g.push(fld('Substrate / mirror', matSel(() => d.substrate.mat, v => { d.substrate.mat = v; }, 'subm')),
+      fld('Gap g (nm)', num(() => d.gap, v => { d.gap = v; }, { step: 0.1, min: 0.05, max: 500, key: 'gap', title: 'Particle surface to substrate (a spacer: molecules, oxide, SAM)' })));
+    if (d.substrate.mat === 'custom') g.push(fld('Substrate n', num(() => d.substrate.n == null ? 1.5 : d.substrate.n, v => { d.substrate.n = v; }, { step: 0.001, key: 'subn' })), fld('k', num(() => d.substrate.k || 0, v => { d.substrate.k = Math.max(0, v); }, { step: 0.001, min: 0, key: 'subk' })));
+  }
   if (d.kind === 'rod') {
     d.rod = d.rod || { L: 40, D: 10 };
     const ro = rodOpt(d);
@@ -183,8 +201,9 @@ function buildLeft() {
     host.append(el('div', { class: 'hint', text: `Aspect ratio ${UI().f1(r.a / r.b, 2)}. ${model} Light polarised across the rods uses uncoupled spheroids. Random orientation averages one longitudinal and two transverse responses.` }));
     return;
   }
-  g.push(fld('Polarisation', sel1([['z', d.kind === 'dimer' ? 'Along the dimer axis (hot spot)' : 'Along z'], ['y', d.kind === 'dimer' ? 'Across the axis' : 'Along y']], () => d.pol, v => { d.pol = v; }, 'pol')),
-    fld('Multipole orders', sel1([['0', 'Automatic'], ['10', '10'], ['15', '15'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']], () => String(d.orders || 0), v => { d.orders = +v; }, 'ord')));
+  const mir = d.kind === 'mirror';
+  g.push(fld(mir ? 'Exciting field' : 'Polarisation', sel1([['z', mir ? 'Normal to the substrate (gap mode)' : d.kind === 'dimer' ? 'Along the dimer axis (hot spot)' : 'Along z'], ['y', mir ? 'Parallel to the substrate' : d.kind === 'dimer' ? 'Across the axis' : 'Along y']], () => d.pol, v => { d.pol = v; }, 'pol')));
+  if (!mir) g.push(fld('Multipole orders', sel1([['0', 'Automatic'], ['10', '10'], ['15', '15'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']], () => String(d.orders || 0), v => { d.orders = +v; }, 'ord')));
   host.append(el('div', { class: 'st-grid' }, ...g));
   // core and shells, inside → out
   const card = (title, o, isCore, i) => {
@@ -203,7 +222,8 @@ function buildLeft() {
     el('button', { class: 'btn small', type: 'button', text: '+ Shell', title: 'Add a shell outside the particle', onclick: () => change(() => d.shells.push(shell('SiO2', 5)), null, 'list') }),
     el('span', {})));
   const R = outerR(d);
-  host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
+  if (d.kind === 'mirror') host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm, ${UI().f1(+d.gap, 2)} nm above the substrate. Multipole image method (Wind, Vlieger & Bedeaux 1987): the sphere's multipoles and their images in the substrate, solved together (${PT.order(d, d.calc.lmin)} orders for this gap), with the dipole from exact Mie theory so the size red-shift and radiation damping are kept. The medium fills the gap and the space around: for a nanoparticle-on-mirror set it to the spacer's index (e.g. 1.45 for a SAM), which sets the gap mode. The exciting field is the local field (incident plus reflected); “normal” drives the gap mode seen in dark-field with p-polarised light. Checked against exact two-sphere Mie theory (a perfect mirror is equivalent to a dimer). Scattering includes the image dipole; extinction is that of the particle.` }));
+  else host.append(el('div', { class: 'hint', text: `Outer diameter ${UI().f1(2 * R, 1)} nm${d.kind === 'dimer' ? `, centre-to-centre ${UI().f1(2 * R + (+d.gap || 0), 1)} nm` : ''}. Exact solution: Mie theory${d.kind === 'dimer' ? ' with the coupling of the two particles (multi-sphere Mie theory); narrow gaps need many multipole orders, chosen automatically (check by setting more)' : ''}. Light travels along x.` }));
 }
 function probeControls() {
   return el('div', { class: 'st-grid' },
@@ -254,6 +274,7 @@ async function runRaman() {
 const RES = { low: 64, medium: 110, high: 170 };
 async function runField(keep) {
   if (d.kind === 'rod') return runRodField(keep);
+  if (d.kind === 'mirror') return runMirrorField(keep);
   const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm, N = PT.order(dd, Math.min(lam, d.calc.lmin));
   const Sx = MIE().solve(PT.parts(dd, lam), medN(dd, lam), lam, dd.pol, N);
   const R = outerR(dd), zc = dd.kind === 'dimer' ? R + (+dd.gap || 0) / 2 : 0, hz = zc + R * 1.6, hx = R * 1.6;
@@ -264,6 +285,27 @@ async function runField(keep) {
     if (run !== fieldRun) return;
     const x = -hx + 2 * hx * (j + 0.5) / nx;
     for (let i = 0; i < nz; i++) { const z = -hz + 2 * hz * (i + 0.5) / nz, v = MIE().intensity(MIE().field(Sx, x, 0, z)); map[j * nz + i] = v; if (v > out.max) out.max = v; }
+    if (j % 6 === 5) { drawField(); await later(); }
+  }
+  out.done = true; drawField();
+}
+/* sphere over a substrate: x across (horizontal), height up; the substrate below */
+async function runMirrorField(keep) {
+  const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm;
+  await later(); if (run !== fieldRun) return;
+  const pt = mirrorPoint(dd, lam), np = pt.np, R = outerR(dd), g = Math.max(0.05, +dd.gap || 0.05);
+  const hz = R * 1.5, hx = (R + g) * 1.25, nz = RES[dd.view.res] || 110, nx = Math.max(24, Math.round(nz * hx / hz)), map = new Float64Array(nx * nz).fill(NaN);
+  const out = { nx, nz, hx, hz, map, lam, done: false, max: 0, mirror: true, subCol: UI().colorOf((dd.substrate || {}).mat || 'Au') };
+  field = out;
+  for (let j = 0; j < nx; j++) {
+    if (run !== fieldRun) return;
+    const height = -(-hx + 2 * hx * (j + 0.5) / nx);   // drawn top = above
+    for (let i = 0; i < nz; i++) {
+      const x = -hz + 2 * hz * (i + 0.5) / nz;
+      if (height < -(R + g)) { map[j * nz + i] = -1; continue; }
+      const v = RNBX.npom.intensity(np, x / R, height / R);
+      map[j * nz + i] = v; if (v > out.max) out.max = v;
+    }
     if (j % 6 === 5) { drawField(); await later(); }
   }
   out.done = true; drawField();
@@ -307,6 +349,7 @@ const COL = { Cext: '#1f77b4', Csca: '#2ca02c', Cabs: '#d62728', E2: '#9467bd', 
 function drawSketch() {
   const host = views.sketch; if (!host) return;
   if (d.kind === 'rod') return drawRodSketch(host);
+  if (d.kind === 'mirror') return drawMirrorSketch(host);
   const w = Math.max(300, host.clientWidth || 440), h = 150, R = outerR(d), parts = d.kind === 'dimer' ? [-1, 1] : [0];
   const c = d.kind === 'dimer' ? R + (+d.gap || 0) / 2 : 0, sc = Math.min((w - 120) / ((c + R) * 2), (h - 40) / (2 * R)), cx = w / 2, cy = h / 2 + 4;
   const rs = [d.core.d / 2]; d.shells.forEach(s => rs.push(rs[rs.length - 1] + (+s.t || 0)));
@@ -320,6 +363,18 @@ function drawSketch() {
   s += d.pol === 'z' ? `<line x1="34" y1="${h - 14}" x2="70" y2="${h - 14}" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="76" y="${h - 10}" fill="#d62728">E</text>` : `<circle cx="44" cy="${h - 16}" r="5" fill="none" stroke="#d62728" stroke-width="1.4"/><circle cx="44" cy="${h - 16}" r="1.6" fill="#d62728"/><text x="54" y="${h - 12}" fill="#d62728">E (out of page)</text>`;
   s += `<defs><marker id="pt-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d62728"/></marker></defs>`;
   s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#666">${U.esc(mats.map(m => TF().name(m.mat)).join(' / '))} in ${U.esc(TF().name(d.medium))}</text>`;
+  host.innerHTML = s + '</svg>';
+}
+ function drawMirrorSketch(host) {
+  const w = Math.max(300, host.clientWidth || 440), h = 150, R = outerR(d), g = Math.max(0.05, +d.gap || 0), sc = Math.min((w - 160) / (2 * R), (h - 52) / (2 * R + g)), cx = w / 2, cy = 16 + R * sc;
+  const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0))); const mats = [d.core].concat(d.shells), ys = cy + (R + g) * sc;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="10.5" class="st-chart">`;
+  s += `<rect x="0" y="0" width="${w}" height="${ys}" fill="${d.medium === 'air' ? '#f7f9fc' : UI().colorOf(d.medium)}" fill-opacity="0.25"/><rect x="0" y="${ys}" width="${w}" height="${h - ys}" fill="${UI().colorOf((d.substrate || {}).mat || 'Au')}"/>`;
+  for (let k = rs.length - 1; k >= 0; k--) s += `<circle cx="${cx}" cy="${cy}" r="${Math.max(0.8, rs[k] * sc)}" fill="${UI().colorOf(mats[k].mat)}" stroke="#00000066" stroke-width="0.7"/>`;
+  s += `<text x="${cx + R * sc + 8}" y="${ys - 4}" fill="#333">g = ${UI().f1(g, g < 10 ? 2 : 0)} nm</text>`;
+  s += d.pol === 'z' ? `<line x1="40" y1="${ys - 8}" x2="40" y2="20" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="46" y="30" fill="#d62728">E₀ (normal)</text>` : `<line x1="24" y1="30" x2="70" y2="30" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="24" y="22" fill="#d62728">E₀ (parallel)</text>`;
+  s += `<defs><marker id="pt-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d62728"/></marker></defs>`;
+  s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#fff">${U.esc(mats.map(m => TF().name(m.mat)).join(' / '))} on ${U.esc(TF().name((d.substrate || {}).mat || 'Au'))}, in ${U.esc(TF().name(d.medium))}${d.medium === 'custom' ? ' (n ' + d.mediumN + ')' : ''}</text>`;
   host.innerHTML = s + '</svg>';
 }
 const capsulePath = (cx, cy, a, b, sc, ends) => (ends === 'spheroid'
@@ -365,7 +420,7 @@ function drawHot() {
   const ch = UI().chart({ id: 'pt-hot', w, h, xr: [lo, hi], yr: [ymin, ymax], xlabel: 'Wavelength (nm)', ylabel: 'log₁₀', cross: d.probe.nm,
     series: [{ x: spec.x, y: lg, color: COL.E2 }, { x: spec.x, y: ef, color: COL.EF }], legend: [{ name: '|E|² hot spot', color: COL.E2 }, { name: '|E|⁴ (SERS EF)', color: COL.EF }] });
   host.innerHTML = ch.svg;
-  const where = d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? (rodOpt(d).pair === 'side' ? 'not resolved by the side-by-side (coupled-spheroid) model' : (d.orient || 'random') === 'trans' ? (rodOpt(d).pair === 'one' ? '0.5 nm from the side of the rod (light polarised across it)' : 'calculated for light polarised along the rods') : rodOpt(d).pair === 'tip' ? 'at the centre of the gap between the tips (light polarised along the rods)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
+  const where = d.kind === 'mirror' ? (d.pol === 'z' ? 'in the middle of the gap between particle and substrate' : '0.5 nm from the side of the particle (field parallel to the substrate)') : d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? (rodOpt(d).pair === 'side' ? 'not resolved by the side-by-side (coupled-spheroid) model' : (d.orient || 'random') === 'trans' ? (rodOpt(d).pair === 'one' ? '0.5 nm from the side of the rod (light polarised across it)' : 'calculated for light polarised along the rods') : rodOpt(d).pair === 'tip' ? 'at the centre of the gap between the tips (light polarised along the rods)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
   const r = raman;
   host.append(el('div', { class: 'readout', html: r ? `Hot spot ${where}: at ${UI().f1(r.lam, 1)} nm |E|² = <b>${fmtE(r.E2a)}</b>; at the Raman line ${UI().f1(r.lr, 1)} nm (${d.probe.shift} cm⁻¹) |E|² = ${fmtE(r.E2b)}.<br>SERS enhancement |E(λ)|²·|E(λ<sub>R</sub>)|² ≈ <b>${fmtE(r.EF)}</b> (the |E|⁴ approximation; chemical enhancement not included).` : 'Calculating the hot spot…' }));
 }
@@ -374,10 +429,10 @@ const INFERNO = ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446
 const hot = v => { const t = U.clamp(v, 0, 1) * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(t)), u = t - i, a = INFERNO[i], b = INFERNO[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
 PT.fieldImage = (r, log, partCol) => {
   const cv = document.createElement('canvas'); cv.width = r.nz; cv.height = r.nx;
-  const cx = cv.getContext('2d'), im = cx.createImageData(r.nz, r.nx), vmax = r.max || 1, pc = U.hexToRgb(partCol || '#c9a227');
+  const cx = cv.getContext('2d'), im = cx.createImageData(r.nz, r.nx), vmax = r.max || 1, pc = U.hexToRgb(partCol || '#c9a227'), sc = U.hexToRgb(U.mix(r.subCol || '#9aa1ab', '#555555', 0.25));
   const norm = v => (log ? U.clamp(Math.log10(Math.max(v, 1e-3)) / Math.log10(Math.max(vmax, 10)), 0, 1) : v / vmax);
   for (let j = 0; j < r.nx; j++) for (let i = 0; i < r.nz; i++) {
-    const v = r.map[j * r.nz + i], o = (j * r.nz + i) * 4, c = isNaN(v) ? pc : hot(norm(v));
+    const v = r.map[j * r.nz + i], o = (j * r.nz + i) * 4, c = isNaN(v) ? pc : v < 0 ? sc : hot(norm(v));
     im.data[o] = c[0]; im.data[o + 1] = c[1]; im.data[o + 2] = c[2]; im.data[o + 3] = 255;
   }
   cx.putImageData(im, 0, 0);
@@ -396,18 +451,20 @@ function drawField() {
   // particle outlines
   const Rr = outerR(d), cz = d.kind === 'dimer' ? [-(Rr + (+d.gap || 0) / 2), Rr + (+d.gap || 0) / 2] : [0], sx = (R - L) / (2 * r.hz);
   if (d.kind === 'rod') { const rb = rodOf(d), ro = rodOpt(d); (ro.pair === 'tip' ? [-(rb.a + ro.gap / 2), rb.a + ro.gap / 2] : [0]).forEach(zc => { s += capsulePath(X(zc), Y(0), rb.a, rb.b, sx, ro.ends) + ` fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }); }
+  else if (r.mirror) { const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0))); rs.forEach(rr => { s += `<circle cx="${X(0)}" cy="${Y(0)}" r="${rr * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }); const ys = Y(Rr + Math.max(0.05, +d.gap || 0)); s += `<line x1="${L}" y1="${ys}" x2="${R}" y2="${ys}" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }
   else { const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0)));
     cz.forEach(z => rs.forEach(rr => { s += `<circle cx="${X(z)}" cy="${Y(0)}" r="${rr * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; })); }
   s += `<rect x="${L}" y="${T}" width="${R - L}" height="${hh}" fill="none" stroke="currentColor"/>`;
   [-r.hz, 0, r.hz].forEach(z => { s += `<text x="${X(z)}" y="${B + 13}" text-anchor="middle" fill="currentColor">${UI().f1(z, 0)}</text>`; });
-  [-r.hx, 0, r.hx].forEach(x => { s += `<text x="${L - 4}" y="${Y(x) + 4}" text-anchor="end" fill="currentColor">${UI().f1(x, 0)}</text>`; });
-  s += `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">z (nm) · ${d.kind === 'dimer' ? 'dimer axis' : d.kind === 'rod' ? 'rod axis' : 'particle centre at 0'}</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">x (nm)${d.kind === 'rod' ? '' : ', light ↓'}</text>`;
+  [-r.hx, 0, r.hx].forEach(x => { s += `<text x="${L - 4}" y="${Y(x) + 4}" text-anchor="end" fill="currentColor">${UI().f1(r.mirror ? -x : x, 0)}</text>`; });
+  s += r.mirror ? `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">x along the substrate (nm)</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">height (nm, centre at 0)</text>`
+    : `<text x="${(L + R) / 2}" y="${h - 4}" text-anchor="middle" fill="currentColor">z (nm) · ${d.kind === 'dimer' ? 'dimer axis' : d.kind === 'rod' ? 'rod axis' : 'particle centre at 0'}</text><text transform="translate(12 ${T + hh / 2}) rotate(-90)" text-anchor="middle" fill="currentColor">x (nm)${d.kind === 'rod' ? '' : ', light ↓'}</text>`;
   // colour bar
   const cbx = R + 10, cbw = 10;
   for (let k = 0; k < 40; k++) { const c = hot(1 - k / 39); s += `<rect x="${cbx}" y="${T + k * hh / 40}" width="${cbw}" height="${hh / 40 + 0.5}" fill="rgb(${c})"/>`; }
   s += `<text x="${cbx + cbw + 3}" y="${T + 9}" fill="currentColor">${fmtTxt(r.max)}</text><text x="${cbx + cbw + 3}" y="${B}" fill="currentColor">${d.view.log ? '1' : '0'}</text>`;
   host.innerHTML = s + '</svg>';
-  if (views.fieldInfo) views.fieldInfo.innerHTML = d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod${rodOpt(d).pair === 'tip' ? 's' : ''}, polarised ${r.pol === 'long' ? 'along' : 'across'} ${rodOpt(d).pair === 'tip' ? 'them' : 'it'} (${r.pol === 'long' && !(rodOpt(d).pair === 'one' && rodOpt(d).ends === 'spheroid') ? 'boundary-element solution of the exact shape, with size corrections' : 'quasi-static field of the spheroid, driven by the size-corrected internal field'})${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
+  if (views.fieldInfo) views.fieldInfo.innerHTML = r.mirror ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, exciting field ${d.pol === 'z' ? 'normal to' : 'parallel to'} the substrate (quasi-static multipoles with images; the field is that of the local exciting field E₀)${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod${rodOpt(d).pair === 'tip' ? 's' : ''}, polarised ${r.pol === 'long' ? 'along' : 'across'} ${rodOpt(d).pair === 'tip' ? 'them' : 'it'} (${r.pol === 'long' && !(rodOpt(d).pair === 'one' && rodOpt(d).ends === 'spheroid') ? 'boundary-element solution of the exact shape, with size corrections' : 'quasi-static field of the spheroid, driven by the size-corrected internal field'})${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
 }
 const fmtTxt = v => (v >= 1e4 ? v.toExponential(1) : UI().f1(v, v < 10 ? 1 : 0));
 function drawSweep() {

@@ -30,36 +30,56 @@ LF.params = dd => {
   const fs = filmsOf(dd), P = [];
   fs.forEach((x, i) => {
     P.push({ key: 't' + i, label: x.label + ' — thickness', unit: 'nm', get: d2 => +filmsOf(d2)[i].f.nm || 0, set: (d2, v) => { filmsOf(d2)[i].f.nm = v; }, lo: v => Math.max(0, v * 0.5), hi: v => Math.max(v * 1.5, v + 20) });
+    if (+x.f.rough > 0) P.push({ key: 'r' + i, label: x.label + ' — roughness', unit: 'nm', get: d2 => +filmsOf(d2)[i].f.rough || 0, set: (d2, v) => { filmsOf(d2)[i].f.rough = v; }, lo: () => 0, hi: v => Math.max(v * 2, 8) });
+    if (x.f.mat === 'ema') P.push({ key: 'f' + i, label: x.label + ' — fraction of B', unit: '', get: d2 => { const e = filmsOf(d2)[i].f.ema || {}; return e.f == null ? 0.3 : +e.f; }, set: (d2, v) => { const f = filmsOf(d2)[i].f; f.ema = Object.assign({}, ST().EMA_DEFAULT, f.ema || {}, { f: v }); }, lo: () => 0, hi: () => 1 });
     if (x.f.mat === 'custom') {
       P.push({ key: 'n' + i, label: x.label + ' — n', unit: '', get: d2 => +filmsOf(d2)[i].f.n || 1.5, set: (d2, v) => { filmsOf(d2)[i].f.n = v; }, lo: v => Math.max(1, v - 0.5), hi: v => v + 0.5 });
       P.push({ key: 'k' + i, label: x.label + ' — k', unit: '', get: d2 => +filmsOf(d2)[i].f.k || 0, set: (d2, v) => { filmsOf(d2)[i].f.k = v; }, lo: () => 0, hi: v => Math.max(0.5, v * 3) });
     }
   });
+  if (+dd.substrate.rough > 0) P.push({ key: 'sr', label: 'Substrate — roughness', unit: 'nm', get: d2 => +d2.substrate.rough || 0, set: (d2, v) => { d2.substrate.rough = v; }, lo: () => 0, hi: v => Math.max(v * 2, 8) });
+  if (ELL(opts && opts.q)) return P;   // scale and offset belong to intensity measurements
   P.push({ key: 'scale', label: 'Scale factor (measurement calibration)', unit: '×', get: () => 1, set: null, lo: () => 0.7, hi: () => 1.3 });
   P.push({ key: 'offset', label: 'Offset (stray light, background)', unit: '', get: () => 0, set: null, lo: () => -0.1, hi: () => 0.1 });
   return P;
 };
-/* the measured points used (in nm or degrees, as fractions) */
+/* the measured points used (in nm or degrees, as fractions; Ψ and Δ in degrees: [x, Ψ, Δ]) */
+const ELL = q => q === 'PD' || q === 'P' || q === 'D';
+LF.ELL = ELL;
 LF.points = () => {
   if (!meas) return null;
   const s = meas.series[opts.series] || meas.series[0]; if (!s) return null;
-  const k = opts.xkind === 'um' ? 1000 : 1, f = opts.ypct ? 0.01 : 1, lo = opts.xmin == null ? -Infinity : +opts.xmin, hi = opts.xmax == null ? Infinity : +opts.xmax;
-  const pts = []; s.x.forEach((x, i) => { const X = x * k; if (X >= lo * (opts.xkind === 'um' ? 1000 : 1) && X <= hi * (opts.xkind === 'um' ? 1000 : 1) && isFinite(s.y[i])) pts.push([X, s.y[i] * f]); });
+  const s2 = opts.q === 'PD' ? meas.series[opts.series2 == null ? opts.series + 1 : opts.series2] : null;
+  if (opts.q === 'PD' && !s2) return null;
+  const ell = ELL(opts.q), k = opts.xkind === 'um' ? 1000 : 1, f = opts.ypct && !ell ? 0.01 : 1, lo = opts.xmin == null ? -Infinity : +opts.xmin, hi = opts.xmax == null ? Infinity : +opts.xmax;
+  const pts = []; s.x.forEach((x, i) => { const X = x * k; if (X >= lo * (opts.xkind === 'um' ? 1000 : 1) && X <= hi * (opts.xkind === 'um' ? 1000 : 1) && isFinite(s.y[i])) { if (opts.q === 'PD') { const j = s2.x.length === s.x.length ? i : s2.x.indexOf(x); if (j >= 0 && isFinite(s2.y[j])) pts.push([X, s.y[i], s2.y[j]]); } else pts.push([X, s.y[i] * f]); } });
   pts.sort((a, b) => a[0] - b[0]);
   // at most 300 points for the fit (evenly thinned)
   const step = Math.max(1, Math.ceil(pts.length / 300));
   return { all: pts, fit: pts.filter((p, i) => i % step === 0), angle: opts.xkind === 'deg' };
 };
-/* model values at the points for a design and scale / offset */
+/* model values at the points for a design and scale / offset (ellipsometry: [Ψ, Δ] per point) */
 LF.model = (dd, pts, sc = 1, off = 0) => {
   const st = ST().stack(dd), c = dd.calc, q = opts.q;
+  if (ELL(q)) return pts.map(p => { const e = pts.angle ? TF().ellips(st, +c.lambda, Math.min(89.99, p[0])) : TF().ellips(st, p[0], +c.angle || 0); return [e.psi, e.delta]; });
   return pts.map(p => { const r = pts.angle ? TF().response(st, +c.lambda, Math.min(89.99, p[0]), c.pol) : TF().response(st, p[0], +c.angle || 0, c.pol); return sc * r[q] + off; });
 };
+/* residuals in degrees for Ψ / Δ (Δ wrapped to ±180°), fractions otherwise */
+const wrap = v => ((v + 540) % 360) - 180;
+const resid = (m, pts) => {
+  const q = opts.q;
+  if (q === 'PD') return m.map((v, i) => v[0] - pts[i][1]).concat(m.map((v, i) => wrap(v[1] - pts[i][2])));
+  if (q === 'P') return m.map((v, i) => v[0] - pts[i][1]);
+  if (q === 'D') return m.map((v, i) => wrap(v[1] - pts[i][1]));
+  return m.map((v, i) => v - pts[i][1]);
+};
+const targets = pts => (opts.q === 'PD' ? pts.map(p => p[1]).concat(pts.map(p => p[2])) : pts.map(p => p[1]));
 /* the measurement over the calculated spectrum (called by the Layers tab) */
 LF.overlay = () => {
   const P = meas && opts && LF.points(); if (!P || !P.all.length) return null;
   // shown corrected for a fitted scale and offset, so it lies on the model
   const sc = result ? (result.free.find(x => x.key === 'scale') || { v: 1 }).v : 1, off = result ? (result.free.find(x => x.key === 'offset') || { v: 0 }).v : 0;
+  if (ELL(opts.q)) return { x: P.all.map(p => p[0]), psi: opts.q === 'D' ? null : P.all.map(p => p[1]), delta: opts.q === 'PD' ? P.all.map(p => p[2]) : opts.q === 'D' ? P.all.map(p => p[1]) : null, q: opts.q, angle: P.angle };
   return { x: P.all.map(p => p[0]), y: P.all.map(p => (p[1] - off) / sc), q: opts.q, angle: P.angle, corrected: sc !== 1 || off !== 0 };
 };
 
@@ -74,12 +94,12 @@ LF.fit = async (dd, onStep) => {
   const f = pv => {
     let sc = 1, off = 0;
     free.forEach((p, i) => { if (p.key === 'scale') sc = pv[i]; else if (p.key === 'offset') off = pv[i]; else p.set(work, pv[i]); });
-    const m = LF.model(work, pts, sc, off); return m.map((v, i) => v - pts[i][1]);
+    return resid(LF.model(work, pts, sc, off), pts);
   };
   const r0 = f(p0), rms0 = Math.sqrt(r0.reduce((a, v) => a + v * v, 0) / r0.length);
   const res = await RNBX.fit.global(f, p0, lo, hi, { onStep });
-  const ybar = pts.reduce((a, p) => a + p[1], 0) / pts.length, sst = pts.reduce((a, p) => a + (p[1] - ybar) ** 2, 0);
-  return { free: free.map((p, i) => ({ key: p.key, label: p.label, unit: p.unit, v0: p0[i], v: res.p[i], s: res.sigma[i], lo: lo[i], hi: hi[i], atBound: Math.abs(res.p[i] - lo[i]) < 1e-6 * (hi[i] - lo[i] || 1) || Math.abs(res.p[i] - hi[i]) < 1e-6 * (hi[i] - lo[i] || 1) })), rms: res.rms, rms0, r2: 1 - res.ssr / (sst || 1), n: pts.length };
+  const tg = targets(pts), ybar = tg.reduce((a, v) => a + v, 0) / tg.length, sst = tg.reduce((a, v) => a + (v - ybar) ** 2, 0);
+  return { ell: ELL(opts.q), free: free.map((p, i) => ({ key: p.key, label: p.label, unit: p.unit, v0: p0[i], v: res.p[i], s: res.sigma[i], lo: lo[i], hi: hi[i], atBound: Math.abs(res.p[i] - lo[i]) < 1e-6 * (hi[i] - lo[i] || 1) || Math.abs(res.p[i] - hi[i]) < 1e-6 * (hi[i] - lo[i] || 1) })), rms: res.rms, rms0, r2: 1 - res.ssr / (sst || 1), n: pts.length };
 };
 /* write fitted thicknesses / n / k into a copy of the design (scale and offset stay with the fit) */
 LF.apply = (dd, fr) => { const out = JSON.parse(JSON.stringify(dd)), all = LF.params(out); fr.free.forEach(x => { const p = all.find(q => q.key === x.key); if (p && p.set) p.set(out, +x.v.toPrecision(6)); }); return out; };
@@ -92,6 +112,9 @@ const take = (data, name) => {
   opts.ypct = ymax > 1.5;
   opts.xkind = d.calc.scan === 'angle' ? 'deg' : xmax < 30 ? 'um' : 'nm';
   opts.q = (d.calc.show || 'R').replace(/[^RTA]/g, '')[0] || 'R';
+  // two value columns that look like Ψ (0–90°) and Δ (0–360°): an ellipsometry measurement
+  const s2 = meas.series[1];
+  if (s2 && (d.calc.show === 'PD' || /psi|ψ/i.test(s.name || '')) && Math.max(...s.y) <= 90 && Math.min(...s.y) >= 0 && Math.max(...s2.y) <= 360 && Math.min(...s2.y) >= -180) { opts.q = 'PD'; opts.series2 = 1; opts.ypct = false; }
   result = null; save(); LF.render(); ST().rerender();
 };
 LF.load = (data, name) => take(data, name);
@@ -115,14 +138,17 @@ LF.render = () => {
     el('button', { class: 'btn small', type: 'button', text: 'Paste…', onclick: fromPaste }),
     el('button', { class: 'btn small', type: 'button', text: 'From RNSpectraX', title: 'The spectrum sent with Export ▾ → RNBeamX', onclick: fromSpectraX }),
     meas ? el('button', { class: 'btn small ghost', type: 'button', text: 'Remove the measurement', onclick: () => { meas = null; result = null; save(); LF.render(); ST().rerender(); } }) : el('span')));
-  if (!meas) { host.append(el('div', { class: 'hint', text: 'Load a measured reflectance, transmittance or absorptance spectrum to compare it with the design and fit the film thicknesses (and n, k of custom films). Two columns: wavelength (or angle) and the value, as a fraction or in %.' })); return; }
+  if (!meas) { host.append(el('div', { class: 'hint', text: 'Load a measured reflectance, transmittance or absorptance spectrum, or ellipsometry data, to compare it with the design and fit film thicknesses, roughness, mixture fractions and n, k of custom films. Intensity: two columns, wavelength (or angle) and the value as a fraction or in %. Ellipsometry: three columns, wavelength, Ψ and Δ in degrees (set the angle of incidence under Optical response).' })); return; }
   opts = Object.assign(defaults(), opts || {});
   const s = meas.series[opts.series] || meas.series[0], d = ST().design();
   const g = [];
   if (meas.series.length > 1) g.push(fld('Series', sel(meas.series.map((q, i) => [String(i), q.name]), () => opts.series, v => { opts.series = +v; })));
-  g.push(fld('Measured', sel([['R', 'Reflectance R'], ['T', 'Transmittance T'], ['A', 'Absorptance A']], () => opts.q, v => { opts.q = v; })),
+  const ell = ELL(opts.q);
+  g.push(fld('Measured', sel([['R', 'Reflectance R'], ['T', 'Transmittance T'], ['A', 'Absorptance A'], ['PD', 'Ellipsometry Ψ and Δ'], ['P', 'Ellipsometry Ψ only'], ['D', 'Ellipsometry Δ only']], () => opts.q, v => { opts.q = v; if (v === 'PD' && opts.series2 == null) opts.series2 = Math.min(meas.series.length - 1, opts.series + 1); })));
+  if (opts.q === 'PD' && meas.series.length > 1) g.push(fld('Δ column', sel(meas.series.map((q, i) => [String(i), q.name]), () => (opts.series2 == null ? opts.series + 1 : opts.series2), v => { opts.series2 = +v; })));
+  g.push(
     fld('x is', sel([['nm', 'Wavelength (nm)'], ['um', 'Wavelength (µm)'], ['deg', 'Angle of incidence (°)']], () => opts.xkind, v => { opts.xkind = v; })),
-    fld('Values in', sel([['0', 'Fraction (0–1)'], ['1', 'Per cent']], () => (opts.ypct ? '1' : '0'), v => { opts.ypct = v === '1'; })),
+    ell ? el('span') : fld('Values in', sel([['0', 'Fraction (0–1)'], ['1', 'Per cent']], () => (opts.ypct ? '1' : '0'), v => { opts.ypct = v === '1'; })),
     fld('Fit from', numIn(() => opts.xmin, v => { opts.xmin = v; }, { ph: String(Math.min(...s.x)), redraw: true })), fld('to', numIn(() => opts.xmax, v => { opts.xmax = v; }, { ph: String(Math.max(...s.x)), redraw: true })));
   host.append(el('div', { class: 'st-grid' }, ...g));
   const P = LF.points();
@@ -146,13 +172,14 @@ LF.render = () => {
       if (run !== running) return;
       result = fr;
       ST().setDesign(LF.apply(ST().design(), fr));
-      RNBX.toast(`Fitted: RMS ${UI().f1(fr.rms * 100, 2)} % (was ${UI().f1(fr.rms0 * 100, 2)} %). Ctrl+Z undoes it.`);
+      RNBX.toast(fr.ell ? `Fitted: RMS ${UI().f1(fr.rms, 3)}° (was ${UI().f1(fr.rms0, 3)}°). Ctrl+Z undoes it.` : `Fitted: RMS ${UI().f1(fr.rms * 100, 2)} % (was ${UI().f1(fr.rms0 * 100, 2)} %). Ctrl+Z undoes it.`);
     } catch (e) { status.textContent = e.message || String(e); go.disabled = false; }
   } });
   host.append(el('div', { class: 'row', style: { gap: '8px', alignItems: 'center', margin: '6px 0' } }, go, status));
   if (result) {
     const rows = result.free.map(x => `<tr><td>${U.esc(x.label)}</td><td><b>${fmtV(x.v, x.unit)}</b> ± ${fmtV(x.s, x.unit)}</td><td>${fmtV(x.v0, x.unit)}</td><td>${x.atBound ? '<span style="color:var(--danger)">at a limit</span>' : ''}</td></tr>`).join('');
-    host.append(el('div', { class: 'readout', html: `Fit to ${result.n} points: RMS deviation ${UI().f1(result.rms * 100, 2)} % (was ${UI().f1(result.rms0 * 100, 2)} %), R² = ${UI().f1(result.r2, 4)}.<table class="st-tab"><tr><th>Parameter</th><th>Fitted ± 1σ</th><th>Before</th><th></th></tr>${rows}</table><span class="hint" style="margin:0">The values are in the design (Ctrl+Z restores the old ones). σ comes from the fit's covariance and assumes the material data are exact; a value at a limit means the range should be widened. Scale and offset describe the measurement, not the sample.</span>` }));
+    const rmsTxt = result.ell ? `${UI().f1(result.rms, 3)}° (was ${UI().f1(result.rms0, 3)}°)` : `${UI().f1(result.rms * 100, 2)} % (was ${UI().f1(result.rms0 * 100, 2)} %)`;
+    host.append(el('div', { class: 'readout', html: `Fit to ${result.n} points: RMS deviation ${rmsTxt}, R² = ${UI().f1(result.r2, 4)}.<table class="st-tab"><tr><th>Parameter</th><th>Fitted ± 1σ</th><th>Before</th><th></th></tr>${rows}</table><span class="hint" style="margin:0">The values are in the design (Ctrl+Z restores the old ones). σ comes from the fit's covariance and assumes the material data are exact; a value at a limit means the range should be widened. Scale and offset describe the measurement, not the sample.</span>` }));
     drawResidual();
   }
 };
@@ -161,8 +188,10 @@ function drawResidual() {
   const P = LF.points(); if (!P || !result) return;
   const d = ST().design(), sc = (result.free.find(x => x.key === 'scale') || { v: 1 }).v, off = (result.free.find(x => x.key === 'offset') || { v: 0 }).v;
   const pts = P.all.slice(); pts.angle = P.angle;
-  const m = LF.model(d, pts, sc, off), res = pts.map((p, i) => (p[1] - m[i]) * 100), w = Math.max(280, host.clientWidth || 400), mx = Math.max(0.5, ...res.map(Math.abs));
-  const ch = UI().chart({ id: 'lf-res', w, h: 130, xr: [pts[0][0], pts[pts.length - 1][0]], yr: [-mx * 1.1, mx * 1.1], xlabel: P.angle ? 'Angle (°)' : 'Wavelength (nm)', ylabel: 'Residual (%)', series: [{ x: pts.map(p => p[0]), y: res, color: '#7f7f7f', w: 1.2 }],
+  const m = LF.model(d, pts, sc, off), ell = ELL(opts.q), r = resid(m, pts).map(v => -v * (ell ? 1 : 100)), n = pts.length;
+  const sers = opts.q === 'PD' ? [{ x: pts.map(p => p[0]), y: r.slice(0, n), color: '#6a3d9a', w: 1.2 }, { x: pts.map(p => p[0]), y: r.slice(n), color: '#e08214', w: 1.2 }] : [{ x: pts.map(p => p[0]), y: r, color: '#7f7f7f', w: 1.2 }];
+  const w = Math.max(280, host.clientWidth || 400), mx = Math.max(ell ? 0.05 : 0.5, ...r.map(Math.abs));
+  const ch = UI().chart({ id: 'lf-res', w, h: 130, xr: [pts[0][0], pts[pts.length - 1][0]], yr: [-mx * 1.1, mx * 1.1], xlabel: P.angle ? 'Angle (°)' : 'Wavelength (nm)', ylabel: ell ? 'Residual (°)' : 'Residual (%)', series: sers,
     over: (X, Y) => `<line x1="${X(pts[0][0])}" x2="${X(pts[pts.length - 1][0])}" y1="${Y(0)}" y2="${Y(0)}" stroke="#d62728" stroke-dasharray="3 3"/>` });
   host.append(el('div', { html: ch.svg }));
 }
