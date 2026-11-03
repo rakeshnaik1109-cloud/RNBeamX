@@ -3014,6 +3014,194 @@ MIE.spheroidField = (a, b, Ein, pol, x, z) => {
   return ex[0] * ex[0] + ex[1] * ex[1] + ez[0] * ez[0] + ez[1] * ez[1];
 };
 const U_clamp = v => (v > 1 ? 1 : v < -1 ? -1 : v);
+/* scattered potential of a spheroid polarised along its axis (E₀ = 1 along z), at (ρ, z) outside it */
+MIE.spheroidPotential = (a, b, Ein, rho, z) => {
+  const f = Math.sqrt(Math.max(1e-12, a * a - b * b)), xi0 = a / f, Q1 = xi => xi / 2 * Math.log((xi + 1) / (xi - 1)) - 1;
+  const C = cscale(csub([1, 0], Ein), xi0 / Q1(xi0)), r1 = Math.hypot(rho, z + f), r2 = Math.hypot(rho, z - f);
+  const xi = Math.max(1 + 1e-12, (r1 + r2) / (2 * f)), eta = U_clamp((r1 - r2) / (2 * f));
+  return cscale(C, f * eta * Q1(xi));
+};
+/* two identical parallel rods side by side (centres d apart), light polarised along them: each rod is driven by the
+   incident field plus the voltage the other rod's polarisation puts across its ends (exact static field of the
+   spheroid, retarded like a dipole). Returns the corrected polarisability of one rod in the pair. */
+MIE.sideBySide = (sp, a, b, d, lam, em) => {
+  const L = sp.long, k = 2 * Math.PI * Math.sqrt(em) / lam;
+  const V = csub(MIE.spheroidPotential(a, b, L.Ein, d, -a), MIE.spheroidPotential(a, b, L.Ein, d, a));
+  const kap = cdiv(cscale(V, 1 / (2 * a)), L.alpha), ret = cmul([Math.cos(k * d), Math.sin(k * d)], [1 - (k * d) ** 2, -k * d]);
+  const kr = cmul(kap, ret);
+  return cdiv(L.alpha, csub([1, 0], cmul(L.alpha, kr)));
+};
+})();
+
+</script>
+<script>
+/* js/engine/bem.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — engine/bem.js
+   Boundary-element solution for particles that are bodies of
+   revolution about the z axis (rods with rounded ends, spheroids,
+   spheres, and any number of them on the axis — end-to-end rod
+   dimers), with the field along the axis.
+
+   Quasi-static surface-charge formulation: the induced surface
+   charge σ obeys  Λ σ − I[σ] = E₀·n̂,  Λ = (ε + εm) / (2(ε − εm)),
+   where I is the normal field of σ (principal value). Rings of
+   charge are integrated in closed form (complete elliptic
+   integrals); curved panels, log-singular self terms by a
+   u² substitution. This gives the exact electrostatic response of
+   the real shape, including the field in nanometre gaps.
+
+   Size corrections (retardation): the response is written as an
+   effective polarisability α_qs = V / (L_eff + εm/(ε − εm)) and
+   corrected like a spheroid (dynamic depolarisation and radiation
+   damping, Kuwata et al. 2003); the scattered near field is scaled
+   by α / α_qs. For one spheroid this reproduces engine/mie.js.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX = window.RNBX || {};
+const B = RNBX.bem = {};
+
+/* complete elliptic integrals K(m), E(m), parameter m = k² (AGM) */
+const ellipKE = m => {
+  if (m < 0) m = 0;
+  if (m >= 1) m = 1 - 1e-16;
+  let a = 1, b = Math.sqrt(1 - m), c = Math.sqrt(m), sum = m / 2, p = 0.5;
+  for (let i = 0; i < 40 && Math.abs(c) > 1e-16; i++) { const an = (a + b) / 2, bn = Math.sqrt(a * b); c = (a - b) / 2; a = an; b = bn; p *= 2; sum += p * c * c; }
+  const K = Math.PI / (2 * a);
+  return { K, E: K * (1 - sum) };
+};
+B.ellipKE = ellipKE;
+/* ring of radius ρ' at height z' (∫ over φ'): G0 = ∫dφ/R and the field kernels
+   Fρ = ∫(ρ − ρ' cos φ)/R³ dφ, Fz = ∫(z − z')/R³ dφ at the point (ρ, z) */
+const ring = (rho, z, rp, zp) => {
+  const dz = z - zp, Q = (rho + rp) * (rho + rp) + dz * dz, m = 4 * rho * rp / Q, sq = Math.sqrt(Q), ke = ellipKE(m);
+  const dK = m < 1e-9 ? Math.PI / 8 : (ke.E - (1 - m) * ke.K) / (2 * m * (1 - m));
+  const dmr = 4 * rp / Q - 4 * rho * rp * 2 * (rho + rp) / (Q * Q), dmz = -4 * rho * rp * 2 * dz / (Q * Q);
+  const dGr = 4 * (dK * dmr / sq - ke.K * (rho + rp) / (Q * sq)), dGz = 4 * (dK * dmz / sq - ke.K * dz / (Q * sq));
+  return { G0: 4 * ke.K / sq, Fr: -dGr, Fz: -dGz };
+};
+B.ring = ring;
+
+/* Gauss–Legendre on [0, 1] */
+const GL = (() => { const c = {}; return n => { if (c[n]) return c[n]; const x = [], w = []; for (let i = 0; i < n; i++) { let z = Math.cos(Math.PI * (i + 0.75) / (n + 0.5)), pp = 0; for (let it = 0; it < 100; it++) { let p1 = 1, p2 = 0; for (let j = 1; j <= n; j++) { const p3 = p2; p2 = p1; p1 = ((2 * j - 1) * z * p2 - (j - 1) * p3) / j; } pp = n * (z * p1 - p2) / (z * z - 1); const z1 = z; z = z1 - p1 / pp; if (Math.abs(z - z1) < 1e-15) break; } x.push((1 - z) / 2); w.push(1 / ((1 - z * z) * pp * pp)); } return (c[n] = { x, w }); }; })();
+
+/* ---------- shapes (generating curves t ∈ [0, 1], from the top of the axis to the bottom) ---------- */
+/* rod with hemispherical ends: length ℓ (tip to tip), radius r, centre z0 */
+B.capsule = (len, r, z0 = 0) => {
+  r = Math.min(r, len / 2); const cyl = len - 2 * r, arc = Math.PI * r / 2, S = 2 * arc + cyl;
+  const at = t => {
+    const s = t * S;
+    if (s <= arc) { const th = s / r; return [r * Math.sin(th), z0 + cyl / 2 + r * Math.cos(th)]; }
+    if (s <= arc + cyl) return [r, z0 + cyl / 2 - (s - arc)];
+    const th = (s - arc - cyl) / r; return [r * Math.cos(th), z0 - cyl / 2 - r * Math.sin(th)];
+  };
+  return { at, S, V: Math.PI * r * r * cyl + 4 / 3 * Math.PI * r * r * r, top: z0 + len / 2, bot: z0 - len / 2, r, len, z0, kind: 'capsule' };
+};
+/* spheroid with semi-axes a (along z) and b */
+B.spheroid = (a, b, z0 = 0) => ({ at: t => { const th = Math.PI * t; return [b * Math.sin(th), z0 + a * Math.cos(th)]; }, V: 4 / 3 * Math.PI * a * b * b, top: z0 + a, bot: z0 - a, a, b, z0, kind: 'spheroid' });
+
+/* panels on a shape, clustered towards both ends of the axis (where tips and gaps are) */
+B.mesh = (shapes, nPer = 120, beta = 0.94) => {
+  const P = [];
+  shapes.forEach((sh, si) => {
+    const map = u => u - beta * Math.sin(2 * Math.PI * u) / (2 * Math.PI);
+    for (let i = 0; i < nPer; i++) {
+      const t0 = map(i / nPer), t1 = map((i + 1) / nPer), tc = map((i + 0.5) / nPer);
+      const c = sh.at(tc), h = 1e-6, a = sh.at(Math.max(0, tc - h)), b = sh.at(Math.min(1, tc + h));
+      let tr = b[0] - a[0], tz = b[1] - a[1]; const tl = Math.hypot(tr, tz); tr /= tl; tz /= tl;
+      // going from the top to the bottom along the curve, the outward normal is (−t_z, t_r)… rotated: n = (−tz, tr)
+      let nr = -tz, nz = tr; if (nr * c[0] + nz * (c[1] - sh.z0) < 0) { nr = -nr; nz = -nz; }
+      P.push({ sh: si, t0, t1, tc, rho: c[0], z: c[1], nr, nz, shape: sh });
+    }
+  });
+  return P;
+};
+/* integrate f(ρ', z', ds') over a panel's piece [ta, tb] with n Gauss points (curved, exact shape) */
+const quadPiece = (sh, ta, tb, n, f) => {
+  const g = GL(n);
+  for (let k = 0; k < n; k++) {
+    const t = ta + (tb - ta) * g.x[k], h = 1e-7, p = sh.at(t), a = sh.at(Math.max(0, t - h)), b = sh.at(Math.min(1, t + h));
+    const ds = Math.hypot(b[0] - a[0], b[1] - a[1]) / ((Math.min(1, t + h) - Math.max(0, t - h))) * (tb - ta) * g.w[k];
+    f(p[0], p[1], ds);
+  }
+};
+/* singular piece: t = tc ± Δ u² (removes the logarithm) */
+const quadSing = (sh, tc, te, n, f) => {
+  const g = GL(n), D = te - tc;
+  for (let k = 0; k < n; k++) {
+    const u = g.x[k], t = tc + D * u * u, h = 1e-7, p = sh.at(t), a = sh.at(Math.max(0, t - h)), b = sh.at(Math.min(1, t + h));
+    const sp = Math.hypot(b[0] - a[0], b[1] - a[1]) / (Math.min(1, t + h) - Math.max(0, t - h));
+    f(p[0], p[1], sp * Math.abs(2 * D * u) * g.w[k]);
+  }
+};
+/* the field of unit surface charge on panel j at a point (ρ, z): [Eρ, Ez]; self = collocation point of panel j */
+const panelField = (pj, rho, z, self, panelLen) => {
+  let Er = 0, Ez = 0;
+  const add = (rp, zp, ds) => { if (rp < 1e-12) return; const k = ring(rho, z, rp, zp); Er += k.Fr * rp * ds; Ez += k.Fz * rp * ds; };
+  if (self) { quadSing(pj.shape, pj.tc, pj.t0, 16, add); quadSing(pj.shape, pj.tc, pj.t1, 16, add); }
+  else {
+    const dist = Math.hypot(rho - pj.rho, z - pj.z), L = panelLen;
+    if (dist > 4 * L) quadPiece(pj.shape, pj.t0, pj.t1, 4, add);
+    else if (dist > 1.2 * L) quadPiece(pj.shape, pj.t0, pj.t1, 10, add);
+    else { const nsub = 6; for (let s = 0; s < nsub; s++) quadPiece(pj.shape, pj.t0 + (pj.t1 - pj.t0) * s / nsub, pj.t0 + (pj.t1 - pj.t0) * (s + 1) / nsub, 10, add); }
+  }
+  return [Er / (4 * Math.PI), Ez / (4 * Math.PI)];
+};
+const lenOf = p => { const a = p.shape.at(p.t0), b = p.shape.at(p.t1); return Math.hypot(b[0] - a[0], b[1] - a[1]); };
+
+/* geometry: mesh + the real matrix of normal fields (computed once per shape) */
+B.build = (shapes, nPer) => {
+  const P = B.mesh(shapes, nPer), n = P.length, Kn = new Float64Array(n * n), lens = P.map(lenOf);
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const e = panelField(P[j], P[i].rho, P[i].z, i === j, lens[j]);
+    Kn[i * n + j] = P[i].nr * e[0] + P[i].nz * e[1];
+  }
+  // panel areas for the dipole moment, 2π ρ ds (exact curve)
+  const area = P.map(p => { let A = 0; quadPiece(p.shape, p.t0, p.t1, 6, (rp, zp, ds) => { A += 2 * Math.PI * rp * ds; }); return A; });
+  const zbar = P.map(p => { let A = 0, Z = 0; quadPiece(p.shape, p.t0, p.t1, 6, (rp, zp, ds) => { A += rp * ds; Z += rp * ds * zp; }); return Z / A; });
+  return { P, n, Kn, lens, area, zbar, V: shapes.reduce((a, s) => a + s.V, 0), shapes, len: Math.max(...shapes.map(s => s.top)) - Math.min(...shapes.map(s => s.bot)) };
+};
+/* quasi-static response for permittivities eps [re, im] (particle) and em (host, real): σ, α_qs */
+B.solveQS = (G, eps, em) => {
+  const n = G.n, dr = eps[0] - em, di = eps[1], d2 = dr * dr + di * di;
+  // Λ = (ε + εm) / (2(ε − εm))
+  const nr = eps[0] + em, ni = eps[1], Lr = (nr * dr + ni * di) / (2 * d2), Li = (ni * dr - nr * di) / (2 * d2);
+  const Ar = new Float64Array(n * n), Ai = new Float64Array(n * n), br = new Float64Array(n), bi = new Float64Array(n);
+  for (let i = 0; i < n; i++) { for (let j = 0; j < n; j++) Ar[i * n + j] = -G.Kn[i * n + j]; Ar[i * n + i] += Lr; Ai[i * n + i] += Li; br[i] = G.P[i].nz; }
+  const x = RNBX.mie.csolve(n, Ar, Ai, br, bi);
+  let pr = 0, pi = 0; for (let i = 0; i < n; i++) { pr += x.re[i] * G.area[i] * G.zbar[i]; pi += x.im[i] * G.area[i] * G.zbar[i]; }
+  return { sr: x.re, si: x.im, alpha: [pr, pi] };
+};
+const cdiv = (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; };
+/* with the size corrections: α, cross-sections (nm²) and the factor that scales the scattered near field */
+B.response = (G, eps, em, lam) => {
+  const qs = B.solveQS(G, eps, em), V = G.V, k = 2 * Math.PI * Math.sqrt(em) / lam;
+  // L_eff from 1/α_qs = (L + εm/(ε − εm)) / V
+  const inv = cdiv([V, 0], qs.alpha), t = cdiv([em, 0], [eps[0] - em, eps[1]]), Leff = Math.min(1 / 3, Math.max(0.005, inv[0] - t[0]));
+  const x = Math.PI * G.len / lam, A = -0.4865 * Leff - 1.046 * Leff * Leff + 0.8481 * Leff ** 3, Bc = 0.01909 * Leff + 0.1999 * Leff * Leff + 0.6077 * Leff ** 3;
+  const den = [inv[0] + A * em * x * x + Bc * em * em * x ** 4, inv[1] - 4 * Math.PI * Math.PI * Math.pow(em, 1.5) / 3 * V / lam ** 3];
+  const alpha = cdiv([V, 0], den), scale = cdiv(alpha, qs.alpha);
+  const Cext = k * alpha[1], Csca = Math.pow(k, 4) / (6 * Math.PI) * (alpha[0] * alpha[0] + alpha[1] * alpha[1]);
+  return { qs, alpha, scale, Cext, Csca, Cabs: Cext - Csca, Leff };
+};
+/* |E|² at (x, z) in a plane through the axis (E₀ = 1 along z), or null inside a particle */
+B.inside = (G, rho, z) => G.shapes.some(sh => {
+  if (z > sh.top || z < sh.bot) return false;
+  if (sh.kind === 'spheroid') return (rho * rho) / (sh.b * sh.b) + ((z - sh.z0) * (z - sh.z0)) / (sh.a * sh.a) < 1;
+  const cyl = sh.len / 2 - sh.r, dz = Math.max(0, Math.abs(z - sh.z0) - cyl); return rho * rho + dz * dz < sh.r * sh.r;
+});
+B.field = (G, R, x, z) => {
+  const rho = Math.abs(x); if (B.inside(G, rho, z)) return null;
+  let Er = [0, 0], Ez = [0, 0];
+  for (let j = 0; j < G.n; j++) {
+    const e = panelField(G.P[j], rho, z, false, G.lens[j]), sr = R.qs.sr[j], si = R.qs.si[j];
+    Er = [Er[0] + e[0] * sr, Er[1] + e[0] * si]; Ez = [Ez[0] + e[1] * sr, Ez[1] + e[1] * si];
+  }
+  const s = R.scale, sc = v => [v[0] * s[0] - v[1] * s[1], v[0] * s[1] + v[1] * s[0]];
+  const er = sc(Er), ez = sc(Ez); ez[0] += 1;
+  return er[0] * er[0] + er[1] * er[1] + ez[0] * ez[0] + ez[1] * ez[1];
+};
 })();
 
 </script>
@@ -18273,7 +18461,7 @@ function insertDialog() {
 const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el;
 const PT = RNBX.particleStudio = {};
 const KEY = 'rnbx-particles-v1';
-const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, TF = () => RNBX.thinfilm, MIE = () => RNBX.mie;
+const ST = () => RNBX.studio, UI = () => RNBX.studio.ui, TF = () => RNBX.thinfilm, MIE = () => RNBX.mie, BEM = () => RNBX.bem;
 
 /* ---------- designs ---------- */
 const shell = (mat, t) => ({ mat, t });
@@ -18292,6 +18480,8 @@ const PRESETS = [
   { id: 'rod4', name: 'Au nanorod 40 × 10 nm (aspect ratio 4)', make: () => design('Au nanorod 40 × 10 nm', { kind: 'rod', rod: { L: 40, D: 10 }, calc: { lmin: 400, lmax: 1100, points: 141, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
   { id: 'rod2', name: 'Au nanorod 50 × 25 nm (aspect ratio 2)', make: () => design('Au nanorod 50 × 25 nm', { kind: 'rod', rod: { L: 50, D: 25 }, calc: { lmin: 400, lmax: 900, points: 101, show: 'C' }, probe: { nm: 633, shift: 1000 } }) },
   { id: 'rod3', name: 'Au nanorod 75 × 25 nm, aligned (aspect ratio 3)', make: () => design('Au nanorod 75 × 25 nm', { kind: 'rod', rod: { L: 75, D: 25 }, orient: 'long', calc: { lmin: 400, lmax: 1000, points: 121, show: 'C' }, probe: { nm: 700, shift: 1000 } }) },
+  { id: 'rodtip', name: 'Au nanorod dimer, end to end, 2 nm gap', make: () => design('Au rods end to end, 2 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'tip', gap: 2 }, orient: 'long', calc: { lmin: 500, lmax: 1200, points: 71, show: 'C' }, probe: { nm: 900, shift: 1000 } }) },
+  { id: 'rodside', name: 'Au nanorods side by side, 5 nm gap', make: () => design('Au rods side by side, 5 nm gap', { kind: 'rod', rod: { L: 40, D: 10, ends: 'round', pair: 'side', gap: 5 }, orient: 'long', calc: { lmin: 500, lmax: 1100, points: 121, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
   { id: 'agrod', name: 'Ag nanorod 60 × 20 nm', make: () => design('Ag nanorod 60 × 20 nm', { kind: 'rod', core: { mat: 'Ag', d: 20 }, rod: { L: 60, D: 20 }, calc: { lmin: 300, lmax: 900, points: 121, show: 'C' }, probe: { nm: 633, shift: 1000 } }) },
   { id: 'audimer80', name: 'Au dimer, 80 nm, 5 nm gap (785 nm excitation)', make: () => design('Au dimer 80 nm', { kind: 'dimer', core: { mat: 'Au', d: 80 }, gap: 5, calc: { lmin: 450, lmax: 1000, points: 41, show: 'C' }, probe: { nm: 785, shift: 1000 } }) },
 ];
@@ -18311,18 +18501,43 @@ PT.parts = (dd, lam) => {
 /* nanorods (prolate spheroid model): cross-sections for the orientation and the tip (or side) field 0.5 nm out */
 const rodOf = dd => { const rd = dd.rod || { L: 40, D: 10 }, L = Math.max(+rd.L || 1, +rd.D || 1); return { a: L / 2, b: (+rd.D || 1) / 2 }; };
 const epsOf = (m, lam) => { const q = TF().nk(m, lam); return [q.n * q.n - q.k * q.k, 2 * q.n * q.k]; };
-PT.rodPoint = (dd, lam) => {
-  const { a, b } = rodOf(dd), n = medN(dd, lam), r = MIE().spheroid(epsOf(dd.core, lam), n * n, a, b, lam), o = dd.orient || 'random';
-  const pick = k => (o === 'long' ? r.long[k] : o === 'trans' ? r.trans[k] : (r.long[k] + 2 * r.trans[k]) / 3);
-  const tr = o === 'trans', E2 = tr ? MIE().spheroidField(a, b, r.trans.Ein, 'trans', b + 0.5, 0) : MIE().spheroidField(a, b, r.long.Ein, 'long', 0, a + 0.5);
-  return { lam, Cext: pick('Cext'), Csca: pick('Csca'), Cabs: pick('Cabs'), E2, rod: r };
+/* rods: one, two end to end (tip to tip) or two side by side; ends rounded (hemispherical) or spheroidal */
+const rodOpt = dd => { const rd = dd.rod || {}; return { ends: rd.ends || 'round', pair: rd.pair || 'one', gap: Math.max(0.1, +rd.gap || 2) }; };
+const geoCache = new Map();
+/* boundary-element geometry of the rod(s) along z (cached) */
+PT.rodGeom = (dd, gapOv) => {
+  const { a, b } = rodOf(dd), o = rodOpt(dd), g = gapOv != null ? gapOv : o.gap, key = JSON.stringify([a, b, o.ends, o.pair, o.pair === 'tip' ? g : 0]);
+  let G = geoCache.get(key); if (G) return G;
+  const mk = z0 => (o.ends === 'round' ? BEM().capsule(2 * a, b, z0) : BEM().spheroid(a, b, z0));
+  G = BEM().build(o.pair === 'tip' ? [mk(a + g / 2), mk(-(a + g / 2))] : [mk(0)], o.pair === 'tip' ? 110 : 120);
+  if (geoCache.size > 40) geoCache.clear(); geoCache.set(key, G); return G;
 };
+/* two parallel rods side by side, centres 2b + g apart: coupled point dipoles (approximate) */
+const sideBySide = (sp, a, b, g, lam, em) => {
+  const k = 2 * Math.PI * Math.sqrt(em) / lam, alpha = sp.long.alpha, p = MIE().sideBySide(sp, a, b, 2 * b + g, lam, em), c = MIE().c;
+  const inv = c.cdiv([1, 0], alpha), p2 = p[0] * p[0] + p[1] * p[1];
+  const Cext = 2 * k * p[1], Cabs = 2 * k * p2 * (-inv[1] - k * k * k / (6 * Math.PI));
+  return { Cext, Cabs, Csca: Cext - Cabs };
+};
+PT.rodPoint = (dd, lam, gapOv) => {
+  const { a, b } = rodOf(dd), n = medN(dd, lam), em = n * n, eps = epsOf(dd.core, lam), o = dd.orient || 'random', ro = rodOpt(dd), g = gapOv != null ? gapOv : ro.gap;
+  const sp = MIE().spheroid(eps, em, a, b, lam), two = ro.pair === 'one' ? 1 : 2;
+  let long, E2 = NaN, bem = null;
+  if (ro.pair === 'side') long = sideBySide(sp, a, b, g, lam, em);
+  else if (ro.pair === 'one' && ro.ends === 'spheroid') { long = sp.long; E2 = MIE().spheroidField(a, b, sp.long.Ein, 'long', 0, a + 0.5); }
+  else { const G = PT.rodGeom(dd, g), r = BEM().response(G, eps, em, lam); long = r; bem = { G, r }; E2 = ro.pair === 'tip' ? BEM().field(G, r, 0, 0) : BEM().field(G, r, 0, a + 0.5); }
+  // across the rods: uncoupled spheroids (the transverse plasmon couples weakly)
+  const tr = k => two * sp.trans[k], pick = k => (o === 'long' ? long[k] : o === 'trans' ? tr(k) : (long[k] + 2 * tr(k)) / 3);
+  if (o === 'trans') E2 = ro.pair === 'one' ? MIE().spheroidField(a, b, sp.trans.Ein, 'trans', b + 0.5, 0) : NaN;
+  return { lam, Cext: pick('Cext'), Csca: pick('Csca'), Cabs: pick('Cabs'), E2, rod: sp, bem };
+};
+PT.rodModel = dd => { const ro = rodOpt(dd); return ro.pair === 'side' ? 'coupled spheroids (approximate)' : ro.pair === 'one' && ro.ends === 'spheroid' ? 'spheroid model with size corrections' : 'boundary elements (exact shape) with size corrections'; };
 /* the hot spot: gap centre, or 0.5 nm outside the surface on the polarisation axis */
 PT.hotSpot = dd => (dd.kind === 'dimer' ? [0, 0, 0] : dd.pol === 'z' ? [0, 0, outerR(dd) + 0.5] : [0, outerR(dd) + 0.5, 0]);
 PT.order = (dd, lam) => (dd.kind === 'rod' ? 0 : +dd.orders > 0 ? +dd.orders : MIE().autoOrder(PT.parts(dd, lam), lam, medN(dd, lam)));
 /* one wavelength: cross-sections (nm²) and the hot-spot |E|² */
 PT.point = (dd, lam, N) => {
-  if (dd.kind === 'rod') return PT.rodPoint(dd, lam);
+  if (dd.kind === 'rod') return PT.rodPoint(dd, lam, dd._gap);
   const parts = PT.parts(dd, lam), nm = medN(dd, lam);
   const Sx = MIE().solve(parts, nm, lam, dd.pol, N || PT.order(dd, Math.min(lam, dd.calc.lmin)));
   const c = MIE().cross(Sx), hs = PT.hotSpot(dd), E2 = MIE().intensity(MIE().field(Sx, hs[0], hs[1], hs[2]));
@@ -18373,11 +18588,12 @@ PT.render = host => {
   const left = el('section', { class: 'st-col st-left' }, el('h4', { text: 'Particle' }), views.left);
   const mid = el('section', { class: 'st-col st-mid' }, el('h4', { text: 'Geometry' }), views.sketch, el('h4', { text: 'Near field |E|²' }), probeControls(), views.field, views.fieldInfo);
   const right = el('section', { class: 'st-col st-right' }, el('h4', { text: 'Extinction, scattering, absorption' }), specControls(), views.status, views.spec,
-    el('h4', { text: 'Hot spot and SERS enhancement' }), views.hot, d.kind === 'dimer' ? el('h4', { text: 'Field against the gap' }) : null, d.kind === 'dimer' ? sweepControls() : null, d.kind === 'dimer' ? views.sweep : null);
+    el('h4', { text: 'Hot spot and SERS enhancement' }), views.hot, hasGap() ? el('h4', { text: 'Field against the gap' }) : null, hasGap() ? sweepControls() : null, hasGap() ? views.sweep : null);
   root.append(el('div', { class: 'st-body' }, left, mid, right));
   buildLeft(); drawSketch(); drawSpec(); drawField(); drawSweep();
   runAll();
 };
+const hasGap = () => d.kind === 'dimer' || (d.kind === 'rod' && rodOpt(d).pair === 'tip');
 function buildLeft() {
   const host = views.left; if (!host) return; host.innerHTML = '';
   const g = [
@@ -18387,16 +18603,25 @@ function buildLeft() {
   if (d.kind === 'dimer') g.push(fld('Gap g (nm)', num(() => d.gap, v => { d.gap = v; }, { step: 0.1, min: 0.1, max: 500, key: 'gap', title: 'Surface-to-surface distance' })));
   if (d.kind === 'rod') {
     d.rod = d.rod || { L: 40, D: 10 };
-    g.push(fld('Orientation', sel1([['random', 'Random (in solution)'], ['long', 'Light polarised along the rod'], ['trans', 'Polarised across the rod']], () => d.orient || 'random', v => { d.orient = v; }, 'ori')));
+    const ro = rodOpt(d);
+    g.push(fld('Rods', sel1([['one', 'One rod'], ['tip', 'Two, end to end (tip gap)'], ['side', 'Two, side by side']], () => ro.pair, v => { d.rod.pair = v; if (v !== 'one' && !(+d.rod.gap > 0)) d.rod.gap = 2; if (v !== 'one') d.orient = 'long'; }, 'pair', 'all')),
+      fld('Ends', sel1([['round', 'Rounded (hemispherical caps)'], ['spheroid', 'Spheroid']], () => ro.ends, v => { d.rod.ends = v; }, 'ends')),
+      fld('Orientation', sel1([['random', 'Random (in solution)'], ['long', 'Light polarised along the rods'], ['trans', 'Polarised across the rods']], () => d.orient || 'random', v => { d.orient = v; }, 'ori')));
+    if (ro.pair !== 'one') g.push(fld('Gap g (nm)', num(() => ro.gap, v => { d.rod.gap = Math.max(0.1, v); }, { step: 0.1, min: 0.1, max: 500, key: 'rgap', title: ro.pair === 'tip' ? 'Tip-to-tip distance' : 'Side-to-side distance' })));
     host.append(el('div', { class: 'st-grid' }, ...g));
-    const box = el('div', { class: 'st-group st-player' }, el('div', { class: 'st-cap', text: 'Rod' }),
+    const box = el('div', { class: 'st-group st-player' }, el('div', { class: 'st-cap', text: ro.pair === 'one' ? 'Rod' : 'Each rod' }),
       el('div', { class: 'st-row2' }, matSel(() => d.core.mat, v => { d.core.mat = v; }, 'rodm')),
       el('div', { class: 'st-row2' }, el('span', { class: 'hint', style: { margin: 0 }, text: 'length' }), num(() => d.rod.L, v => { d.rod.L = Math.max(1, v); }, { step: 1, min: 1, key: 'rodL', title: 'Tip to tip (nm)' }),
         el('span', { class: 'hint', style: { margin: 0 }, text: 'diameter' }), num(() => d.rod.D, v => { d.rod.D = Math.max(1, v); }, { step: 0.5, min: 1, key: 'rodD', title: 'Width (nm)' }), el('span', { class: 'hint', style: { margin: 0 }, text: 'nm' })));
     if (d.core.mat === 'custom') box.append(el('div', { class: 'st-row2' }, el('span', { text: 'n' }), num(() => d.core.n == null ? 1.5 : d.core.n, v => { d.core.n = v; }, { step: 0.001, key: 'rn' }), el('span', { text: 'k' }), num(() => d.core.k || 0, v => { d.core.k = Math.max(0, v); }, { step: 0.001, min: 0, key: 'rk' })));
     host.append(box);
     const r = rodOf(d);
-    host.append(el('div', { class: 'hint', text: `Aspect ratio ${UI().f1(r.a / r.b, 2)}. The rod is calculated as a prolate spheroid of the same length and diameter, in the long-wavelength approximation with size corrections (dynamic depolarisation and radiation damping; Kuwata et al. 2003). Rods with rounded ends resonate somewhat to the red of the spheroid; for aspect ratios 2–4 expect about 10–30 nm. Random orientation averages one longitudinal and two transverse plasmons.` }));
+    const model = ro.pair === 'side'
+      ? 'Side by side: each rod (a size-corrected spheroid) is driven by the incident light plus the voltage that the other rod’s polarisation puts across its ends (exact static field of the spheroid). Approximate: it gives the spectrum and the blue shift, not the field between the rods.'
+      : ro.pair === 'one' && ro.ends === 'spheroid'
+        ? 'Prolate spheroid in the long-wavelength approximation with size corrections (dynamic depolarisation, radiation damping; Kuwata et al. 2003).'
+        : 'Boundary-element solution of the exact shape (the surface charge on the rod' + (ro.pair === 'tip' ? 's, including the field in the gap' : '') + '), with the same size corrections as a spheroid. Checked against exact theory for spheres and sphere dimers (peak within a few nm, gap field within about 10 %).';
+    host.append(el('div', { class: 'hint', text: `Aspect ratio ${UI().f1(r.a / r.b, 2)}. ${model} Light polarised across the rods uses uncoupled spheroids. Random orientation averages one longitudinal and two transverse responses.` }));
     return;
   }
   g.push(fld('Polarisation', sel1([['z', d.kind === 'dimer' ? 'Along the dimer axis (hot spot)' : 'Along z'], ['y', d.kind === 'dimer' ? 'Across the axis' : 'Along y']], () => d.pol, v => { d.pol = v; }, 'pol')),
@@ -18456,7 +18681,7 @@ async function runSpec() {
     if (views.status) views.status.textContent = `Calculating… ${Math.round(100 * (i + 1) / n)} %` + (dd.kind === 'rod' ? '' : ` (${N} multipole orders)`);
     if (i % 3 === 2 || i === n - 1) { drawSpec(); await later(); }
   }
-  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? 'spheroid model with size corrections.' : `${N} multipole orders.`); drawSpec();
+  out.done = true; if (views.status) views.status.textContent = `${n} wavelengths, ` + (dd.kind === 'rod' ? PT.rodModel(dd) + '.' : `${N} multipole orders.`); drawSpec();
 }
 async function runRaman() {
   const run = ++fieldRun, dd = d; await later(); if (run !== fieldRun) return;
@@ -18485,15 +18710,22 @@ async function runField(keep) {
   out.done = true; drawField();
 }
 async function runRodField(keep) {
-  const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm, { a, b } = rodOf(dd), pt = PT.rodPoint(dd, lam), pol = (dd.orient || 'random') === 'trans' ? 'trans' : 'long', Ein = pt.rod[pol].Ein;
-  const hz = a * 1.45, hx = Math.max(b * 3, a * 0.55), nz = RES[dd.view.res] || 110, nx = Math.max(24, Math.round(nz * hx / hz)), map = new Float64Array(nx * nz).fill(NaN);
+  const run = keep ? fieldRun : ++fieldRun, dd = d, lam = d.probe.nm, { a, b } = rodOf(dd), ro = rodOpt(dd), o = dd.orient || 'random';
+  if (ro.pair === 'side' || (ro.pair === 'tip' && o === 'trans')) { field = { none: true, lam }; drawField(); return; }
+  await later(); if (run !== fieldRun) return;
+  const pt = PT.rodPoint(dd, lam), useBem = !!pt.bem && o !== 'trans', pol = o === 'trans' ? 'trans' : 'long';
+  const half = ro.pair === 'tip' ? 2 * a + ro.gap / 2 : a, hz = half * 1.25 + 4, hx = Math.max(b * 3, hz * 0.32);
+  const nz = RES[dd.view.res] || 110, nx = Math.max(24, Math.round(nz * hx / hz)), map = new Float64Array(nx * nz).fill(NaN);
   const out = { nx, nz, hx, hz, map, lam, done: false, max: 0, pol };
   field = out;
   for (let j = 0; j < nx; j++) {
     if (run !== fieldRun) return;
     const x = -hx + 2 * hx * (j + 0.5) / nx;
-    for (let i = 0; i < nz; i++) { const z = -hz + 2 * hz * (i + 0.5) / nz, v = MIE().spheroidField(a, b, Ein, pol, x, z); map[j * nz + i] = v == null ? NaN : v; if (v > out.max) out.max = v; }
-    if (j % 12 === 11) { drawField(); await later(); }
+    for (let i = 0; i < nz; i++) {
+      const z = -hz + 2 * hz * (i + 0.5) / nz, v = useBem ? BEM().field(pt.bem.G, pt.bem.r, x, z) : MIE().spheroidField(a, b, pt.rod[pol].Ein, pol, x, z);
+      map[j * nz + i] = v == null ? NaN : v; if (v > out.max) out.max = v;
+    }
+    if (j % 4 === 3) { drawField(); await later(); }
   }
   out.done = true; drawField();
 }
@@ -18503,7 +18735,7 @@ async function runSweep() {
   const out = { g: [], E2: [], EF: [], lam, done: false }; sweep = out;
   for (let i = 0; i < n; i++) {
     if (run !== sweepRun) return;
-    const g = g0 * Math.pow(g1 / g0, i / (n - 1)); dd.gap = g;
+    const g = g0 * Math.pow(g1 / g0, i / (n - 1)); if (dd.kind === 'rod') dd._gap = g; else dd.gap = g;
     const N = PT.order(dd, lam), a = PT.point(dd, lam, N), lr = ramanNm(lam, d.probe.shift), b = d.probe.shift > 0 ? PT.point(dd, lr, N) : a;
     out.g.push(g); out.E2.push(a.E2); out.EF.push(a.E2 * b.E2);
     drawSweep(); await later();
@@ -18531,22 +18763,28 @@ function drawSketch() {
   s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#666">${U.esc(mats.map(m => TF().name(m.mat)).join(' / '))} in ${U.esc(TF().name(d.medium))}</text>`;
   host.innerHTML = s + '</svg>';
 }
+const capsulePath = (cx, cy, a, b, sc, ends) => (ends === 'spheroid'
+  ? `<ellipse cx="${cx}" cy="${cy}" rx="${a * sc}" ry="${b * sc}"`
+  : `<rect x="${cx - a * sc}" y="${cy - b * sc}" width="${2 * a * sc}" height="${2 * b * sc}" rx="${b * sc}" ry="${b * sc}"`);
 function drawRodSketch(host) {
-  const w = Math.max(300, host.clientWidth || 440), h = 150, { a, b } = rodOf(d), sc = Math.min((w - 140) / (2 * a), (h - 40) / (2 * b)), cx = w / 2, cy = h / 2 + 4, o = d.orient || 'random';
+  const w = Math.max(300, host.clientWidth || 440), h = 150, { a, b } = rodOf(d), ro = rodOpt(d), o = d.orient || 'random';
+  const tot = ro.pair === 'tip' ? 4 * a + ro.gap : 2 * a, hgt = ro.pair === 'side' ? 4 * b + ro.gap : 2 * b, sc = Math.min((w - 140) / tot, (h - 44) / hgt), cx = w / 2, cy = h / 2 + 4;
+  const fill = UI().colorOf(d.core.mat);
   let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="10.5" class="st-chart">`;
   s += `<rect x="0" y="0" width="${w}" height="${h}" fill="${d.medium === 'air' ? '#f7f9fc' : UI().colorOf(d.medium)}" fill-opacity="0.25"/>`;
-  s += `<ellipse cx="${cx}" cy="${cy}" rx="${a * sc}" ry="${b * sc}" fill="${UI().colorOf(d.core.mat)}" stroke="#00000066" stroke-width="0.7"/>`;
-  s += `<text x="${cx}" y="${cy - b * sc - 8}" text-anchor="middle" fill="#333">${UI().f1(2 * a, 0)} × ${UI().f1(2 * b, 0)} nm</text>`;
+  const centres = ro.pair === 'tip' ? [[-(a + ro.gap / 2), 0], [a + ro.gap / 2, 0]] : ro.pair === 'side' ? [[0, -(b + ro.gap / 2)], [0, b + ro.gap / 2]] : [[0, 0]];
+  centres.forEach(([zc, xc]) => { s += capsulePath(cx + zc * sc, cy + xc * sc, a, b, sc, ro.ends) + ` fill="${fill}" stroke="#00000066" stroke-width="0.7"/>`; });
+  s += `<text x="${cx}" y="16" text-anchor="middle" fill="#333">${UI().f1(2 * a, 0)} × ${UI().f1(2 * b, 0)} nm${ro.pair !== 'one' ? `, g = ${UI().f1(ro.gap, ro.gap < 10 ? 1 : 0)} nm` : ''}</text>`;
   if (o !== 'random') s += o === 'long' ? `<line x1="34" y1="${h - 14}" x2="70" y2="${h - 14}" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="76" y="${h - 10}" fill="#d62728">E</text>` : `<line x1="44" y1="${h - 34}" x2="44" y2="${h - 6}" stroke="#d62728" stroke-width="1.6" marker-end="url(#pt-ar)" marker-start="url(#pt-ar)"/><text x="50" y="${h - 14}" fill="#d62728">E</text>`;
   else s += `<text x="16" y="${h - 10}" fill="#d62728">random orientation</text>`;
   s += `<defs><marker id="pt-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d62728"/></marker></defs>`;
-  s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#666">${U.esc(TF().name(d.core.mat))} rod in ${U.esc(TF().name(d.medium))}</text>`;
+  s += `<text x="${w - 8}" y="${h - 8}" text-anchor="end" fill="#666">${U.esc(TF().name(d.core.mat))} rod${ro.pair === 'one' ? '' : 's'} in ${U.esc(TF().name(d.medium))}</text>`;
   host.innerHTML = s + '</svg>';
 }
 function drawSpec() {
   const host = views.spec; if (!host) return;
   if (!spec || !spec.x.length) { host.innerHTML = '<div class="hint">Calculating…</div>'; drawHot(); return; }
-  const w = Math.max(300, host.clientWidth || 440), h = 230, q = d.calc.show === 'Q', G = Math.PI * spec.R * spec.R * (d.kind === 'dimer' ? 2 : 1), f = v => (q ? v / G : v);
+  const w = Math.max(300, host.clientWidth || 440), h = 230, q = d.calc.show === 'Q', G = Math.PI * spec.R * spec.R * (d.kind === 'dimer' || (d.kind === 'rod' && rodOpt(d).pair !== 'one') ? 2 : 1), f = v => (q ? v / G : v);
   const keys = ['Cext', 'Csca', 'Cabs'], ys = keys.flatMap(k => spec[k].map(f)), ymax = Math.max(...ys, 1e-9);
   const lo = Math.min(d.calc.lmin, d.calc.lmax), hi = Math.max(d.calc.lmin, d.calc.lmax);
   const ch = UI().chart({ id: 'pt-spec', w, h, xr: [lo, hi], yr: [0, ymax * 1.08], xlabel: 'Wavelength (nm)', ylabel: q ? 'Efficiency Q' : 'Cross-section (nm²)', cross: d.probe.nm,
@@ -18562,12 +18800,13 @@ function drawHot() {
   const host = views.hot; if (!host) return;
   if (!spec || !spec.x.length) { host.innerHTML = ''; return; }
   const w = Math.max(300, host.clientWidth || 440), h = 200, lo = Math.min(d.calc.lmin, d.calc.lmax), hi = Math.max(d.calc.lmin, d.calc.lmax);
+  if (!spec.E2.some(v => isFinite(v))) { host.innerHTML = '<div class="hint">No hot-spot field for this arrangement (' + (d.kind === 'rod' && rodOpt(d).pair === 'side' ? 'the side-by-side model gives spectra only' : 'light polarised across the rods') + ').</div>'; return; }
   const lg = spec.E2.map(v => Math.log10(Math.max(v, 1e-6))), ef = spec.E2.map(v => Math.log10(Math.max(v * v, 1e-6)));
   const ymin = Math.floor(Math.min(...lg, 0)), ymax = Math.ceil(Math.max(...ef, 1));
   const ch = UI().chart({ id: 'pt-hot', w, h, xr: [lo, hi], yr: [ymin, ymax], xlabel: 'Wavelength (nm)', ylabel: 'log₁₀', cross: d.probe.nm,
     series: [{ x: spec.x, y: lg, color: COL.E2 }, { x: spec.x, y: ef, color: COL.EF }], legend: [{ name: '|E|² hot spot', color: COL.E2 }, { name: '|E|⁴ (SERS EF)', color: COL.EF }] });
   host.innerHTML = ch.svg;
-  const where = d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? ((d.orient || 'random') === 'trans' ? '0.5 nm from the side of the rod (light polarised across it)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
+  const where = d.kind === 'dimer' ? 'at the centre of the gap' : d.kind === 'rod' ? (rodOpt(d).pair === 'side' ? 'not resolved by the side-by-side (coupled-spheroid) model' : (d.orient || 'random') === 'trans' ? (rodOpt(d).pair === 'one' ? '0.5 nm from the side of the rod (light polarised across it)' : 'calculated for light polarised along the rods') : rodOpt(d).pair === 'tip' ? 'at the centre of the gap between the tips (light polarised along the rods)' : '0.5 nm beyond the tip (light polarised along the rod)') : `0.5 nm from the surface, on the ${d.pol === 'z' ? 'z' : 'y'} axis`;
   const r = raman;
   host.append(el('div', { class: 'readout', html: r ? `Hot spot ${where}: at ${UI().f1(r.lam, 1)} nm |E|² = <b>${fmtE(r.E2a)}</b>; at the Raman line ${UI().f1(r.lr, 1)} nm (${d.probe.shift} cm⁻¹) |E|² = ${fmtE(r.E2b)}.<br>SERS enhancement |E(λ)|²·|E(λ<sub>R</sub>)|² ≈ <b>${fmtE(r.EF)}</b> (the |E|⁴ approximation; chemical enhancement not included).` : 'Calculating the hot spot…' }));
 }
@@ -18589,6 +18828,7 @@ function drawField() {
   const host = views.field; if (!host) return;
   const r = field;
   if (!r) { host.innerHTML = '<div class="hint">Calculating the near field…</div>'; return; }
+  if (r.none) { host.innerHTML = '<div class="hint">' + (rodOpt(d).pair === 'side' ? 'The side-by-side model (coupled spheroids) gives the spectrum but not the field between the rods.' : 'The near field is calculated for light polarised along the rods.') + '</div>'; if (views.fieldInfo) views.fieldInfo.innerHTML = ''; return; }
   const w = Math.max(300, host.clientWidth || 440), L = 46, R = w - 64, T = 10, hh = Math.round((R - L) * r.hx / r.hz), B = T + hh, h = B + 34;
   const cv = PT.fieldImage(r, d.view.log, UI().colorOf(d.shells.length ? d.shells[d.shells.length - 1].mat : d.core.mat));
   const X = z => L + (z + r.hz) / (2 * r.hz) * (R - L), Y = x => T + (x + r.hx) / (2 * r.hx) * hh;
@@ -18596,7 +18836,7 @@ function drawField() {
   s += `<image href="${cv.toDataURL()}" x="${L}" y="${T}" width="${R - L}" height="${hh}" preserveAspectRatio="none" style="image-rendering:pixelated"/>`;
   // particle outlines
   const Rr = outerR(d), cz = d.kind === 'dimer' ? [-(Rr + (+d.gap || 0) / 2), Rr + (+d.gap || 0) / 2] : [0], sx = (R - L) / (2 * r.hz);
-  if (d.kind === 'rod') { const rb = rodOf(d); s += `<ellipse cx="${X(0)}" cy="${Y(0)}" rx="${rb.a * sx}" ry="${rb.b * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }
+  if (d.kind === 'rod') { const rb = rodOf(d), ro = rodOpt(d); (ro.pair === 'tip' ? [-(rb.a + ro.gap / 2), rb.a + ro.gap / 2] : [0]).forEach(zc => { s += capsulePath(X(zc), Y(0), rb.a, rb.b, sx, ro.ends) + ` fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; }); }
   else { const rs = [d.core.d / 2]; d.shells.forEach(q => rs.push(rs[rs.length - 1] + (+q.t || 0)));
     cz.forEach(z => rs.forEach(rr => { s += `<circle cx="${X(z)}" cy="${Y(0)}" r="${rr * sx}" fill="none" stroke="#ffffff" stroke-opacity="0.8" stroke-width="0.8"/>`; })); }
   s += `<rect x="${L}" y="${T}" width="${R - L}" height="${hh}" fill="none" stroke="currentColor"/>`;
@@ -18608,7 +18848,7 @@ function drawField() {
   for (let k = 0; k < 40; k++) { const c = hot(1 - k / 39); s += `<rect x="${cbx}" y="${T + k * hh / 40}" width="${cbw}" height="${hh / 40 + 0.5}" fill="rgb(${c})"/>`; }
   s += `<text x="${cbx + cbw + 3}" y="${T + 9}" fill="currentColor">${fmtTxt(r.max)}</text><text x="${cbx + cbw + 3}" y="${B}" fill="currentColor">${d.view.log ? '1' : '0'}</text>`;
   host.innerHTML = s + '</svg>';
-  if (views.fieldInfo) views.fieldInfo.innerHTML = d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod, polarised ${r.pol === 'long' ? 'along' : 'across'} it (quasi-static field of the spheroid, driven by the size-corrected internal field)${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
+  if (views.fieldInfo) views.fieldInfo.innerHTML = d.kind === 'rod' ? `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm around the rod${rodOpt(d).pair === 'tip' ? 's' : ''}, polarised ${r.pol === 'long' ? 'along' : 'across'} ${rodOpt(d).pair === 'tip' ? 'them' : 'it'} (${r.pol === 'long' && !(rodOpt(d).pair === 'one' && rodOpt(d).ends === 'spheroid') ? 'boundary-element solution of the exact shape, with size corrections' : 'quasi-static field of the spheroid, driven by the size-corrected internal field'})${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.` : `|E|² / |E₀|² at ${UI().f1(r.lam, 1)} nm, ${d.pol === 'z' ? 'polarised along z' : 'polarised along y'}, in the x–z plane through the particle${d.kind === 'dimer' ? 's' : ''}${r.done ? '' : ' (calculating…)'}; peak ${fmtE(r.max)}${d.view.log ? ', logarithmic scale' : ''}.`;
 }
 const fmtTxt = v => (v >= 1e4 ? v.toExponential(1) : UI().f1(v, v < 10 ? 1 : 0));
 function drawSweep() {

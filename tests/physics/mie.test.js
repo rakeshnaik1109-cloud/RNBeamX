@@ -2,7 +2,7 @@
 'use strict';
 module.exports = async ({ H }) => {
   H.suite('physics · nanoparticles (Mie, dimers)');
-  const RNBX = H.loadEngine(['core/utils.js', 'engine/optics.js', 'engine/nkdata.js', 'engine/thinfilm.js', 'engine/mie.js']), M = RNBX.mie, TF = RNBX.thinfilm, c = M.c;
+  const RNBX = H.loadEngine(['core/utils.js', 'engine/optics.js', 'engine/nkdata.js', 'engine/thinfilm.js', 'engine/mie.js', 'engine/bem.js']), M = RNBX.mie, Bm = RNBX.bem, TF = RNBX.thinfilm, c = M.c;
   const au = lam => { const q = TF.nk({ mat: 'Au' }, lam); return [q.n, q.k]; };
   // 1. Rayleigh limit: Q_abs = 4x Im((m²−1)/(m²+2))
   { const m = [1.5, 0.1], q = M.sphere([{ r: 2, n: m }], 1, 600), x = 2 * Math.PI * 2 / 600, m2 = c.cmul(m, m), f = c.cdiv(c.csub(m2, [1, 0]), c.cadd(m2, [2, 0]));
@@ -50,4 +50,23 @@ module.exports = async ({ H }) => {
     H.near('rod near field → incident field far away', M.spheroidField(20, 5, r.long.Ein, 'long', 0, 3000), 1, 1e-3);
     H.near('tip field at the surface = ε E_in / εm', M.spheroidField(20, 5, r.long.Ein, 'long', 0, 20.002) / (r.long.Esurf[0] ** 2 + r.long.Esurf[1] ** 2), 1, 0.1);
     H.check('longitudinal plasmon far stronger than transverse at 780 nm', r.long.Cext > 50 * r.trans.Cext, [r.long.Cext, r.trans.Cext]); }
+  // 10. boundary elements (bodies of revolution) and rod dimers
+  { const c3 = M.c, em = 1.33 * 1.33, eAu = lam => { const q = TF.nk({ mat: 'Au' }, lam); return c3.cmul([q.n, q.k], [q.n, q.k]); }, nAu = lam => { const q = TF.nk({ mat: 'Au' }, lam); return [q.n, q.k]; };
+    { const rho = 3, z = 1, rp = 2, zp = -0.5; let Fz = 0; const n = 20000; for (let i = 0; i < n; i++) { const f = 2 * Math.PI * (i + 0.5) / n, R = Math.sqrt(rho * rho + rp * rp - 2 * rho * rp * Math.cos(f) + (z - zp) ** 2); Fz += (z - zp) / R ** 3; } H.near('ring of charge: elliptic-integral field = direct integral', Bm.ring(rho, z, rp, zp).Fz, Fz * 2 * Math.PI / n, 1e-9); }
+    const eps = [-8, 1.5];
+    { const a = Bm.solveQS(Bm.build([Bm.spheroid(10, 10)], 120), eps, em).alpha, ex = c3.cscale(c3.cdiv(c3.csub(eps, [em, 0]), c3.cadd(eps, [2 * em, 0])), 4 * Math.PI * 1000); H.near('BEM sphere = analytic polarisability', a[0] / ex[0], 1, 1e-3); }
+    { const a = Bm.solveQS(Bm.build([Bm.spheroid(20, 5)], 120), eps, em).alpha, L = M.depol(20, 5), V = 4 / 3 * Math.PI * 100 * 5, ex = c3.cdiv([V * 5 / 5, 0], c3.cadd([L, 0], c3.cdiv([em, 0], c3.csub(eps, [em, 0]))));
+      const V2 = 4 / 3 * Math.PI * 20 * 25, ex2 = c3.cdiv([V2, 0], c3.cadd([L, 0], c3.cdiv([em, 0], c3.csub(eps, [em, 0])))); H.near('BEM spheroid (aspect ratio 4) = analytic polarisability', a[0] / ex2[0], 1, 1e-3); }
+    // sphere dimers against exact two-sphere theory
+    for (const [R, g, lam, tolE] of [[5, 1, 552, 0.03], [20, 2, 600, 0.15]]) {
+      const G = Bm.build([Bm.spheroid(R, R, R + g / 2), Bm.spheroid(R, R, -(R + g / 2))], R === 5 ? 100 : 120), r = Bm.response(G, eAu(lam), em, lam), L = [{ r: R, n: nAu(lam) }];
+      const S = M.solve([{ z: -(R + g / 2), layers: L }, { z: R + g / 2, layers: L }], 1.33, lam, 'z'); H.near(`BEM sphere dimer (${2 * R} nm, ${g} nm gap) gap |E|² = exact theory`, Bm.field(G, r, 0, 0) / M.intensity(M.field(S, 0, 0, 0)), 1, tolE); }
+    const peak = (G, lo, hi) => { let b = { C: 0 }; for (let lam = lo; lam <= hi; lam += 4) { const r = Bm.response(G, eAu(lam), em, lam); if (r.Cext > b.C) b = { C: r.Cext, lam }; } return b.lam; };
+    const p1 = peak(Bm.build([Bm.capsule(40, 5)], 100), 600, 1000);
+    H.check('Au rod with rounded ends, 40 × 10 nm: 785–820 nm (measured ≈ 800)', p1 >= 785 && p1 <= 820, p1);
+    const pg = [10, 2].map(g => peak(Bm.build([Bm.capsule(40, 5, 20 + g / 2), Bm.capsule(40, 5, -(20 + g / 2))], 80), 700, 1100));
+    H.check('end-to-end rod dimer red-shifts as the gap closes', pg[0] > p1 && pg[1] > pg[0], [p1, ...pg]);
+    const side = g => { let b = { C: 0 }; for (let lam = 600; lam <= 900; lam += 2) { const sp = M.spheroid(eAu(lam), em, 20, 5, lam), p = M.sideBySide(sp, 20, 5, 10 + g, lam, em); if (p[1] > b.C) b = { C: p[1], lam }; } return b.lam; };
+    const s1 = side(1000), s2 = side(20), s3 = side(2);
+    H.check('side-by-side rods blue-shift as the gap closes (and become single rods far apart)', Math.abs(s1 - 778) <= 4 && s2 < s1 && s3 < s2 && s1 - s3 < 80, [s1, s2, s3]); }
 };

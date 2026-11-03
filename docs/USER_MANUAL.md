@@ -584,20 +584,35 @@ coupling between the two particles).
   gaps from the smallest to the largest you set. Below about 0.5 nm electron
   tunnelling, which is not included, quenches the field.
 - **Nanorods.** Choose *Particles ▸ Nanorod*, then the material, length (tip to
-  tip) and diameter, and the orientation: random (rods in solution: one
-  longitudinal and two transverse plasmons averaged), polarised along the rod, or
-  across it. The rod is calculated as a prolate spheroid of the same length and
-  diameter in the long-wavelength approximation with size corrections (dynamic
-  depolarisation and radiation damping, Kuwata et al., Appl. Phys. Lett. 83, 4625,
-  2003), which reproduces exact Mie theory for spheres to within a few per cent.
-  The hot spot is 0.5 nm beyond the tip; the near field is the quasi-static field
-  of the spheroid. Rods with rounded ends resonate somewhat to the red of the
-  spheroid (about 10–30 nm for aspect ratios 2–4). Presets: Au 40 × 10 nm
-  (≈ 780 nm), 50 × 25 nm, 75 × 25 nm aligned, Ag 60 × 20 nm.
+  tip) and diameter, the **ends** (rounded, i.e. hemispherical caps as in real
+  rods, or spheroidal), the **orientation** (random — rods in solution, one
+  longitudinal and two transverse plasmons averaged — polarised along the rods, or
+  across them), and **Rods**:
+  - *One rod.* With rounded ends the rod is solved with boundary elements for its
+    exact shape (the surface charge on a body of revolution, elliptic-integral ring
+    kernels), with the size corrections of a spheroid (dynamic depolarisation and
+    radiation damping, Kuwata et al., Appl. Phys. Lett. 83, 4625, 2003). A 40 × 10 nm
+    Au rod in water resonates at 800 nm, 50 × 25 nm at 608 nm, 60 × 20 nm at 704 nm,
+    as measured for real rods. With spheroidal ends the analytic spheroid model is
+    used.
+  - *Two, end to end* (tip gap *g*): the same boundary-element solution for both
+    rods together, so the field in the gap is resolved; the coupled plasmon
+    red-shifts as the gap closes, and the hot spot is the centre of the gap. The
+    field against the gap can be swept.
+  - *Two, side by side* (gap *g* between the sides): each rod is driven by the
+    incident light plus the voltage the other rod's polarisation puts across its
+    ends (exact static field of the spheroid, retarded like a dipole). The
+    longitudinal plasmon blue-shifts as the gap closes. Approximate: spectra only,
+    no field between the rods.
+  Light polarised across the rods uses uncoupled spheroids (the transverse
+  plasmon couples weakly). The boundary-element solver was checked against exact
+  theory: sphere and spheroid polarisabilities to 0.03 %, and sphere dimers (gap
+  field within 1 % for 10 nm spheres, about 7 % for 40 nm spheres, where the size
+  corrections are approximate).
 - **Multipole orders** are chosen automatically (more for narrow gaps: about
   1 % on the gap field); set more to check convergence.
 - Presets: Au and Ag nanospheres, an Au nanoshell, Au@Ag, shell-isolated
-  Au@SiO₂ (SHINERS), Au and Ag dimers with 1–5 nm gaps, and Au and Ag nanorods.
+  Au@SiO₂ (SHINERS), Au and Ag dimers with 1–5 nm gaps, Au and Ag nanorods, and Au nanorod dimers end to end and side by side.
 - **Insert into figure** adds the spectrum, the hot-spot curves and the gap sweep
   as data panels, and the near-field map as a picture. **CSV** writes them all.
 

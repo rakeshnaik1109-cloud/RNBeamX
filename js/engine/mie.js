@@ -507,4 +507,21 @@ MIE.spheroidField = (a, b, Ein, pol, x, z) => {
   return ex[0] * ex[0] + ex[1] * ex[1] + ez[0] * ez[0] + ez[1] * ez[1];
 };
 const U_clamp = v => (v > 1 ? 1 : v < -1 ? -1 : v);
+/* scattered potential of a spheroid polarised along its axis (E₀ = 1 along z), at (ρ, z) outside it */
+MIE.spheroidPotential = (a, b, Ein, rho, z) => {
+  const f = Math.sqrt(Math.max(1e-12, a * a - b * b)), xi0 = a / f, Q1 = xi => xi / 2 * Math.log((xi + 1) / (xi - 1)) - 1;
+  const C = cscale(csub([1, 0], Ein), xi0 / Q1(xi0)), r1 = Math.hypot(rho, z + f), r2 = Math.hypot(rho, z - f);
+  const xi = Math.max(1 + 1e-12, (r1 + r2) / (2 * f)), eta = U_clamp((r1 - r2) / (2 * f));
+  return cscale(C, f * eta * Q1(xi));
+};
+/* two identical parallel rods side by side (centres d apart), light polarised along them: each rod is driven by the
+   incident field plus the voltage the other rod's polarisation puts across its ends (exact static field of the
+   spheroid, retarded like a dipole). Returns the corrected polarisability of one rod in the pair. */
+MIE.sideBySide = (sp, a, b, d, lam, em) => {
+  const L = sp.long, k = 2 * Math.PI * Math.sqrt(em) / lam;
+  const V = csub(MIE.spheroidPotential(a, b, L.Ein, d, -a), MIE.spheroidPotential(a, b, L.Ein, d, a));
+  const kap = cdiv(cscale(V, 1 / (2 * a)), L.alpha), ret = cmul([Math.cos(k * d), Math.sin(k * d)], [1 - (k * d) ** 2, -k * d]);
+  const kr = cmul(kap, ret);
+  return cdiv(L.alpha, csub([1, 0], cmul(L.alpha, kr)));
+};
 })();
