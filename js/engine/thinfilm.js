@@ -48,6 +48,7 @@ TF.nk = (m, nm) => {
   if (!id || id === 'air') return { n: 1, k: 0 };
   if (id === 'custom') return { n: +m.n || 1, k: Math.max(0, +m.k || 0) };
   if (id === 'ema') return TF.emaNk(m.ema || {}, nm);
+  if (id === 'aniso') return { n: +m.no || 1.5, k: +m.ko || 0, aniso: true };
   if (id.startsWith('glass:')) return { n: RNBX.optics.index(id.slice(6), nm), k: 0 };
   const d = DATA[id];
   if (!d) return { n: 1, k: 0, missing: true };
@@ -134,6 +135,7 @@ TF.solve = (stack, nm, thetaDeg, pol) => {
      R = Rf + Tf² a² Rb / (1 − Rf′ Rb a²),  T = Tf a Tb / (1 − Rf′ Rb a²),  a = e^(−α d / cos θs).
    Rf′ is the stack seen from inside the substrate; Tf is the same both ways (reciprocity). */
 TF.solveThick = (stack, nm, thetaDeg, pol) => {
+  if (TF.hasAniso(stack)) { const a = TF.solveAniso(stack, nm, thetaDeg); return { R: Math.min(1, a.R[pol]), T: Math.max(0, a.T[pol]), A: Math.max(0, 1 - a.R[pol] - a.T[pol]), X: a.Tx[pol], r: pol === 's' ? a.r.ss : mul([-1, 0], a.r.pp) }; }   // p: back to the admittance convention of TF.solve
   const f = TF.solve(stack, nm, thetaDeg, pol), bk = stack.back;
   if (!bk || !(bk.d > 0)) return f;
   const n0 = TF.nk(stack.inc, nm).n, sk = TF.nk(stack.sub, nm), ns = sk.n, Kx = n0 * Math.sin(U.rad(thetaDeg));
@@ -149,13 +151,14 @@ TF.solveThick = (stack, nm, thetaDeg, pol) => {
 TF.response = (stack, nm, thetaDeg, pol) => {
   if (pol !== 'avg') return TF.solveThick(stack, nm, thetaDeg, pol);
   const s = TF.solveThick(stack, nm, thetaDeg, 's'), p = TF.solveThick(stack, nm, thetaDeg, 'p');
-  return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2 };
+  return { R: (s.R + p.R) / 2, T: (s.T + p.T) / 2, A: (s.A + p.A) / 2, X: s.X != null ? (s.X + p.X) / 2 : undefined };
 };
 /* Spectroscopic ellipsometry: ρ = rp / rs = tan Ψ · e^{iΔ}, in the convention of commercial
    instruments (Δ = 180° for a bare dielectric below Brewster's angle, 0° above; metals 0–180°).
    Coherent reflection from the front; the back side of a thick substrate is assumed suppressed. */
 TF.ellips = (stack, nm, thetaDeg) => {
-  const rs = TF.solve(stack, nm, thetaDeg, 's').r, rp = mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
+  const an = TF.hasAniso(stack) ? TF.solveAniso(stack, nm, thetaDeg) : null;   // anisotropic: the diagonal Jones elements (standard ellipsometry)
+  const rs = an ? an.r.ss : TF.solve(stack, nm, thetaDeg, 's').r, rp = an ? an.r.pp : mul([-1, 0], TF.solve(stack, nm, thetaDeg, 'p').r);   // admittance rp → Fresnel rp
   const rho = div(rp, rs);
   let delta = -U.deg(Math.atan2(rho[1], rho[0]));
   delta = ((delta % 360) + 360) % 360;
@@ -211,6 +214,92 @@ TF.field = (stack, nm, thetaDeg, pol, opt = {}) => {
   });
   return { z, e2, layer, total, absorbed, R: abs2(r) };
 };
+/* ---------- anisotropic (uniaxial) films: Berreman 4 × 4 ----------
+   m: { mat: 'aniso', no, ko, ne, ke, tilt (° of the optic axis from the normal), az (° from the
+   plane of incidence) }. ψ = (Ex, Hy, Ey, −Hx), dψ/dz = i k₀ Δ ψ (Berreman, JOSA 62, 502 (1972));
+   each film contributes exp(−i k₀ Δ d), computed by scaling and squaring, so isotropic films
+   (degenerate modes) need no special care. The media on both sides are isotropic. */
+TF.isAniso = m => !!m && m.mat === 'aniso';
+TF.anisoEps = (m, nm) => {
+  const o = [+m.no || 1.5, +m.ko || 0], e = [+m.ne || 1.5, +m.ke || 0], eo = mul(o, o), ee = mul(e, e);
+  const t = U.rad(+m.tilt || 0), a = U.rad(+m.az || 0), c = [Math.sin(t) * Math.cos(a), Math.sin(t) * Math.sin(a), Math.cos(t)], de = sub(ee, eo);
+  const E = []; for (let i = 0; i < 3; i++) { E[i] = []; for (let j = 0; j < 3; j++) E[i][j] = add(i === j ? eo : [0, 0], mul(de, [c[i] * c[j], 0])); }
+  return E;
+};
+const m4mul = (A, B) => { const C = []; for (let i = 0; i < 4; i++) { C[i] = []; for (let j = 0; j < 4; j++) { let s = [0, 0]; for (let k = 0; k < 4; k++) s = add(s, mul(A[i][k], B[k][j])); C[i][j] = s; } } return C; };
+const m4id = () => [0, 1, 2, 3].map(i => [0, 1, 2, 3].map(j => (i === j ? [1, 0] : [0, 0])));
+const expm4 = A => {
+  let nrm = 0; A.forEach(r => r.forEach(v => { nrm = Math.max(nrm, Math.hypot(v[0], v[1])); }));
+  const sq = Math.max(0, Math.ceil(Math.log2(nrm * 4 / 0.5)) + 1), f = Math.pow(2, -sq), B = A.map(r => r.map(v => [v[0] * f, v[1] * f]));
+  let term = m4id(), sum = m4id();
+  for (let k = 1; k <= 14; k++) { term = m4mul(term, B).map(r => r.map(v => [v[0] / k, v[1] / k])); sum = sum.map((r, i) => r.map((v, j) => add(v, term[i][j]))); }
+  for (let i = 0; i < sq; i++) sum = m4mul(sum, sum);
+  return sum;
+};
+const delta4 = (E, Kx) => {
+  const e = (i, j) => E[i][j], i33 = div([1, 0], e(2, 2)), K = [Kx, 0], K2 = [Kx * Kx, 0], z = [0, 0];
+  return [
+    [mul(mul([-1, 0], K), mul(e(2, 0), i33)), sub([1, 0], mul(K2, i33)), mul(mul([-1, 0], K), mul(e(2, 1), i33)), z],
+    [sub(e(0, 0), mul(mul(e(0, 2), e(2, 0)), i33)), mul(mul([-1, 0], K), mul(e(0, 2), i33)), sub(e(0, 1), mul(mul(e(0, 2), e(2, 1)), i33)), z],
+    [z, z, z, [1, 0]],
+    [sub(e(1, 0), mul(mul(e(1, 2), e(2, 0)), i33)), mul(mul([-1, 0], K), mul(e(1, 2), i33)), sub(sub(e(1, 1), mul(mul(e(1, 2), e(2, 1)), i33)), K2), z],
+  ];
+};
+const isoEps = N => { const e = mul(N, N), z = [0, 0]; return [[e, z, z], [z, e, z], [z, z, e]]; };
+/* isotropic plane waves in ψ: s (E along y) and p (H along y), going down (+1) or up (−1) */
+const isoVecs = (N, Kx, dir) => {
+  let q = csqrt(sub(mul(N, N), [Kx * Kx, 0])); if (q[1] < 0 || (Math.abs(q[1]) < 1e-12 && q[0] < 0)) q = [-q[0], -q[1]];
+  const qd = dir > 0 ? q : [-q[0], -q[1]], n2 = mul(N, N);
+  return { s: [[0, 0], [0, 0], [1, 0], qd], p: [div(qd, n2), [1, 0], [0, 0], [0, 0]], q, n2 };
+};
+/* 4 × 4 complex solve (Gauss with pivoting) */
+const solve4 = (A, b) => {
+  const n = A.length, M = A.map((r, i) => r.concat([b[i]]));
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (abs2(M[r][c]) > abs2(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) { const f = div(M[r][c], M[c][c]); for (let k = c; k <= n; k++) M[r][k] = sub(M[r][k], mul(f, M[c][k])); }
+  }
+  const x = []; for (let r = n - 1; r >= 0; r--) { let s = M[r][n]; for (let k = r + 1; k < n; k++) s = sub(s, mul(M[r][k], x[k])); x[r] = div(s, M[r][r]); }
+  return x;
+};
+/* Jones reflection / transmission of a stack with anisotropic films, for s and p input:
+   { r: { ss, ps, sp, pp }, t: …, R: { s, p }, T: { s, p }, Rx: { s, p }, Tx: { s, p } }
+   (r.ps = p reflected from s input; p amplitudes in H_y, as in TF.solve; Rx, Tx = the power
+   that changes polarisation) */
+TF.solveAniso = (stack, nm, thetaDeg) => {
+  const ni = TF.nk(stack.inc, nm), N0 = [ni.n, 0], Kx = ni.n * Math.sin(U.rad(thetaDeg)), k0 = 2 * Math.PI / nm;
+  const sk = TF.nk(stack.sub, nm), Ns = [sk.n, sk.k];
+  let M = m4id();
+  stack.layers.forEach(L => {
+    if (!(L.d > 0)) return;
+    const E = TF.isAniso(L.m) ? TF.anisoEps(L.m, nm) : (q => isoEps([q.n, q.k]))(TF.nk(L.m, nm));
+    const D = delta4(E, Kx), P = expm4(D.map(r => r.map(v => mul([0, -k0 * L.d], v))));
+    M = m4mul(M, P);
+  });
+  const inc = isoVecs(N0, Kx, 1), ref = isoVecs(N0, Kx, -1), tr = isoVecs(Ns, Kx, 1);
+  const col = (v, i) => v[i], Mv = v => [0, 1, 2, 3].map(i => [0, 1, 2, 3].reduce((s, k) => add(s, mul(M[i][k], v[k])), [0, 0]));
+  const Mts = Mv(tr.s), Mtp = Mv(tr.p);
+  // ψ_top = inc·a + ref·(rs, rp) = M (tr·(ts, tp))  →  [ref.s ref.p −Mts −Mtp] x = −inc·a
+  const A = [0, 1, 2, 3].map(i => [col(ref.s, i), col(ref.p, i), mul([-1, 0], Mts[i]), mul([-1, 0], Mtp[i])]);
+  const go = a => solve4(A, [0, 1, 2, 3].map(i => mul([-1, 0], add(mul(a[0], inc.s[i]), mul(a[1], inc.p[i])))));
+  const xs = go([[1, 0], [0, 0]]), xp = go([[0, 0], [1, 0]]);
+  // powers: s carries |E_y|² Re q, p carries |H_y|² Re(q / n²)
+  const ws0 = inc.q[0], wp0 = div(inc.q, inc.n2)[0], wss = tr.q[0], wps = div(tr.q, tr.n2)[0];
+  const Rs = { s: abs2(xs[0]), p: abs2(xs[1]) * wp0 / ws0 }, Rp = { s: abs2(xp[0]) * ws0 / wp0, p: abs2(xp[1]) };
+  const Ts = { s: abs2(xs[2]) * wss / ws0, p: abs2(xs[3]) * wps / ws0 }, Tp = { s: abs2(xp[2]) * wss / wp0, p: abs2(xp[3]) * wps / wp0 };
+  return { r: { ss: xs[0], ps: xs[1], sp: xp[0], pp: xp[1] }, t: { ss: xs[2], ps: xs[3], sp: xp[2], pp: xp[3] },
+    R: { s: Rs.s + Rs.p, p: Rp.s + Rp.p }, T: { s: Ts.s + Ts.p, p: Tp.s + Tp.p }, Rx: { s: Rs.p, p: Rp.s }, Tx: { s: Ts.p, p: Tp.s } };
+};
+TF.hasAniso = stack => stack.layers.some(l => l.d > 0 && TF.isAniso(l.m));
+TF.ANISO_PRESETS = [
+  ['lc', 'Nematic liquid crystal (5CB-like, nₒ 1.53, nₑ 1.71)', { no: 1.53, ne: 1.71 }],
+  ['calcite', 'Calcite (nₒ 1.658, nₑ 1.486)', { no: 1.658, ne: 1.486 }],
+  ['quartz', 'Crystalline quartz (nₒ 1.544, nₑ 1.553)', { no: 1.544, ne: 1.553 }],
+  ['sapphire', 'Sapphire (nₒ 1.768, nₑ 1.760)', { no: 1.768, ne: 1.760 }],
+  ['rutile', 'Rutile TiO₂ (nₒ 2.61, nₑ 2.90)', { no: 2.61, ne: 2.90 }],
+];
+
 /* ---------- guided modes ----------
    A bound mode of the stack is a pole of its reflection: the zero of
    D(K) = η₀B + C as a function of the complex in-plane index K = n_eff, with the
@@ -311,7 +400,7 @@ TF.DEFAULT_CALC = { scan: 'wl', lmin: 400, lmax: 900, angle: 0, amin: 0, amax: 8
 /* returns { x, series: { R, T, A }, xlabel, warn } */
 TF.scan = (stack, calc) => {
   const c = Object.assign({}, TF.DEFAULT_CALC, calc || {}), N = U.clamp(Math.round(c.points) || 301, 11, 2001);
-  const x = [], R = [], T = [], A = [], P = [], Dl = [];
+  const x = [], R = [], T = [], A = [], P = [], Dl = [], X = [];
   const wl = c.scan === 'wl', ell = /[PD]/.test(c.show || '');
   const lo = wl ? +c.lmin : +c.amin, hi = wl ? +c.lmax : +c.amax;
   for (let i = 0; i < N; i++) {
@@ -319,14 +408,14 @@ TF.scan = (stack, calc) => {
     x.push(wl && c.unit === 'um' ? v / 1000 : v);
     if (ell) { const e = TF.ellips(stack, lam, th); P.push(e.psi); Dl.push(e.delta); continue; }
     const res = TF.response(stack, lam, th, c.pol);
-    R.push(res.R); T.push(res.T); A.push(res.A);
+    R.push(res.R); T.push(res.T); A.push(res.A); X.push(res.X || 0);
   }
   // wavelengths outside a material's measured range
   const mats = [stack.inc, stack.sub].concat(stack.layers.map(l => l.m));
   const lam = wl ? [lo, hi] : [+c.lambda, +c.lambda];
   const warn = [...new Set(mats.filter(m => { const r = TF.range(m); return r && (lam[0] < r[0] * 0.995 || lam[1] > r[1] * 1.005); }).map(m => `${TF.name(m.mat)} (data ${U.fmt(TF.range(m)[0], 0)}–${U.fmt(TF.range(m)[1], 0)} nm)`))];
   const xlabel = wl ? (c.unit === 'um' ? 'Wavelength (µm)' : 'Wavelength (nm)') : 'Angle of incidence (°)';
-  return { x, series: ell ? { P, D: Dl } : { R, T, A }, xlabel, warn, calc: c, ellips: ell };
+  return { x, series: ell ? { P, D: Dl } : { R, T, A, X }, xlabel, warn, calc: c, ellips: ell };
 };
 /* deepest minimum of R (SPR dip) or highest maximum of A, refined by a parabola */
 TF.extremum = (x, y, kind = 'min') => {

@@ -26,7 +26,7 @@ const KEY = 'rnbx-studio-v1';
 
 /* ---------- materials: short names and drawing colours ---------- */
 const SUB = { 2: '₂', 3: '₃', 4: '₄' };
-const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
+const shortName = m => m === 'air' ? 'Air' : m === 'custom' ? 'Layer' : m === 'ema' ? 'Mixture' : m === 'aniso' ? 'Birefringent' : m.startsWith('glass:') ? m.slice(6).replace('N-', '') : m.replace(/-IR$/, '').replace(/(\D)(\d)/g, (a, b, d) => b + (SUB[d] || d));
 const COLORS = { Ag: '#b3bac4', 'Ag-IR': '#b3bac4', Au: '#d6a83a', 'Au-IR': '#d6a83a', Al: '#c9ced6', Cu: '#c8784a', Cr: '#8d939b', Ti: '#9aa0a8', Ni: '#a9a59a', Pt: '#c7c9cc', W: '#7d8189',
   SiO2: '#8fc9b9', TiO2: '#f0d27a', Al2O3: '#e8a13a', HfO2: '#c3a6e0', MgF2: '#bfe3f0', Si3N4: '#9fb7e3', 'Si3N4-IR': '#9fb7e3', ZnO: '#e9e3b0', ZnS: '#f2c7a5', CaF2: '#d6eef7',
   Si: '#6c7a89', Ge: '#59606b', H2O: '#bfdcf5', EtOH: '#d5e8f7', MeOH: '#d5e8f7', Acetone: '#dbe9f5', PDMS: '#d9ead3', PMMA: '#e6f0ea', air: '#ffffff', custom: '#c8c8c8' };
@@ -64,7 +64,8 @@ const flat = items => items.reduce((a, it) => a.concat(it.group ? Array.from({ l
 ST.flat = d => flat(d.items);
 /* a film's material for the solver; a mixture (effective medium) carries its two parts */
 const emaOf = l => { const e = l.ema || {}; return { a: { mat: e.a || 'SiO2', n: e.an, k: e.ak }, b: { mat: e.b || 'air', n: e.bn, k: e.bk }, f: e.f == null ? 0.3 : +e.f, model: e.model || 'bruggeman' }; };
-const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : { mat: l.mat, n: l.n, k: l.k });
+const m = l => (l.mat === 'ema' ? { mat: 'ema', ema: emaOf(l) } : l.mat === 'aniso' ? Object.assign({ mat: 'aniso' }, ST.ANISO_DEFAULT, l.aniso || {}) : { mat: l.mat, n: l.n, k: l.k });
+ST.ANISO_DEFAULT = { no: 1.53, ko: 0, ne: 1.71, ke: 0, tilt: 90, az: 45 };
 ST.EMA_DEFAULT = { a: 'SiO2', b: 'air', f: 0.3, model: 'bruggeman' };
 /* roughness: a 50 % void Bruggeman layer between a film (or the substrate) and what lies above it */
 const roughLayer = (below, above, nm, l) => ({ m: { mat: 'ema', ema: { a: below, b: above, f: 0.5, model: 'bruggeman' } }, d: nm, rough: true, l: { name: 'roughness', color: U.mix(l.color || colorOf(l.mat), '#ffffff', 0.55), mat: 'ema', nm } });
@@ -123,8 +124,8 @@ const fmt = (v, st) => { const dd = Math.max(0, -Math.floor(Math.log10(st) + 1e-
 const f1 = (v, d = 1) => (isFinite(v) ? (+v).toFixed(d) : '–');
 const VIRIDIS = ['#440154', '#472c7a', '#3b518b', '#2c718e', '#21908d', '#27ad81', '#5cc863', '#aadc32', '#fde725'].map(U.hexToRgb);
 const cmap = v => { const t = U.clamp(v, 0, 1) * (VIRIDIS.length - 1), i = Math.min(VIRIDIS.length - 2, Math.floor(t)), u = t - i, a = VIRIDIS[i], b = VIRIDIS[i + 1]; return [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * u)); };
-const QCOL = { R: '#1f77b4', T: '#2ca02c', A: '#d62728' };
-const QNAME = { R: 'Reflectance', T: 'Transmittance', A: 'Absorptance' };
+const QCOL = { R: '#1f77b4', T: '#2ca02c', A: '#d62728', X: '#9467bd' };
+const QNAME = { R: 'Reflectance', T: 'Transmittance', A: 'Absorptance', X: 'T converted s↔p' };
 
 /* an SVG chart in pixel units: { svg, X, Y, inv } */
 const chart = o => {
@@ -233,7 +234,15 @@ function render() {
 const fld = (label, input, wide) => el('label', { class: 'st-f' + (wide ? ' wide' : '') }, el('span', { text: label }), input);
 const num = (get, set, o = {}) => { const i = el('input', { type: 'number', value: get(), step: o.step || 1, min: o.min, max: o.max, oninput: () => { const v = parseFloat(i.value); if (isFinite(v)) change(() => set(o.min != null ? Math.max(o.min, o.max != null ? Math.min(o.max, v) : v) : v), o.key || Math.random()); } }); return i; };
 const sel1 = (opts, get, set, key, structural) => { const s = el('select', { onchange: () => change(() => set(s.value), key, structural) }, opts.map(q => el('option', { value: q[0], text: q[1], disabled: !!q[2] }))); s.value = get(); return s; };
-const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)']]) : TF().options(), get, set, key, true);
+const matSelect = (get, set, key, films) => sel1(films ? TF().options().concat([['ema', 'Mixture / porous film (effective medium)'], ['aniso', 'Birefringent / liquid crystal (uniaxial)']]) : TF().options(), get, set, key, true);
+/* a uniaxial film: indices, and the optic axis (tilt from the normal, azimuth from the plane of incidence) */
+const anisoRow = l => {
+  l.aniso = Object.assign({}, ST.ANISO_DEFAULT, l.aniso || {});
+  const a = l.aniso, n4 = (k, lab, o) => [el('span', { class: 'hint', style: { margin: 0 }, text: lab }), num(() => a[k], v => { a[k] = v; }, Object.assign({ step: 0.001, key: k + Math.random() }, o || {}))];
+  const pre = el('select', { onchange: () => { const q = TF().ANISO_PRESETS.find(x => x[0] === pre.value); if (q) change(() => Object.assign(a, q[2]), null, true); } }, [el('option', { value: '', text: 'Preset…' })].concat(TF().ANISO_PRESETS.map(q => el('option', { value: q[0], text: q[1] }))));
+  return el('div', { class: 'st-row2 st-ema' }, pre, ...n4('no', 'nₒ'), ...n4('ne', 'nₑ'), ...n4('ko', 'kₒ', { min: 0 }), ...n4('ke', 'kₑ', { min: 0 }), ...n4('tilt', 'axis tilt °', { step: 1, min: 0, max: 90 }), ...n4('az', 'azimuth °', { step: 1, min: -180, max: 180 }),
+    el('span', { class: 'hint', style: { margin: 0 }, text: 'Tilt 0° = optic axis along the normal; 90° with azimuth 45° = an in-plane retarder at 45° to the plane of incidence.' }));
+};
 /* the two parts of a mixture, the fraction of B and the model */
 const emaRow = l => {
   l.ema = Object.assign({}, ST.EMA_DEFAULT, l.ema || {});
@@ -278,7 +287,7 @@ function layerCard(l, arr, i, inGroup) {
   const k = 'L' + (inGroup ? 'g' : '') + i + Math.random().toString(36).slice(2, 5);
   const c = el('input', { type: 'color', value: (l.color || '#cccccc').slice(0, 7), title: 'Colour in the drawing', oninput: () => change(() => { l.color = c.value; }, k + 'c') });
   const nmI = el('input', { type: 'text', value: l.name || '', title: 'Name', oninput: () => change(() => { l.name = nmI.value; }, k + 'n') });
-  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); }, k + 'm', true);
+  const ms = matSelect(() => l.mat, v => { if (l.name === shortName(l.mat) || !l.name) l.name = v === 'ema' ? 'Porous film' : shortName(v); if ((l.color || '').toLowerCase() === colorOf(l.mat)) l.color = colorOf(v); l.mat = v; if (v === 'ema' && !l.ema) l.ema = Object.assign({}, ST.EMA_DEFAULT); if (v === 'aniso' && !l.aniso) l.aniso = Object.assign({}, ST.ANISO_DEFAULT); if (v === 'aniso') l.name = 'Birefringent'; }, k + 'm', true);
   const rough = num(() => l.rough || 0, v => { l.rough = Math.max(0, v); }, { min: 0, max: 1000, step: 0.5, key: k + 'r' });
   rough.className = 'st-rough'; rough.title = 'Roughness of the top surface (nm): a 50 % void Bruggeman layer above the film';
   const th = num(() => l.nm, v => { l.nm = Math.max(0, v); }, { min: 0, max: 1e6, key: k + 't' });
@@ -296,6 +305,7 @@ function layerCard(l, arr, i, inGroup) {
   const card = el('div', { class: 'st-layer' }, el('div', { class: 'st-row' }, c, nmI, ms), row2);
   if (l.mat === 'custom') card.append(nkRow(l));
   if (l.mat === 'ema') card.append(emaRow(l));
+  if (l.mat === 'aniso') card.append(anisoRow(l));
   return card;
 }
 let grpEl = null;
@@ -346,7 +356,7 @@ function specControls() {
   if (wl) kids.push(fld('From (nm)', num(() => c.lmin, v => { c.lmin = v; }, { min: 100, key: 'lmin' })), fld('To (nm)', num(() => c.lmax, v => { c.lmax = v; }, { min: 100, key: 'lmax' })), fld('Angle (°)', num(() => c.angle, v => { c.angle = v; }, { min: 0, max: 89.9, step: 0.5, key: 'cang' })));
   else kids.push(fld('From (°)', num(() => c.amin, v => { c.amin = v; }, { min: 0, max: 89.9, key: 'amin' })), fld('To (°)', num(() => c.amax, v => { c.amax = v; }, { min: 0, max: 89.9, key: 'amax' })), fld('Wavelength (nm)', num(() => c.lambda, v => { c.lambda = v; }, { min: 100, key: 'clam' })));
   kids.push(fld('Polarisation', sel1([['avg', 'Unpolarised'], ['p', 'p (TM)'], ['s', 's (TE)']], () => c.pol, v => { c.pol = v; }, 'cpol')),
-    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
+    fld('Curves', sel1([['RTA', 'R, T, A'], ['R', 'R'], ['T', 'T'], ['A', 'A'], ['RT', 'R, T'], ['RA', 'R, A'], ['RTX', 'R, T and polarisation-converted T (birefringent films)'], ['TX', 'T and converted T'], ['PD', 'Ψ, Δ (ellipsometry)']], () => c.show, v => { c.show = v; if (v === 'PD' && c.scan === 'wl' && !(+c.angle > 0)) c.angle = 70; }, 'cshow', true)),
     fld('Points', sel1([['301', '301'], ['1201', '1201'], ['4001', '4001 (sharp modes)']], () => String(c.points || 1201), v => { c.points = +v; }, 'cpts')));
   return el('div', { class: 'st-grid' }, ...kids);
 }
@@ -519,7 +529,7 @@ function drawCross() {
   }
   host.innerHTML = s + '</svg>';
   const A = fr.absorbed.reduce((a, b) => a + b, 0), r = TF().response(ST.stack(d), f.nm, f.angle, f.pol);
-  views.absorb.innerHTML = `<div class="readout">At ${f1(f.nm, 0)} nm, ${f1(f.angle, 1)}°: R ${f1(r.R * 100)} %, T ${f1(r.T * 100)} %, A ${f1(r.A * 100)} % (in the films ${f1(A * 100)} %). Peak |E|² ${f1(mx, 2)}. Total thickness ${f1(total, 0)} nm in ${o.films.length} film${o.films.length === 1 ? '' : 's'}.${d.side === 'bottom' ? ' Light from below: drawn with the substrate at the bottom, light entering from there.' : ''}</div>`;
+  views.absorb.innerHTML = `<div class="readout">At ${f1(f.nm, 0)} nm, ${f1(f.angle, 1)}°: R ${f1(r.R * 100)} %, T ${f1(r.T * 100)} %, A ${f1(r.A * 100)} % (in the films ${f1(A * 100)} %). Peak |E|² ${f1(mx, 2)}. Total thickness ${f1(total, 0)} nm in ${o.films.length} film${o.films.length === 1 ? '' : 's'}.${d.side === 'bottom' ? ' Light from below: drawn with the substrate at the bottom, light entering from there.' : ''}${TF().hasAniso(ST.stack(d)) ? ' Birefringent films: R, T, A and ellipsometry are exact (4 × 4 method); this field profile and the mode search use their ordinary index.' : ''}</div>`;
 }
 
 /* wavelength × angle map, calculated in slices so the page stays responsive */
