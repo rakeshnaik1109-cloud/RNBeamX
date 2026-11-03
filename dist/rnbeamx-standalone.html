@@ -12447,13 +12447,13 @@ lib.register({
   /* yellow handles: drag the scale bar anywhere; drag the zoom inset's source box */
   extraHandles(p) {
     const out = [], G = IP.geom(p), w = p.w, h = G.h;
-    if (p.href && isCal(p) && p.sb && G.visNm > 0) { const c = IP.sbCentre(p, w, h); out.push({ key: 'sb', x: c[0], y: c[1], title: 'Drag the scale bar' }); }
+    if (p.href && isCal(p) && p.sb && G.visNm > 0) { const c = IP.sbCentre(p, w, h); out.push({ key: 'sb', x: c[0] - IP.sbHandleDx(p, w, h), y: c[1], title: 'Drag the scale bar' }); }
     if (p.href && p.zoom) out.push({ key: 'zoom', x: -w / 2 + p.zx * w, y: -h / 2 + p.zy * h, title: 'Drag the zoomed region' });
     return out;
   },
   dragHandle(p, key, lp) {
     const G = IP.geom(p), w = p.w, h = G.h, fx = U.round(U.clamp((lp[0] + w / 2) / w, 0, 1), 4), fy = U.round(U.clamp((lp[1] + h / 2) / h, 0, 1), 4);
-    if (key === 'sb') { p.sbPos = 'free'; p.sbX = fx; p.sbY = fy; }
+    if (key === 'sb') { const dx = IP.sbHandleDx(p, w, h); p.sbPos = 'free'; p.sbX = U.round(U.clamp((lp[0] + dx + w / 2) / w, 0, 1), 4); p.sbY = fy; }
     if (key === 'zoom') { p.zx = fx; p.zy = fy; }
   },
   init(obj, doc) {
@@ -12549,12 +12549,17 @@ lib.register({
 });
 
 /* centre of the scale bar (panel coordinates), for its drag handle */
-IP.sbCentre = (p, w, h) => {
-  if (p.sbPos === 'free') return [-w / 2 + U.clamp(+p.sbX, 0, 1) * w, -h / 2 + U.clamp(+p.sbY, 0, 1) * h];
+IP.sbCentre = (p, w, h) => IP.sbBox(p, w, h).slice(0, 2);
+/* centre and size of the scale bar with its label: [cx, cy, bw, bh] */
+IP.sbBox = (p, w, h) => {
   const nm = IP.barNm(p), G = IP.geom(p), L = nm * G.mmPerNm, fs = U.pt2mm(p.sbSize), txt = p.sbText !== 'none', m = Math.max(0.8, Math.min(w, h) * 0.035), pad = p.sbBox ? 0.6 : 0;
-  const bh = p.sbThick + (txt ? fs * 1.15 : 0), bw = Math.max(L, txt ? fs * 0.6 * IP.lengthLabel(nm, p.unit).length : 0), c = corner(p.sbPos, w, h, m + pad, bw, bh);
-  return [c[0] + bw / 2, c[1] + bh / 2];
+  const bh = p.sbThick + (txt ? fs * 1.15 : 0), bw = Math.max(L, txt ? fs * 0.6 * IP.lengthLabel(nm, p.unit).length : 0);
+  if (p.sbPos === 'free') return [-w / 2 + U.clamp(+p.sbX, 0, 1) * w, -h / 2 + U.clamp(+p.sbY, 0, 1) * h, bw, bh];
+  const c = corner(p.sbPos, w, h, m + pad, bw, bh);
+  return [c[0] + bw / 2, c[1] + bh / 2, bw, bh];
 };
+/* the drag handle sits just left of the bar, so it never hides the bar or its length */
+IP.sbHandleDx = (p, w, h) => IP.sbBox(p, w, h)[2] / 2 + 2.2;
 
 /* ---------- measurements ----------
    p.meas: [{ type: 'line' | 'poly' | 'diam' | 'area' | 'angle' | 'count', pts: [[u, v], …] (image pixels), cls }]

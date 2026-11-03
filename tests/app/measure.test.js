@@ -40,7 +40,7 @@ module.exports = async ({ base, getBrowser, H }) => {
     out.overlay = (svg.match(/stroke="#2bd4ff"/g) || []).length;
     const def = RNBX.lib.get('micrograph'), hs = def.extraHandles(p);
     out.handles = hs.map(h => h.key);
-    def.dragHandle(p, 'sb', [0, 0]);
+    def.dragHandle(p, 'sb', [-RNBX.imgproc.sbHandleDx(p, p.w, p.h), 0]);
     out.sb = [p.sbPos, p.sbX, p.sbY];
     out.summary = IP.summaryText(st);
     return out;
