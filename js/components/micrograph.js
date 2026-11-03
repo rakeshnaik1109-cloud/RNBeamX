@@ -165,12 +165,13 @@ lib.register({
     href: '', pxW: 0, pxH: 0, aspect: 4 / 3, w: 40, h: 30,
     calib: 'pixel', pix: 0, unit: 'nm', fov: 0, cx0: 0, cy0: 0, cx1: 1, cy1: 1,
     lo: 0, hi: 1, gamma: 1, invert: false, cmap: '', smooth: true,
-    sb: true, sbLen: 0, sbPos: 'br', sbColor: '#ffffff', sbThick: 0.6, sbSize: 7, sbText: 'above', sbBox: '', sbBold: true,
+    sb: true, sbLen: 0, sbPos: 'br', sbX: 0.8, sbY: 0.9, sbColor: '#ffffff', sbThick: 0.6, sbSize: 7, sbText: 'above', sbBox: '', sbBold: true,
     letter: 'a', letterPos: 'tl', letterColor: '#ffffff', letterSize: 8, letterBox: '',
     note: '', noteColor: '#ffffff', noteSize: 6,
     frame: '', frameW: 0.5,
     cbar: false, cbMin: 0, cbMax: 1, cbLabel: '', cbSize: 6,
     zoom: false, zx: 0.5, zy: 0.5, zf: 3, zs: 0.38, zPos: 'tr', zColor: '#ffd23f', zLines: true, zLabel: true,
+    meas: [], measShow: true, measLabels: true, measColor: '#2bd4ff', measW: 0.35, measSize: 5.5, measKeyClass: '',
   },
   params: [
     head('Size and calibration'),
@@ -182,7 +183,7 @@ lib.register({
     head('Scale bar'),
     { key: 'sb', label: 'Show scale bar', type: 'bool', show: isCal },
     { key: 'sbLen', label: 'Length (0 = automatic)', type: 'number', min: 0, step: 'any', show: p => isCal(p) && p.sb, hint: 'in the unit above' },
-    { key: 'sbPos', label: 'Position', type: 'select', options: POS, show: p => isCal(p) && p.sb },
+    { key: 'sbPos', label: 'Position', type: 'select', options: POS.concat([['free', 'Anywhere (drag the yellow handle)']]), show: p => isCal(p) && p.sb },
     { key: 'sbText', label: 'Length label', type: 'select', options: [['above', 'Above the bar'], ['below', 'Below the bar'], ['none', 'None (give it in the caption)']], show: p => isCal(p) && p.sb },
     { key: 'sbColor', label: 'Colour', type: 'color', show: p => isCal(p) && p.sb },
     { key: 'sbThick', label: 'Bar thickness', type: 'number', unit: 'mm', min: 0.1, max: 5, step: 0.05, show: p => isCal(p) && p.sb },
@@ -220,11 +221,29 @@ lib.register({
     { key: 'zColor', label: 'Inset outline', type: 'color', show: p => p.zoom },
     { key: 'zLines', label: 'Connecting lines', type: 'bool', show: p => p.zoom },
     { key: 'zLabel', label: 'Show ×N', type: 'bool', show: p => p.zoom },
+    head('Measurements'),
+    { key: 'measShow', label: 'Show measurements on the panel', type: 'bool', show: p => (p.meas || []).length > 0 },
+    { key: 'measLabels', label: 'Label each with its value', type: 'bool', show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measColor', label: 'Colour', type: 'color', show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measW', label: 'Line weight', type: 'number', unit: 'mm', min: 0.05, max: 2, step: 0.05, show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measSize', label: 'Label size', type: 'number', unit: 'pt', min: 3, max: 20, step: 0.5, show: p => p.measShow && p.measLabels && (p.meas || []).length > 0 },
     head('Frame'),
     { key: 'frame', label: 'Frame colour', type: 'color', allowEmpty: true },
     { key: 'frameW', label: 'Frame weight', type: 'number', unit: 'pt', min: 0.1, max: 6, step: 0.05, show: p => !!p.frame },
   ],
   resizable: true, keepAspect: true,
+  /* yellow handles: drag the scale bar anywhere; drag the zoom inset's source box */
+  extraHandles(p) {
+    const out = [], G = IP.geom(p), w = p.w, h = G.h;
+    if (p.href && isCal(p) && p.sb && G.visNm > 0) { const c = IP.sbCentre(p, w, h); out.push({ key: 'sb', x: c[0], y: c[1], title: 'Drag the scale bar' }); }
+    if (p.href && p.zoom) out.push({ key: 'zoom', x: -w / 2 + p.zx * w, y: -h / 2 + p.zy * h, title: 'Drag the zoomed region' });
+    return out;
+  },
+  dragHandle(p, key, lp) {
+    const G = IP.geom(p), w = p.w, h = G.h, fx = U.round(U.clamp((lp[0] + w / 2) / w, 0, 1), 4), fy = U.round(U.clamp((lp[1] + h / 2) / h, 0, 1), 4);
+    if (key === 'sb') { p.sbPos = 'free'; p.sbX = fx; p.sbY = fy; }
+    if (key === 'zoom') { p.zx = fx; p.zy = fy; }
+  },
   init(obj, doc) {
     const k = doc.objects.filter(o => o.type === 'micrograph' || o.type === 'panel').length;
     obj.props.letter = 'abcdefghijklmnopqrstuvwxyz'[k % 26];
@@ -267,6 +286,7 @@ lib.register({
         s += `<rect x="${n(ox + lw / 2)}" y="${n(oy + lw / 2)}" width="${n(side - lw)}" height="${n(side - lw)}" fill="none" stroke="${p.zColor}" stroke-width="${n(lw * 1.6)}"/>`;
         if (p.zLabel) { const fs = Math.max(1.4, Math.min(2.5, side * 0.12)); s += `<text x="${n(ox + (p.zPos[1] === 'l' ? side - 1 : 1))}" y="${n(oy + (p.zPos[0] === 't' ? side - 0.9 : fs + 0.6))}" font-family="${font}" font-size="${n(fs)}" font-weight="700" fill="${p.zColor}" text-anchor="${p.zPos[1] === 'l' ? 'end' : 'start'}">×${U.fmt(p.zf, 1)}</text>`; }
       }
+      if (p.measShow !== false && (p.meas || []).length) s += IP.measOverlay(p, w, h, ix, iy, FW, FH, font);
       s += '</g>';
     }
     const m = Math.max(0.8, Math.min(w, h) * 0.035);
@@ -274,7 +294,7 @@ lib.register({
     if (isCal(p) && p.sb && G.visNm > 0) {
       const nm = IP.barNm(p), L = nm * G.mmPerNm, fs = U.pt2mm(p.sbSize), th = p.sbThick, txt = p.sbText !== 'none';
       const bh = th + (txt ? fs * 1.15 : 0), pad = p.sbBox ? 0.6 : 0, bw = Math.max(L, txt ? U.pt2mm(p.sbSize) * 0.6 * IP.lengthLabel(nm, p.unit).length : 0);
-      const [x0, y0] = corner(p.sbPos, w, h, m + pad, bw, bh);
+      const [x0, y0] = p.sbPos === 'free' ? [-w / 2 + U.clamp(+p.sbX, 0, 1) * w - bw / 2, -h / 2 + U.clamp(+p.sbY, 0, 1) * h - bh / 2] : corner(p.sbPos, w, h, m + pad, bw, bh);
       const bx = x0 + (bw - L) / 2, by = p.sbText === 'above' ? y0 + bh - th : y0;
       if (p.sbBox) s += `<rect x="${n(x0 - pad)}" y="${n(y0 - pad)}" width="${n(bw + 2 * pad)}" height="${n(bh + 2 * pad)}" rx="0.3" fill="${p.sbBox}" fill-opacity="0.75"/>`;
       s += `<rect class="mg-bar" x="${n(bx)}" y="${n(by)}" width="${n(L)}" height="${n(th)}" fill="${p.sbColor}"/>`;
@@ -315,6 +335,102 @@ lib.register({
     return s;
   },
 });
+
+/* centre of the scale bar (panel coordinates), for its drag handle */
+IP.sbCentre = (p, w, h) => {
+  if (p.sbPos === 'free') return [-w / 2 + U.clamp(+p.sbX, 0, 1) * w, -h / 2 + U.clamp(+p.sbY, 0, 1) * h];
+  const nm = IP.barNm(p), G = IP.geom(p), L = nm * G.mmPerNm, fs = U.pt2mm(p.sbSize), txt = p.sbText !== 'none', m = Math.max(0.8, Math.min(w, h) * 0.035), pad = p.sbBox ? 0.6 : 0;
+  const bh = p.sbThick + (txt ? fs * 1.15 : 0), bw = Math.max(L, txt ? fs * 0.6 * IP.lengthLabel(nm, p.unit).length : 0), c = corner(p.sbPos, w, h, m + pad, bw, bh);
+  return [c[0] + bw / 2, c[1] + bh / 2];
+};
+
+/* ---------- measurements ----------
+   p.meas: [{ type: 'line' | 'poly' | 'diam' | 'area' | 'angle' | 'count', pts: [[u, v], …] (image pixels), cls }]
+   Lengths and areas use the calibration (pixels if none). */
+IP.MEAS_TYPES = { line: 'Line length', poly: 'Segmented length', diam: 'Diameter', area: 'Area', angle: 'Angle', count: 'Count' };
+IP.kind = t => (t === 'area' ? 'area' : t === 'angle' ? 'angle' : t === 'count' ? 'count' : 'length');
+IP.nmPerPx = p => { const G = IP.geom(p); return G.fullNm > 0 ? G.fullNm / G.pxW : 0; };
+const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+/* raw value of one measurement in pixels (lengths), px² (areas) or degrees */
+IP.measPx = q => {
+  const P = q.pts || [];
+  if (q.type === 'line' || q.type === 'diam') return P.length > 1 ? dist(P[0], P[1]) : 0;
+  if (q.type === 'poly') { let L = 0; for (let i = 1; i < P.length; i++) L += dist(P[i - 1], P[i]); return L; }
+  if (q.type === 'area') { let A = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a[0] * b[1] - b[0] * a[1]; } return Math.abs(A) / 2; }
+  if (q.type === 'angle') { if (P.length < 3) return 0; const a = Math.atan2(P[0][1] - P[1][1], P[0][0] - P[1][0]), b = Math.atan2(P[2][1] - P[1][1], P[2][0] - P[1][0]); let d = Math.abs(a - b) * 180 / Math.PI; if (d > 180) d = 360 - d; return d; }
+  return 1;
+};
+/* display unit for a set of lengths (nm): nm, µm or mm by the median */
+IP.lenUnit = nmVals => { const v = nmVals.slice().sort((a, b) => a - b)[Math.floor(nmVals.length / 2)] || 0; return v >= 1e6 ? ['mm', 1e6] : v >= 1e3 ? ['µm', 1e3] : ['nm', 1]; };
+IP.measValue = (p, q) => {
+  const k = IP.kind(q.type), s = IP.nmPerPx(p), raw = IP.measPx(q);
+  if (k === 'angle') return { v: raw, unit: '°' };
+  if (k === 'count') return { v: 1, unit: '' };
+  if (!s) return { v: raw, unit: k === 'area' ? 'px²' : 'px', px: true };
+  return k === 'area' ? { v: raw * s * s, unit: 'nm²', nm2: true } : { v: raw * s, unit: 'nm', nm: true };
+};
+const stat = vals => {
+  const n = vals.length, a = vals.slice().sort((x, y) => x - y), mean = vals.reduce((x, y) => x + y, 0) / (n || 1);
+  const sd = n > 1 ? Math.sqrt(vals.reduce((x, y) => x + (y - mean) * (y - mean), 0) / (n - 1)) : 0;
+  const med = n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : 0;
+  const sd0 = sd < Math.abs(mean) * 1e-9 ? 0 : sd;   // identical values: no rounding noise
+  return { n, mean, sd: sd0, se: n ? sd0 / Math.sqrt(n) : 0, median: med, min: a[0], max: a[n - 1], cv: mean ? sd0 / mean * 100 : 0 };
+};
+IP.stat = stat;
+/* statistics per class (and kind): values in a readable unit */
+IP.measStats = p => {
+  const groups = {};
+  (p.meas || []).forEach(q => { const k = IP.kind(q.type), key = (q.cls || 'Unnamed') + '|' + k; (groups[key] = groups[key] || { cls: q.cls || 'Unnamed', kind: k, items: [] }).items.push(q); });
+  const s = IP.nmPerPx(p), G = IP.geom(p);
+  return Object.values(groups).map(g => {
+    const raw = g.items.map(q => IP.measValue(p, q));
+    let vals = raw.map(r => r.v), unit = raw[0] ? raw[0].unit : '';
+    if (g.kind === 'length' && s) { const [u, f] = IP.lenUnit(vals); vals = vals.map(v => v / f); unit = u; }
+    if (g.kind === 'area' && s) { const [u, f] = IP.lenUnit(vals.map(Math.sqrt)); vals = vals.map(v => v / (f * f)); unit = u + '²'; }
+    const out = Object.assign({ cls: g.cls, kind: g.kind, unit, values: vals }, stat(vals));
+    if (g.kind === 'area') { out.eqd = stat(vals.map(a => 2 * Math.sqrt(a / Math.PI))); out.eqdUnit = unit.replace('²', ''); }
+    if (g.kind === 'count') { const area = G.fullNm > 0 ? (G.visNm / 1e3) * (G.visNm * G.ch * G.pxH / (G.cw * G.pxW) / 1e3) : 0; out.n = g.items.reduce((a, q) => a + (q.pts || []).length, 0); out.density = area > 0 ? out.n / area : 0; }
+    return out;
+  });
+};
+/* aspect ratio from the classes named like “length” and “width” (means, with propagated error) */
+IP.aspect = st => {
+  const L = st.find(g => g.kind === 'length' && /length|long/i.test(g.cls)), W = st.find(g => g.kind === 'length' && /width|diam|short|thick/i.test(g.cls));
+  if (!L || !W || !L.n || !W.n || L.unit !== W.unit || !W.mean) return null;
+  const r = L.mean / W.mean, e = r * Math.hypot(L.se / L.mean, W.se / W.mean);
+  return { r, se: e, L, W };
+};
+const fmtN = (v, d = 3) => { if (!isFinite(v)) return '–'; const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 10 ? v.toFixed(2) : v.toPrecision(d); };
+IP.fmtN = fmtN;
+/* an SD with as many decimals as its mean is shown with */
+IP.fmtSD = (sd, mean) => { const a = Math.abs(mean), dec = a >= 100 ? 1 : a >= 10 ? 2 : Math.max(0, 2 - Math.floor(Math.log10(a || 1))); return (+sd).toFixed(Math.min(6, dec)); };
+IP.summaryText = st => st.filter(g => g.kind !== 'count').map(g => `${g.cls}: ${fmtN(g.mean)}${g.n > 1 ? ' ± ' + IP.fmtSD(g.sd, g.mean) : ''}${g.unit === '°' ? '°' : ' ' + g.unit} (n = ${g.n})`).concat(st.filter(g => g.kind === 'count').map(g => `${g.cls}: ${g.n} counted`));
+/* the measurements drawn on the panel (in the clipped image group) */
+IP.measOverlay = (p, w, h, ix, iy, FW, FH, font) => {
+  const X = u => ix + u / (p.pxW || 1) * FW, Y = v => iy + v / (p.pxH || 1) * FH, c = p.measColor || '#2bd4ff', lw = +p.measW || 0.35, fs = U.pt2mm(p.measSize || 5.5);
+  const pts = q => (q.pts || []).map(a => [X(a[0]), Y(a[1])]), path = P => 'M ' + P.map(a => n(a[0]) + ' ' + n(a[1])).join(' L ');
+  const st = IP.measStats(p);
+  let s = '';
+  const label = (x, y, t) => p.measLabels ? `<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-size="${n(fs)}" fill="${c}" stroke="#000000" stroke-opacity="0.55" stroke-width="${n(fs * 0.12)}" paint-order="stroke" text-anchor="middle">${U.esc(t)}</text>` : '';
+  (p.meas || []).forEach((q, i) => {
+    const P = pts(q); if (!P.length) return;
+    const g = st.find(x => x.cls === (q.cls || 'Unnamed') && x.kind === IP.kind(q.type)), j = (p.meas || []).filter((r, k) => k < i && (r.cls || 'Unnamed') === (q.cls || 'Unnamed') && IP.kind(r.type) === IP.kind(q.type)).length;
+    const val = g && g.values[j] != null ? fmtN(g.values[j]) + (g.kind === 'angle' ? '°' : ' ' + g.unit) : '';
+    /* a short end tick across the line at point a (direction towards b) */
+    const cap = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / L * lw * 2.2, ny = (b[0] - a[0]) / L * lw * 2.2; return `<path d="M ${n(a[0] - nx)} ${n(a[1] - ny)} L ${n(a[0] + nx)} ${n(a[1] + ny)}" stroke="${c}" stroke-width="${n(lw)}"/>`; };
+    if (q.type === 'line' || q.type === 'poly') {
+      s += `<path d="${path(P)}" fill="none" stroke="${c}" stroke-width="${n(lw)}" stroke-linejoin="round"/>`; if (P.length > 1) s += cap(P[0], P[1]) + cap(P[P.length - 1], P[P.length - 2]);
+      // straight line: the value just beyond its upper end; segmented: beside its middle
+      if (q.type === 'line' && P.length > 1) { const [e0, e1] = P[0][1] <= P[1][1] ? [P[0], P[1]] : [P[1], P[0]], L = Math.hypot(e0[0] - e1[0], e0[1] - e1[1]) || 1, ux = (e0[0] - e1[0]) / L, uy = (e0[1] - e1[1]) / L; s += label(e0[0] + ux * fs * 1.6, e0[1] + uy * fs * 0.9 + fs * 0.3, val); }
+      else { const a = P[Math.floor((P.length - 1) / 2)], b = P[Math.min(P.length - 1, Math.floor((P.length - 1) / 2) + 1)], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L; if (ny > 0) { nx = -nx; ny = -ny; } s += label((a[0] + b[0]) / 2 + nx * fs * 0.9, (a[1] + b[1]) / 2 + ny * fs * 0.9 + fs * 0.3, val); }
+    }
+    else if (q.type === 'diam' && P.length > 1) { const cx = (P[0][0] + P[1][0]) / 2, cy = (P[0][1] + P[1][1]) / 2, r = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 2; s += `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/><path d="${path(P)}" stroke="${c}" stroke-width="${n(lw * 0.6)}" stroke-dasharray="${n(lw * 2)} ${n(lw * 1.5)}"/>` + label(cx, cy - r - fs * 0.3, val); }
+    else if (q.type === 'area' && P.length > 2) { const cx = P.reduce((a, b) => a + b[0], 0) / P.length, cy = P.reduce((a, b) => a + b[1], 0) / P.length; s += `<path d="${path(P)} Z" fill="${c}" fill-opacity="0.15" stroke="${c}" stroke-width="${n(lw)}"/>` + label(cx, cy, val); }
+    else if (q.type === 'angle' && P.length > 2) s += `<path d="${path(P)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/>` + label(P[1][0], P[1][1] - fs * 0.6, val);
+    else if (q.type === 'count') P.forEach(a => { s += `<circle cx="${n(a[0])}" cy="${n(a[1])}" r="${n(lw * 2.4)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/>`; });
+  });
+  return s;
+};
 
 /* fill a micrograph from an image file (keeps its calibration and look) */
 IP.fill = (obj, file) => RNBX.project.readImage(file).catch(e => { RNBX.toast(e.message || String(e), 'error'); throw e; }).then(r => {

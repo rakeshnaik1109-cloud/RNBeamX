@@ -143,6 +143,11 @@ function drawOverlay() {
         const c = U.toWorld(o, [b[2] + 0.6 / s, b[3] + 0.6 / s]);
         overlay.append(sv('rect', { x: c[0] - hr * 0.8, y: c[1] - hr * 0.8, width: hr * 1.6, height: hr * 1.6, class: 'handle', 'data-handle': 'scale', rx: hr * 0.2 }));
       }
+      // extra handles that move a part of the object (a scale bar, an inset's source…)
+      if (def.extraHandles) def.extraHandles(o.props).forEach(h => {
+        const p = U.toWorld(o, [h.x, h.y]);
+        const hc = sv('circle', { cx: p[0], cy: p[1], r: hr * 1.05, class: 'handle aux', 'data-handle': 'ex:' + h.key }); if (h.title) { const t = sv('title', {}); t.textContent = h.title; hc.append(t); } overlay.append(hc);
+      });
     }
   }
   if (drag && drag.guides) drag.guides.forEach(g => { const { eq, ...geo } = g; overlay.append(sv('line', Object.assign({ class: eq ? 'guide eq' : 'guide' }, geo))); });
@@ -418,6 +423,8 @@ function moveHandle(p, e, k) {
       o.scale = U.clamp(s, 0.1, 20);
       drag.angleTip = { x: p[0] + 8 * k, y: p[1] + 8 * k, text: '× ' + U.fmt(o.scale, 2) };
     }
+  } else if (drag.h.startsWith('ex:')) {
+    if (def.dragHandle) def.dragHandle(o.props, drag.h.slice(3), U.toLocal(o, p), e);
   } else if (drag.h.startsWith('pt:')) {
     let dx = p[0] - o.x, dy = p[1] - o.y;
     if (e.shiftKey) { const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, L = Math.hypot(dx, dy); dx = Math.cos(a) * L; dy = Math.sin(a) * L; }

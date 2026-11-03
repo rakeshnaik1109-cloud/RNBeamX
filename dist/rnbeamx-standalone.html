@@ -310,6 +310,23 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .vs-info small { color: var(--muted); }
 .vs-acts { display: flex; gap: 6px; align-items: center; }
 
+/* measuring on image panels */
+.ms-modal { width: min(1280px, 96vw); }
+.ms-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; }
+.ms-view { position: relative; height: min(68vh, 640px); background: #0b0d12; border-radius: 8px; overflow: hidden; }
+.ms-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; outline: none; }
+.ms-side { display: flex; flex-direction: column; min-width: 0; max-height: min(68vh, 640px); overflow: auto; }
+.ms-side h4 { margin: 10px 0 4px; }
+.ms-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.ms-tab { width: 100%; font-size: 11.5px; }
+.ms-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.ms-list { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.ms-item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.ms-item b { margin-left: auto; }
+.ms-item.on { background: var(--accent-soft); }
+@media (max-width: 900px) { .ms-wrap { grid-template-columns: 1fr; } .ms-view { height: 52vh; } }
+.ms-acts .btn { flex: 0 0 auto; }
+
 </style>
 <style>
 /* css/layout.css */
@@ -556,6 +573,7 @@ a.icon-btn { text-decoration: none; }
 .live-dot { animation: rbxlive 2s ease-in-out infinite; }
 @keyframes rbxlive { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.handle.aux { fill: #ffd23f; cursor: move; }
 
 </style>
 </head>
@@ -12359,12 +12377,13 @@ lib.register({
     href: '', pxW: 0, pxH: 0, aspect: 4 / 3, w: 40, h: 30,
     calib: 'pixel', pix: 0, unit: 'nm', fov: 0, cx0: 0, cy0: 0, cx1: 1, cy1: 1,
     lo: 0, hi: 1, gamma: 1, invert: false, cmap: '', smooth: true,
-    sb: true, sbLen: 0, sbPos: 'br', sbColor: '#ffffff', sbThick: 0.6, sbSize: 7, sbText: 'above', sbBox: '', sbBold: true,
+    sb: true, sbLen: 0, sbPos: 'br', sbX: 0.8, sbY: 0.9, sbColor: '#ffffff', sbThick: 0.6, sbSize: 7, sbText: 'above', sbBox: '', sbBold: true,
     letter: 'a', letterPos: 'tl', letterColor: '#ffffff', letterSize: 8, letterBox: '',
     note: '', noteColor: '#ffffff', noteSize: 6,
     frame: '', frameW: 0.5,
     cbar: false, cbMin: 0, cbMax: 1, cbLabel: '', cbSize: 6,
     zoom: false, zx: 0.5, zy: 0.5, zf: 3, zs: 0.38, zPos: 'tr', zColor: '#ffd23f', zLines: true, zLabel: true,
+    meas: [], measShow: true, measLabels: true, measColor: '#2bd4ff', measW: 0.35, measSize: 5.5, measKeyClass: '',
   },
   params: [
     head('Size and calibration'),
@@ -12376,7 +12395,7 @@ lib.register({
     head('Scale bar'),
     { key: 'sb', label: 'Show scale bar', type: 'bool', show: isCal },
     { key: 'sbLen', label: 'Length (0 = automatic)', type: 'number', min: 0, step: 'any', show: p => isCal(p) && p.sb, hint: 'in the unit above' },
-    { key: 'sbPos', label: 'Position', type: 'select', options: POS, show: p => isCal(p) && p.sb },
+    { key: 'sbPos', label: 'Position', type: 'select', options: POS.concat([['free', 'Anywhere (drag the yellow handle)']]), show: p => isCal(p) && p.sb },
     { key: 'sbText', label: 'Length label', type: 'select', options: [['above', 'Above the bar'], ['below', 'Below the bar'], ['none', 'None (give it in the caption)']], show: p => isCal(p) && p.sb },
     { key: 'sbColor', label: 'Colour', type: 'color', show: p => isCal(p) && p.sb },
     { key: 'sbThick', label: 'Bar thickness', type: 'number', unit: 'mm', min: 0.1, max: 5, step: 0.05, show: p => isCal(p) && p.sb },
@@ -12414,11 +12433,29 @@ lib.register({
     { key: 'zColor', label: 'Inset outline', type: 'color', show: p => p.zoom },
     { key: 'zLines', label: 'Connecting lines', type: 'bool', show: p => p.zoom },
     { key: 'zLabel', label: 'Show ×N', type: 'bool', show: p => p.zoom },
+    head('Measurements'),
+    { key: 'measShow', label: 'Show measurements on the panel', type: 'bool', show: p => (p.meas || []).length > 0 },
+    { key: 'measLabels', label: 'Label each with its value', type: 'bool', show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measColor', label: 'Colour', type: 'color', show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measW', label: 'Line weight', type: 'number', unit: 'mm', min: 0.05, max: 2, step: 0.05, show: p => p.measShow && (p.meas || []).length > 0 },
+    { key: 'measSize', label: 'Label size', type: 'number', unit: 'pt', min: 3, max: 20, step: 0.5, show: p => p.measShow && p.measLabels && (p.meas || []).length > 0 },
     head('Frame'),
     { key: 'frame', label: 'Frame colour', type: 'color', allowEmpty: true },
     { key: 'frameW', label: 'Frame weight', type: 'number', unit: 'pt', min: 0.1, max: 6, step: 0.05, show: p => !!p.frame },
   ],
   resizable: true, keepAspect: true,
+  /* yellow handles: drag the scale bar anywhere; drag the zoom inset's source box */
+  extraHandles(p) {
+    const out = [], G = IP.geom(p), w = p.w, h = G.h;
+    if (p.href && isCal(p) && p.sb && G.visNm > 0) { const c = IP.sbCentre(p, w, h); out.push({ key: 'sb', x: c[0], y: c[1], title: 'Drag the scale bar' }); }
+    if (p.href && p.zoom) out.push({ key: 'zoom', x: -w / 2 + p.zx * w, y: -h / 2 + p.zy * h, title: 'Drag the zoomed region' });
+    return out;
+  },
+  dragHandle(p, key, lp) {
+    const G = IP.geom(p), w = p.w, h = G.h, fx = U.round(U.clamp((lp[0] + w / 2) / w, 0, 1), 4), fy = U.round(U.clamp((lp[1] + h / 2) / h, 0, 1), 4);
+    if (key === 'sb') { p.sbPos = 'free'; p.sbX = fx; p.sbY = fy; }
+    if (key === 'zoom') { p.zx = fx; p.zy = fy; }
+  },
   init(obj, doc) {
     const k = doc.objects.filter(o => o.type === 'micrograph' || o.type === 'panel').length;
     obj.props.letter = 'abcdefghijklmnopqrstuvwxyz'[k % 26];
@@ -12461,6 +12498,7 @@ lib.register({
         s += `<rect x="${n(ox + lw / 2)}" y="${n(oy + lw / 2)}" width="${n(side - lw)}" height="${n(side - lw)}" fill="none" stroke="${p.zColor}" stroke-width="${n(lw * 1.6)}"/>`;
         if (p.zLabel) { const fs = Math.max(1.4, Math.min(2.5, side * 0.12)); s += `<text x="${n(ox + (p.zPos[1] === 'l' ? side - 1 : 1))}" y="${n(oy + (p.zPos[0] === 't' ? side - 0.9 : fs + 0.6))}" font-family="${font}" font-size="${n(fs)}" font-weight="700" fill="${p.zColor}" text-anchor="${p.zPos[1] === 'l' ? 'end' : 'start'}">×${U.fmt(p.zf, 1)}</text>`; }
       }
+      if (p.measShow !== false && (p.meas || []).length) s += IP.measOverlay(p, w, h, ix, iy, FW, FH, font);
       s += '</g>';
     }
     const m = Math.max(0.8, Math.min(w, h) * 0.035);
@@ -12468,7 +12506,7 @@ lib.register({
     if (isCal(p) && p.sb && G.visNm > 0) {
       const nm = IP.barNm(p), L = nm * G.mmPerNm, fs = U.pt2mm(p.sbSize), th = p.sbThick, txt = p.sbText !== 'none';
       const bh = th + (txt ? fs * 1.15 : 0), pad = p.sbBox ? 0.6 : 0, bw = Math.max(L, txt ? U.pt2mm(p.sbSize) * 0.6 * IP.lengthLabel(nm, p.unit).length : 0);
-      const [x0, y0] = corner(p.sbPos, w, h, m + pad, bw, bh);
+      const [x0, y0] = p.sbPos === 'free' ? [-w / 2 + U.clamp(+p.sbX, 0, 1) * w - bw / 2, -h / 2 + U.clamp(+p.sbY, 0, 1) * h - bh / 2] : corner(p.sbPos, w, h, m + pad, bw, bh);
       const bx = x0 + (bw - L) / 2, by = p.sbText === 'above' ? y0 + bh - th : y0;
       if (p.sbBox) s += `<rect x="${n(x0 - pad)}" y="${n(y0 - pad)}" width="${n(bw + 2 * pad)}" height="${n(bh + 2 * pad)}" rx="0.3" fill="${p.sbBox}" fill-opacity="0.75"/>`;
       s += `<rect class="mg-bar" x="${n(bx)}" y="${n(by)}" width="${n(L)}" height="${n(th)}" fill="${p.sbColor}"/>`;
@@ -12509,6 +12547,102 @@ lib.register({
     return s;
   },
 });
+
+/* centre of the scale bar (panel coordinates), for its drag handle */
+IP.sbCentre = (p, w, h) => {
+  if (p.sbPos === 'free') return [-w / 2 + U.clamp(+p.sbX, 0, 1) * w, -h / 2 + U.clamp(+p.sbY, 0, 1) * h];
+  const nm = IP.barNm(p), G = IP.geom(p), L = nm * G.mmPerNm, fs = U.pt2mm(p.sbSize), txt = p.sbText !== 'none', m = Math.max(0.8, Math.min(w, h) * 0.035), pad = p.sbBox ? 0.6 : 0;
+  const bh = p.sbThick + (txt ? fs * 1.15 : 0), bw = Math.max(L, txt ? fs * 0.6 * IP.lengthLabel(nm, p.unit).length : 0), c = corner(p.sbPos, w, h, m + pad, bw, bh);
+  return [c[0] + bw / 2, c[1] + bh / 2];
+};
+
+/* ---------- measurements ----------
+   p.meas: [{ type: 'line' | 'poly' | 'diam' | 'area' | 'angle' | 'count', pts: [[u, v], …] (image pixels), cls }]
+   Lengths and areas use the calibration (pixels if none). */
+IP.MEAS_TYPES = { line: 'Line length', poly: 'Segmented length', diam: 'Diameter', area: 'Area', angle: 'Angle', count: 'Count' };
+IP.kind = t => (t === 'area' ? 'area' : t === 'angle' ? 'angle' : t === 'count' ? 'count' : 'length');
+IP.nmPerPx = p => { const G = IP.geom(p); return G.fullNm > 0 ? G.fullNm / G.pxW : 0; };
+const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+/* raw value of one measurement in pixels (lengths), px² (areas) or degrees */
+IP.measPx = q => {
+  const P = q.pts || [];
+  if (q.type === 'line' || q.type === 'diam') return P.length > 1 ? dist(P[0], P[1]) : 0;
+  if (q.type === 'poly') { let L = 0; for (let i = 1; i < P.length; i++) L += dist(P[i - 1], P[i]); return L; }
+  if (q.type === 'area') { let A = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a[0] * b[1] - b[0] * a[1]; } return Math.abs(A) / 2; }
+  if (q.type === 'angle') { if (P.length < 3) return 0; const a = Math.atan2(P[0][1] - P[1][1], P[0][0] - P[1][0]), b = Math.atan2(P[2][1] - P[1][1], P[2][0] - P[1][0]); let d = Math.abs(a - b) * 180 / Math.PI; if (d > 180) d = 360 - d; return d; }
+  return 1;
+};
+/* display unit for a set of lengths (nm): nm, µm or mm by the median */
+IP.lenUnit = nmVals => { const v = nmVals.slice().sort((a, b) => a - b)[Math.floor(nmVals.length / 2)] || 0; return v >= 1e6 ? ['mm', 1e6] : v >= 1e3 ? ['µm', 1e3] : ['nm', 1]; };
+IP.measValue = (p, q) => {
+  const k = IP.kind(q.type), s = IP.nmPerPx(p), raw = IP.measPx(q);
+  if (k === 'angle') return { v: raw, unit: '°' };
+  if (k === 'count') return { v: 1, unit: '' };
+  if (!s) return { v: raw, unit: k === 'area' ? 'px²' : 'px', px: true };
+  return k === 'area' ? { v: raw * s * s, unit: 'nm²', nm2: true } : { v: raw * s, unit: 'nm', nm: true };
+};
+const stat = vals => {
+  const n = vals.length, a = vals.slice().sort((x, y) => x - y), mean = vals.reduce((x, y) => x + y, 0) / (n || 1);
+  const sd = n > 1 ? Math.sqrt(vals.reduce((x, y) => x + (y - mean) * (y - mean), 0) / (n - 1)) : 0;
+  const med = n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : 0;
+  const sd0 = sd < Math.abs(mean) * 1e-9 ? 0 : sd;   // identical values: no rounding noise
+  return { n, mean, sd: sd0, se: n ? sd0 / Math.sqrt(n) : 0, median: med, min: a[0], max: a[n - 1], cv: mean ? sd0 / mean * 100 : 0 };
+};
+IP.stat = stat;
+/* statistics per class (and kind): values in a readable unit */
+IP.measStats = p => {
+  const groups = {};
+  (p.meas || []).forEach(q => { const k = IP.kind(q.type), key = (q.cls || 'Unnamed') + '|' + k; (groups[key] = groups[key] || { cls: q.cls || 'Unnamed', kind: k, items: [] }).items.push(q); });
+  const s = IP.nmPerPx(p), G = IP.geom(p);
+  return Object.values(groups).map(g => {
+    const raw = g.items.map(q => IP.measValue(p, q));
+    let vals = raw.map(r => r.v), unit = raw[0] ? raw[0].unit : '';
+    if (g.kind === 'length' && s) { const [u, f] = IP.lenUnit(vals); vals = vals.map(v => v / f); unit = u; }
+    if (g.kind === 'area' && s) { const [u, f] = IP.lenUnit(vals.map(Math.sqrt)); vals = vals.map(v => v / (f * f)); unit = u + '²'; }
+    const out = Object.assign({ cls: g.cls, kind: g.kind, unit, values: vals }, stat(vals));
+    if (g.kind === 'area') { out.eqd = stat(vals.map(a => 2 * Math.sqrt(a / Math.PI))); out.eqdUnit = unit.replace('²', ''); }
+    if (g.kind === 'count') { const area = G.fullNm > 0 ? (G.visNm / 1e3) * (G.visNm * G.ch * G.pxH / (G.cw * G.pxW) / 1e3) : 0; out.n = g.items.reduce((a, q) => a + (q.pts || []).length, 0); out.density = area > 0 ? out.n / area : 0; }
+    return out;
+  });
+};
+/* aspect ratio from the classes named like “length” and “width” (means, with propagated error) */
+IP.aspect = st => {
+  const L = st.find(g => g.kind === 'length' && /length|long/i.test(g.cls)), W = st.find(g => g.kind === 'length' && /width|diam|short|thick/i.test(g.cls));
+  if (!L || !W || !L.n || !W.n || L.unit !== W.unit || !W.mean) return null;
+  const r = L.mean / W.mean, e = r * Math.hypot(L.se / L.mean, W.se / W.mean);
+  return { r, se: e, L, W };
+};
+const fmtN = (v, d = 3) => { if (!isFinite(v)) return '–'; const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 10 ? v.toFixed(2) : v.toPrecision(d); };
+IP.fmtN = fmtN;
+/* an SD with as many decimals as its mean is shown with */
+IP.fmtSD = (sd, mean) => { const a = Math.abs(mean), dec = a >= 100 ? 1 : a >= 10 ? 2 : Math.max(0, 2 - Math.floor(Math.log10(a || 1))); return (+sd).toFixed(Math.min(6, dec)); };
+IP.summaryText = st => st.filter(g => g.kind !== 'count').map(g => `${g.cls}: ${fmtN(g.mean)}${g.n > 1 ? ' ± ' + IP.fmtSD(g.sd, g.mean) : ''}${g.unit === '°' ? '°' : ' ' + g.unit} (n = ${g.n})`).concat(st.filter(g => g.kind === 'count').map(g => `${g.cls}: ${g.n} counted`));
+/* the measurements drawn on the panel (in the clipped image group) */
+IP.measOverlay = (p, w, h, ix, iy, FW, FH, font) => {
+  const X = u => ix + u / (p.pxW || 1) * FW, Y = v => iy + v / (p.pxH || 1) * FH, c = p.measColor || '#2bd4ff', lw = +p.measW || 0.35, fs = U.pt2mm(p.measSize || 5.5);
+  const pts = q => (q.pts || []).map(a => [X(a[0]), Y(a[1])]), path = P => 'M ' + P.map(a => n(a[0]) + ' ' + n(a[1])).join(' L ');
+  const st = IP.measStats(p);
+  let s = '';
+  const label = (x, y, t) => p.measLabels ? `<text x="${n(x)}" y="${n(y)}" font-family="${font}" font-size="${n(fs)}" fill="${c}" stroke="#000000" stroke-opacity="0.55" stroke-width="${n(fs * 0.12)}" paint-order="stroke" text-anchor="middle">${U.esc(t)}</text>` : '';
+  (p.meas || []).forEach((q, i) => {
+    const P = pts(q); if (!P.length) return;
+    const g = st.find(x => x.cls === (q.cls || 'Unnamed') && x.kind === IP.kind(q.type)), j = (p.meas || []).filter((r, k) => k < i && (r.cls || 'Unnamed') === (q.cls || 'Unnamed') && IP.kind(r.type) === IP.kind(q.type)).length;
+    const val = g && g.values[j] != null ? fmtN(g.values[j]) + (g.kind === 'angle' ? '°' : ' ' + g.unit) : '';
+    /* a short end tick across the line at point a (direction towards b) */
+    const cap = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / L * lw * 2.2, ny = (b[0] - a[0]) / L * lw * 2.2; return `<path d="M ${n(a[0] - nx)} ${n(a[1] - ny)} L ${n(a[0] + nx)} ${n(a[1] + ny)}" stroke="${c}" stroke-width="${n(lw)}"/>`; };
+    if (q.type === 'line' || q.type === 'poly') {
+      s += `<path d="${path(P)}" fill="none" stroke="${c}" stroke-width="${n(lw)}" stroke-linejoin="round"/>`; if (P.length > 1) s += cap(P[0], P[1]) + cap(P[P.length - 1], P[P.length - 2]);
+      // straight line: the value just beyond its upper end; segmented: beside its middle
+      if (q.type === 'line' && P.length > 1) { const [e0, e1] = P[0][1] <= P[1][1] ? [P[0], P[1]] : [P[1], P[0]], L = Math.hypot(e0[0] - e1[0], e0[1] - e1[1]) || 1, ux = (e0[0] - e1[0]) / L, uy = (e0[1] - e1[1]) / L; s += label(e0[0] + ux * fs * 1.6, e0[1] + uy * fs * 0.9 + fs * 0.3, val); }
+      else { const a = P[Math.floor((P.length - 1) / 2)], b = P[Math.min(P.length - 1, Math.floor((P.length - 1) / 2) + 1)], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L; if (ny > 0) { nx = -nx; ny = -ny; } s += label((a[0] + b[0]) / 2 + nx * fs * 0.9, (a[1] + b[1]) / 2 + ny * fs * 0.9 + fs * 0.3, val); }
+    }
+    else if (q.type === 'diam' && P.length > 1) { const cx = (P[0][0] + P[1][0]) / 2, cy = (P[0][1] + P[1][1]) / 2, r = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 2; s += `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/><path d="${path(P)}" stroke="${c}" stroke-width="${n(lw * 0.6)}" stroke-dasharray="${n(lw * 2)} ${n(lw * 1.5)}"/>` + label(cx, cy - r - fs * 0.3, val); }
+    else if (q.type === 'area' && P.length > 2) { const cx = P.reduce((a, b) => a + b[0], 0) / P.length, cy = P.reduce((a, b) => a + b[1], 0) / P.length; s += `<path d="${path(P)} Z" fill="${c}" fill-opacity="0.15" stroke="${c}" stroke-width="${n(lw)}"/>` + label(cx, cy, val); }
+    else if (q.type === 'angle' && P.length > 2) s += `<path d="${path(P)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/>` + label(P[1][0], P[1][1] - fs * 0.6, val);
+    else if (q.type === 'count') P.forEach(a => { s += `<circle cx="${n(a[0])}" cy="${n(a[1])}" r="${n(lw * 2.4)}" fill="none" stroke="${c}" stroke-width="${n(lw)}"/>`; });
+  });
+  return s;
+};
 
 /* fill a micrograph from an image file (keeps its calibration and look) */
 IP.fill = (obj, file) => RNBX.project.readImage(file).catch(e => { RNBX.toast(e.message || String(e), 'error'); throw e; }).then(r => {
@@ -17148,6 +17282,11 @@ function drawOverlay() {
         const c = U.toWorld(o, [b[2] + 0.6 / s, b[3] + 0.6 / s]);
         overlay.append(sv('rect', { x: c[0] - hr * 0.8, y: c[1] - hr * 0.8, width: hr * 1.6, height: hr * 1.6, class: 'handle', 'data-handle': 'scale', rx: hr * 0.2 }));
       }
+      // extra handles that move a part of the object (a scale bar, an inset's source…)
+      if (def.extraHandles) def.extraHandles(o.props).forEach(h => {
+        const p = U.toWorld(o, [h.x, h.y]);
+        const hc = sv('circle', { cx: p[0], cy: p[1], r: hr * 1.05, class: 'handle aux', 'data-handle': 'ex:' + h.key }); if (h.title) { const t = sv('title', {}); t.textContent = h.title; hc.append(t); } overlay.append(hc);
+      });
     }
   }
   if (drag && drag.guides) drag.guides.forEach(g => { const { eq, ...geo } = g; overlay.append(sv('line', Object.assign({ class: eq ? 'guide eq' : 'guide' }, geo))); });
@@ -17423,6 +17562,8 @@ function moveHandle(p, e, k) {
       o.scale = U.clamp(s, 0.1, 20);
       drag.angleTip = { x: p[0] + 8 * k, y: p[1] + 8 * k, text: '× ' + U.fmt(o.scale, 2) };
     }
+  } else if (drag.h.startsWith('ex:')) {
+    if (def.dragHandle) def.dragHandle(o.props, drag.h.slice(3), U.toLocal(o, p), e);
   } else if (drag.h.startsWith('pt:')) {
     let dx = p[0] - o.x, dy = p[1] - o.y;
     if (e.shiftKey) { const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, L = Math.hypot(dx, dy); dx = Math.cos(a) * L; dy = Math.sin(a) * L; }
@@ -19022,13 +19163,252 @@ PN.calibrate = obj => {
 };
 
 /* buttons in the inspector of an image panel */
-lib.get('micrograph').tools = obj => el('div', {}, (() => { const G = IP.geom(obj.props); return el('div', { class: 'readout', style: { marginBottom: '8px' } }, obj.props.href ? `${obj.props.pxW} × ${obj.props.pxH} px · ` + (G.visNm ? `field ${IP.lengthLabel(G.visNm, obj.props.unit)} wide · scale bar ${IP.lengthLabel(IP.barNm(obj.props), obj.props.unit)}` : obj.props.calib === 'none' ? 'no calibration' : 'not calibrated yet: set the pixel size or measure a scale bar') : 'No image yet'); })(),
+lib.get('micrograph').tools = obj => el('div', {}, (() => { const G = IP.geom(obj.props); const st = (obj.props.meas || []).length ? IP.measStats(obj.props) : [], ms = IP.summaryText(st), ar = st.length ? IP.aspect(st) : null; return el('div', { class: 'readout', style: { marginBottom: '8px', whiteSpace: 'pre-line' } }, obj.props.href ? `${obj.props.pxW} × ${obj.props.pxH} px · ` + (G.visNm ? `field ${IP.lengthLabel(G.visNm, obj.props.unit)} wide · scale bar ${IP.lengthLabel(IP.barNm(obj.props), obj.props.unit)}` : obj.props.calib === 'none' ? 'no calibration' : 'not calibrated yet: set the pixel size or measure a scale bar') + (ms.length ? '\nMeasured — ' + ms.join(' · ') + (ar ? ` · aspect ratio ${ar.r.toFixed(2)} ± ${ar.se.toFixed(2)}` : '') : '') : 'No image yet'); })(),
  el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '10px' } },
   el('button', { style: { flex: '0 0 auto' }, class: 'btn small primary', type: 'button', text: obj.props.href ? 'Replace image…' : 'Choose image…', onclick: () => RNBX.project.pickFile('image/*', f => IP.fill(obj, f)) }),
+  obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small primary', type: 'button', text: 'Measure…', title: 'Lengths, widths, diameters, areas, angles and counts, with mean ± SD and histograms', onclick: () => RNBX.measure.open(obj) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Calibrate / crop…', title: 'Measure a scale bar printed in the image; crop off the info bar', onclick: () => PN.calibrate(obj) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Auto contrast', title: 'Black and white points that clip 0.5 % of the pixels at each end', onclick: () => IP.autoLevels(obj.props.href).then(r => { RNBX.history.checkpoint(); Object.assign(obj.props, r); RNBX.changed(); RNBX.inspector.build(); }) }) : null,
   obj.props.href ? el('button', { style: { flex: '0 0 auto' }, class: 'btn small ghost', type: 'button', text: 'Reset look', onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, { lo: 0, hi: 1, gamma: 1, invert: false, cmap: '' }); RNBX.changed(); RNBX.inspector.build(); } }) : null,
   el('button', { style: { flex: '0 0 auto' }, class: 'btn small', type: 'button', text: 'Lay out panels…', onclick: () => PN.dialog() })));
+})();
+
+</script>
+<script>
+/* js/ui/measure.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/measure.js
+   Measuring on a microscope image panel: lines (nanorod length
+   and width), segmented lines (bent rods, wires), diameters
+   (particles), areas (with the equivalent diameter), angles and
+   counts. Each measurement belongs to a class (Length, Width,
+   Diameter …); every class gets n, mean, SD, SE, median, range
+   and CV, a histogram, and length / width gives the aspect
+   ratio. Values use the panel's calibration (pixels without it).
+   Measurements stay on the panel (props.meas) and are drawn
+   there; the session is one undo step in the figure.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, IP = RNBX.imgproc;
+const MS = RNBX.measure = {};
+
+const TOOLS = [['line', 'Line', 'L', 'Length'], ['poly', 'Segmented', 'S', 'Length'], ['diam', 'Diameter', 'D', 'Diameter'], ['area', 'Area', 'A', 'Area'], ['angle', 'Angle', 'G', 'Angle'], ['count', 'Count', 'C', 'Particles'], ['select', 'Select', 'V', '']];
+const PALETTE = ['#2bd4ff', '#ffd23f', '#ff6b9a', '#7bd88f', '#c58cff', '#ff9f43', '#5dade2', '#f1948a'];
+MS.TOOLS = TOOLS;
+
+/* histogram bins: Freedman–Diaconis width, 4–30 bins */
+MS.bins = vals => {
+  const n = vals.length; if (!n) return { edges: [], counts: [] };
+  const a = vals.slice().sort((x, y) => x - y), q = f => a[Math.min(n - 1, Math.max(0, Math.round(f * (n - 1))))];
+  const lo = a[0], hi = a[n - 1], iqr = q(0.75) - q(0.25);
+  let k = iqr > 0 ? Math.ceil((hi - lo) / (2 * iqr * Math.pow(n, -1 / 3))) : Math.ceil(Math.sqrt(n));
+  k = Math.max(4, Math.min(30, k || 4));
+  const span = (hi - lo) || Math.abs(lo) * 0.1 || 1, w = span / k, x0 = hi > lo ? lo : lo - span / 2;
+  const edges = Array.from({ length: k + 1 }, (_, i) => x0 + i * w), counts = new Array(k).fill(0);
+  vals.forEach(v => { counts[Math.min(k - 1, Math.max(0, Math.floor((v - x0) / w)))]++; });
+  return { edges, counts, w };
+};
+
+MS.open = obj => {
+  const p = obj.props;
+  if (!p.href) { RNBX.toast('Choose an image first'); return null; }
+  p.meas = Array.isArray(p.meas) ? p.meas : [];
+  RNBX.history.checkpoint();
+  const local = [];   // undo inside the dialog
+  const snap = () => { local.push(JSON.stringify(p.meas)); if (local.length > 200) local.shift(); };
+  let tool = 'line', cls = 'Length', img = null, s = 1, ox = 0, oy = 0, cur = null, sel = -1, pan = null, space = false;
+  const colours = {};
+  const colOf = c => colours[c] || (colours[c] = PALETTE[Object.keys(colours).length % PALETTE.length]);
+  (p.meas || []).forEach(q => colOf(q.cls || 'Unnamed'));
+
+  const cv = el('canvas', { class: 'ms-canvas', tabindex: 0 });
+  const host = el('div', { class: 'ms-view' }, cv);
+  const info = el('div', { class: 'hint ms-info' });
+  const statsHost = el('div', { class: 'ms-stats' }), histHost = el('div', { class: 'ms-hist' }), listHost = el('div', { class: 'ms-list' });
+  const clsSel = el('select', { onchange: () => { if (clsSel.value === '__new') { const nn = prompt('Name of the new class (e.g. Length, Width, Core, Shell):', ''); if (nn) { cls = nn.trim(); colOf(cls); } fillCls(); } else cls = clsSel.value; } });
+  const fillCls = () => { const names = [...new Set(['Length', 'Width', 'Diameter', 'Particles', 'Area', 'Angle'].concat((p.meas || []).map(q => q.cls || 'Unnamed')).concat([cls]))]; clsSel.innerHTML = ''; names.forEach(n => clsSel.append(el('option', { value: n, text: n }))); clsSel.append(el('option', { value: '__new', text: '+ New class…' })); clsSel.value = cls; };
+  const toolBtns = TOOLS.map(([t, name, key, def]) => el('button', { class: 'btn small' + (t === tool ? ' primary' : ''), type: 'button', text: `${name} (${key})`, 'data-tool': t, onclick: () => setTool(t) }));
+  const setTool = t => { tool = t; cur = null; const d = TOOLS.find(x => x[0] === t)[3]; if (d) { cls = d; colOf(cls); fillCls(); } toolBtns.forEach(b => b.classList.toggle('primary', b.dataset.tool === t)); hint(); draw(); };
+  const hint = () => {
+    const h = { line: 'Drag along a rod (Shift: horizontal, vertical or 45°).', poly: 'Click points along a bent rod or wire; double-click or Enter to finish, Backspace removes a point.', diam: 'Drag across a particle from edge to edge.', area: 'Click around the outline; double-click or Enter to close it.', angle: 'Click the first arm, the vertex, then the second arm.', count: 'Click every particle to count it.', select: 'Click a measurement to select it; Delete removes it.' }[tool];
+    info.textContent = h + ' Wheel: zoom · right-drag or Space-drag: pan · Ctrl+Z: undo.' + (IP.nmPerPx(p) ? '' : ' Not calibrated: values are in pixels (Calibrate / crop… sets the scale).');
+  };
+
+  /* ---------- view ---------- */
+  const W = () => cv.width / (window.devicePixelRatio || 1), Hh = () => cv.height / (window.devicePixelRatio || 1);
+  const fit = () => { const pw = p.pxW || img.naturalWidth, ph = p.pxH || img.naturalHeight; s = Math.min(W() / pw, Hh() / ph) * 0.96; ox = (W() - pw * s) / 2; oy = (Hh() - ph * s) / 2; };
+  const toImg = e => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) - ox) / s, ((e.clientY - r.top) - oy) / s]; };
+  const scr = a => [ox + a[0] * s, oy + a[1] * s];
+  const value = q => { const v = IP.measValue(p, q); if (IP.kind(q.type) === 'angle') return v.v.toFixed(1) + '°'; if (q.type === 'count') return (q.pts || []).length + ' counted'; if (v.px) return IP.fmtN(v.v) + ' ' + v.unit; if (v.nm2) { const [u, f] = IP.lenUnit([Math.sqrt(v.v)]); return IP.fmtN(v.v / (f * f)) + ' ' + u + '²'; } const [u, f] = IP.lenUnit([v.v]); return IP.fmtN(v.v / f) + ' ' + u; };
+  function draw() {
+    if (!img) return;
+    const ctx = cv.getContext('2d'), dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, W(), Hh());
+    const pw = p.pxW || img.naturalWidth, ph = p.pxH || img.naturalHeight;
+    ctx.imageSmoothingEnabled = s < 3;
+    ctx.drawImage(img, ox, oy, pw * s, ph * s);
+    // outside the crop: dimmed
+    const c0 = [p.cx0 || 0, p.cy0 || 0], c1 = [p.cx1 == null ? 1 : p.cx1, p.cy1 == null ? 1 : p.cy1];
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    const X0 = ox + c0[0] * pw * s, Y0 = oy + c0[1] * ph * s, X1 = ox + c1[0] * pw * s, Y1 = oy + c1[1] * ph * s;
+    ctx.fillRect(ox, oy, pw * s, Y0 - oy); ctx.fillRect(ox, Y1, pw * s, oy + ph * s - Y1); ctx.fillRect(ox, Y0, X0 - ox, Y1 - Y0); ctx.fillRect(X1, Y0, ox + pw * s - X1, Y1 - Y0);
+    const all = (p.meas || []).map((q, i) => ({ q, i })).concat(cur ? [{ q: cur, i: -2 }] : []);
+    all.forEach(({ q, i }) => {
+      const col = colOf(q.cls || 'Unnamed'), P = (q.pts || []).map(scr), hi = i === sel;
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = hi ? 3 : 1.8; ctx.setLineDash(i === -2 ? [5, 4] : []);
+      if (!P.length) return;
+      if (q.type === 'count') { P.forEach((a, k) => { ctx.beginPath(); ctx.arc(a[0], a[1], 5, 0, 2 * Math.PI); ctx.stroke(); ctx.font = '10px Arial'; ctx.fillText(String(k + 1), a[0] + 6, a[1] - 6); }); return; }
+      if (q.type === 'diam' && P.length > 1) { const cx = (P[0][0] + P[1][0]) / 2, cy = (P[0][1] + P[1][1]) / 2, r = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 2; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke(); }
+      ctx.beginPath(); P.forEach((a, k) => (k ? ctx.lineTo(a[0], a[1]) : ctx.moveTo(a[0], a[1]))); if (q.type === 'area' && i !== -2) ctx.closePath(); ctx.stroke();
+      if (q.type === 'area' && i !== -2) { ctx.globalAlpha = 0.15; ctx.fill(); ctx.globalAlpha = 1; }
+      P.forEach(a => { ctx.beginPath(); ctx.arc(a[0], a[1], 2.2, 0, 2 * Math.PI); ctx.fill(); });
+      if (i !== -2 || P.length > 1) {
+        const t = value(q), a = q.type === 'angle' && P.length > 2 ? P[1] : P[Math.floor((P.length - 1) / 2)], b = P[Math.min(P.length - 1, Math.floor((P.length - 1) / 2) + 1)];
+        ctx.font = 'bold 12px Arial'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.setLineDash([]);
+        // a straight line: the value just beyond its upper end (crossing length and width lines keep apart); otherwise beside the middle
+        const tw = ctx.measureText(t).width; let tx, ty;
+        if ((q.type === 'line') && P.length > 1) { const [e0, e1] = P[0][1] <= P[1][1] ? [P[0], P[1]] : [P[1], P[0]], L = Math.hypot(e0[0] - e1[0], e0[1] - e1[1]) || 1, ux = (e0[0] - e1[0]) / L, uy = (e0[1] - e1[1]) / L; tx = e0[0] + ux * 12 - tw / 2 + ux * tw / 2; ty = e0[1] + uy * 12 + 4; }
+        else { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L; if (ny > 0) { nx = -nx; ny = -ny; } tx = (a[0] + b[0]) / 2 + nx * 14 - tw / 2; ty = (a[1] + b[1]) / 2 + ny * 14 + 4; }
+        ctx.strokeText(t, tx, ty); ctx.fillText(t, tx, ty);
+      }
+    });
+    ctx.setLineDash([]);
+  }
+  const refresh = () => { RNBX.changed(); drawStats(); drawList(); draw(); };
+
+  /* ---------- drawing ---------- */
+  const constrain = (a, b, e) => { if (!e.shiftKey) return b; const dx = b[0] - a[0], dy = b[1] - a[1], ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, L = Math.hypot(dx, dy); return [a[0] + Math.cos(ang) * L, a[1] + Math.sin(ang) * L]; };
+  const add = q => { snap(); p.meas.push(q); refresh(); };
+  const finish = () => { if (!cur) return; const need = cur.type === 'area' ? 3 : 2; if (cur.pts.length >= need) add({ type: cur.type, pts: cur.pts.map(a => [U.round(a[0], 2), U.round(a[1], 2)]), cls }); cur = null; draw(); };
+  const nearest = a => { let best = -1, bd = 12 / s; (p.meas || []).forEach((q, i) => { const P = q.pts || []; for (let k = 0; k < P.length; k++) { const b = P[k], c = P[k + 1] || (q.type === 'area' ? P[0] : null); let d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (c) { const vx = c[0] - b[0], vy = c[1] - b[1], L2 = vx * vx + vy * vy || 1, t = U.clamp(((a[0] - b[0]) * vx + (a[1] - b[1]) * vy) / L2, 0, 1); d = Math.min(d, Math.hypot(a[0] - b[0] - t * vx, a[1] - b[1] - t * vy)); } if (d < bd) { bd = d; best = i; } } }); return best; };
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('pointerdown', e => {
+    cv.focus(); cv.setPointerCapture(e.pointerId);
+    if (e.button === 1 || e.button === 2 || space) { pan = { x: e.clientX, y: e.clientY, ox, oy }; return; }
+    const a = toImg(e);
+    if (tool === 'select') { sel = nearest(a); drawList(); draw(); return; }
+    if (tool === 'line' || tool === 'diam') { cur = { type: tool, pts: [a, a], cls, drag: true }; draw(); return; }
+    if (tool === 'count') { snap(); let q = p.meas.find(m => m.type === 'count' && (m.cls || 'Unnamed') === cls); if (!q) { q = { type: 'count', pts: [], cls }; p.meas.push(q); } q.pts.push([U.round(a[0], 2), U.round(a[1], 2)]); refresh(); return; }
+    if (!cur) cur = { type: tool, pts: [a], cls }; else cur.pts.push(a);
+    if (tool === 'angle' && cur.pts.length === 3) finish();
+    draw();
+  });
+  cv.addEventListener('pointermove', e => {
+    if (pan) { ox = pan.ox + e.clientX - pan.x; oy = pan.oy + e.clientY - pan.y; draw(); return; }
+    if (!cur) return;
+    const a = toImg(e);
+    if (cur.drag) { cur.pts[1] = constrain(cur.pts[0], a, e); draw(); return; }
+    cur.preview = a; const P = cur.pts.slice(); draw(); const ctx = cv.getContext('2d'), b = scr(P[P.length - 1]), c = scr(a); ctx.strokeStyle = colOf(cls); ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.stroke(); ctx.setLineDash([]);
+  });
+  cv.addEventListener('pointerup', e => {
+    if (pan) { pan = null; return; }
+    if (cur && cur.drag) { const P = cur.pts; if (Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) * s > 4) { delete cur.drag; finish(); } else { cur = null; draw(); } }
+  });
+  cv.addEventListener('dblclick', e => { if (cur && (cur.type === 'poly' || cur.type === 'area')) { cur.pts.pop(); finish(); } e.preventDefault(); });
+  cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), ns = U.clamp(s * f, 0.02, 80); ox = mx - (mx - ox) * ns / s; oy = my - (my - oy) * ns / s; s = ns; draw(); }, { passive: false });
+  const onKey = e => {
+    if (!document.body.contains(cv)) return;
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement !== cv) return;
+    const k = e.key;
+    if (k === 'Escape' && cur) { e.stopPropagation(); e.preventDefault(); cur = null; draw(); return; }
+    if (k === 'Enter' && cur) { e.preventDefault(); finish(); return; }
+    if (k === 'Backspace' && cur) { e.preventDefault(); cur.pts.pop(); if (!cur.pts.length) cur = null; draw(); return; }
+    if ((k === 'Delete' || k === 'Backspace') && sel >= 0) { e.preventDefault(); snap(); p.meas.splice(sel, 1); sel = -1; refresh(); return; }
+    if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); e.stopPropagation(); if (cur) { cur = null; draw(); return; } if (local.length) { p.meas = JSON.parse(local.pop()); refresh(); } return; }
+    if (k === ' ') { space = true; e.preventDefault(); return; }
+    const t = TOOLS.find(x => x[2].toLowerCase() === k.toLowerCase());
+    if (t && !e.ctrlKey && !e.metaKey) setTool(t[0]);
+  };
+  const onKeyUp = e => { if (e.key === ' ') space = false; };
+  window.addEventListener('keydown', onKey, true);
+  window.addEventListener('keyup', onKeyUp, true);
+
+  /* ---------- statistics, histogram, list ---------- */
+  let histCls = null;
+  function drawStats() {
+    const st = IP.measStats(p);
+    statsHost.innerHTML = '';
+    if (!st.length) { statsHost.append(el('div', { class: 'hint', text: 'No measurements yet.' })); histHost.innerHTML = ''; return; }
+    const rows = st.map(g => g.kind === 'count'
+      ? `<tr><td><span class="ms-dot" style="background:${colOf(g.cls)}"></span>${U.esc(g.cls)}</td><td>${g.n}</td><td colspan="4">${g.density ? IP.fmtN(g.density) + ' per µm²' : 'counted'}</td></tr>`
+      : `<tr><td><span class="ms-dot" style="background:${colOf(g.cls)}"></span>${U.esc(g.cls)}</td><td>${g.n}</td><td><b>${IP.fmtN(g.mean)}</b> ± ${IP.fmtSD(g.sd, g.mean)} ${U.esc(g.unit)}</td><td>${IP.fmtN(g.median)}</td><td>${IP.fmtN(g.min)}–${IP.fmtN(g.max)}</td><td>${g.n > 1 ? g.cv.toFixed(1) + ' %' : '–'}</td></tr>` + (g.eqd ? `<tr><td colspan="2" class="muted">↳ equivalent diameter</td><td>${IP.fmtN(g.eqd.mean)} ± ${IP.fmtSD(g.eqd.sd, g.eqd.mean)} ${U.esc(g.eqdUnit)}</td><td colspan="3"></td></tr>` : ''));
+    const ar = IP.aspect(st);
+    statsHost.innerHTML = `<table class="st-tab ms-tab"><tr><th>Class</th><th>n</th><th>Mean ± SD</th><th>Median</th><th>Range</th><th>CV</th></tr>${rows.join('')}</table>` + (ar ? `<div class="readout">Aspect ratio ${U.esc(ar.L.cls)} / ${U.esc(ar.W.cls)} = <b>${ar.r.toFixed(2)} ± ${ar.se.toFixed(2)}</b> (ratio of the means; ± from their standard errors)</div>` : '');
+    const lenClasses = st.filter(g => g.kind !== 'count' && g.n > 1);
+    if (!lenClasses.find(g => g.cls + g.kind === histCls)) histCls = lenClasses[0] ? lenClasses[0].cls + lenClasses[0].kind : null;
+    histHost.innerHTML = '';
+    if (!lenClasses.length) return;
+    const hs = el('select', { onchange: () => { histCls = hs.value; drawStats(); } }, lenClasses.map(g => el('option', { value: g.cls + g.kind, text: `${g.cls} (${g.unit})` })));
+    hs.value = histCls;
+    const g = lenClasses.find(x => x.cls + x.kind === histCls), b = MS.bins(g.values), w = 330, h = 150, ymax = Math.max(...b.counts, 1);
+    const X = v => 34 + (v - b.edges[0]) / (b.edges[b.edges.length - 1] - b.edges[0] || 1) * (w - 64), Y = c => h - 24 - c / ymax * (h - 36);
+    let svg = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="Arial" font-size="10" class="st-chart">`;
+    b.counts.forEach((c, i) => { svg += `<rect x="${X(b.edges[i]) + 0.5}" y="${Y(c)}" width="${Math.max(0.5, X(b.edges[i + 1]) - X(b.edges[i]) - 1)}" height="${h - 24 - Y(c)}" fill="${colOf(g.cls)}" fill-opacity="0.8"/>`; });
+    // a normal curve with the same mean and SD, scaled to the counts
+    if (g.sd > 0) { let d = ''; for (let i = 0; i <= 60; i++) { const v = b.edges[0] + (b.edges[b.edges.length - 1] - b.edges[0]) * i / 60, y = g.n * b.w / (g.sd * Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * Math.pow((v - g.mean) / g.sd, 2)); d += (i ? ' L ' : 'M ') + X(v).toFixed(1) + ' ' + Math.max(8, Y(y)).toFixed(1); } svg += `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 2"/>`; }
+    svg += `<line x1="34" y1="${h - 24}" x2="${w - 10}" y2="${h - 24}" stroke="currentColor"/><line x1="34" y1="${h - 24}" x2="34" y2="10" stroke="currentColor"/>`;
+    [b.edges[0], (b.edges[0] + b.edges[b.edges.length - 1]) / 2, b.edges[b.edges.length - 1]].forEach(v => { svg += `<text x="${X(v)}" y="${h - 11}" text-anchor="middle" fill="currentColor">${IP.fmtN(v)}</text>`; });
+    svg += `<text x="30" y="${Y(ymax) + 4}" text-anchor="end" fill="currentColor">${ymax}</text><text x="30" y="${h - 24}" text-anchor="end" fill="currentColor">0</text><text x="${(w + 34) / 2}" y="${h - 1}" text-anchor="middle" fill="currentColor">${U.esc(g.cls)} (${U.esc(g.unit)}) · n = ${g.n}</text></svg>`;
+    histHost.append(el('div', { class: 'row', style: { gap: '6px', alignItems: 'center' } }, el('span', { class: 'hint', style: { margin: 0 }, text: 'Histogram' }), hs), el('div', { html: svg }));
+  }
+  function drawList() {
+    listHost.innerHTML = '';
+    (p.meas || []).forEach((q, i) => {
+      listHost.append(el('div', { class: 'ms-item' + (i === sel ? ' on' : ''), onclick: () => { sel = i; drawList(); draw(); } },
+        el('span', { class: 'ms-dot', style: { background: colOf(q.cls || 'Unnamed') } }), el('span', { text: `${i + 1}. ${q.cls || 'Unnamed'} · ${IP.MEAS_TYPES[q.type]}` }), el('b', { text: value(q) }),
+        el('button', { class: 'icon-btn', type: 'button', text: '✕', title: 'Remove', onclick: ev => { ev.stopPropagation(); snap(); p.meas.splice(i, 1); sel = -1; refresh(); } })));
+    });
+  }
+
+  /* ---------- export ---------- */
+  const csv = () => {
+    const st = IP.measStats(p), rows = ['# ' + (S.doc.meta.title || 'Figure') + ' — measurements on an image panel (RNBeamX)', '# calibration: ' + (IP.nmPerPx(p) ? IP.fmtN(IP.nmPerPx(p)) + ' nm per pixel' : 'none (pixels)'), 'index,class,type,value,unit,points (image pixels)'];
+    (p.meas || []).forEach((q, i) => { const g = st.find(x => x.cls === (q.cls || 'Unnamed') && x.kind === IP.kind(q.type)), j = (p.meas || []).filter((r, k) => k < i && (r.cls || 'Unnamed') === (q.cls || 'Unnamed') && IP.kind(r.type) === IP.kind(q.type)).length; rows.push([i + 1, q.cls, q.type, q.type === 'count' ? q.pts.length : g ? g.values[j].toPrecision(6) : '', q.type === 'count' ? 'count' : g ? g.unit : '', '"' + q.pts.map(a => a.join(' ')).join('; ') + '"'].join(',')); });
+    rows.push('', 'class,kind,n,mean,SD,SE,median,min,max,CV %,unit');
+    st.forEach(g => rows.push([g.cls, g.kind, g.n, g.mean, g.sd, g.se, g.median, g.min, g.max, g.cv].map(v => (typeof v === 'number' ? +v.toPrecision(6) : v)).concat([g.unit]).join(',')));
+    const ar = IP.aspect(st); if (ar) rows.push('', `aspect ratio ${ar.L.cls}/${ar.W.cls},${ar.r.toPrecision(5)},± ${ar.se.toPrecision(3)}`);
+    U.download(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), U.slug(S.doc.meta.title || 'image') + '_measurements.csv');
+  };
+  const addHist = () => {
+    const st = IP.measStats(p).filter(g => g.kind !== 'count' && g.n > 1); if (!st.length) { RNBX.toast('Measure at least two of one kind first'); return; }
+    const g = st.find(x => x.cls + x.kind === histCls) || st[0], b = MS.bins(g.values), x = [], y = [];
+    b.counts.forEach((c, i) => { x.push(b.edges[i], b.edges[i], b.edges[i + 1], b.edges[i + 1]); y.push(0, c, c, 0); });
+    RNBX.arrange.addDataPanel({ series: [{ name: `${g.cls}: ${IP.fmtN(g.mean)} ± ${IP.fmtN(g.sd)} ${g.unit} (n = ${g.n})`, x, y, color: colOf(g.cls) }], xlabel: `${g.cls} (${g.unit})`, ylabel: 'Count' });
+    RNBX.toast('Histogram added as a data panel.');
+  };
+  const addText = () => {
+    const lines = IP.summaryText(IP.measStats(p)), ar = IP.aspect(IP.measStats(p)); if (ar) lines.push(`Aspect ratio: ${ar.r.toFixed(2)} ± ${ar.se.toFixed(2)}`);
+    if (!lines.length) { RNBX.toast('Nothing measured yet'); return; }
+    const t = RNBX.createObject('text', obj.x, obj.y + (p.h || 20) / 2 + 6); t.props.text = lines.join('\n'); t.props.size = 6; RNBX.addObject(t); RNBX.toast('Summary added under the panel.');
+  };
+
+  const right = el('div', { class: 'ms-side' },
+    el('div', { class: 'ms-tools' }, ...toolBtns),
+    el('label', { class: 'st-f' }, el('span', { text: 'Class of new measurements' }), clsSel),
+    info, el('h4', { text: 'Statistics' }), statsHost, histHost,
+    el('div', { class: 'row ms-acts', style: { gap: '6px', flexWrap: 'wrap', margin: '8px 0' } },
+      el('button', { class: 'btn small', type: 'button', text: 'CSV', title: 'Every measurement and the statistics', onclick: csv }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add histogram to figure', onclick: addHist }),
+      el('button', { class: 'btn small', type: 'button', text: 'Add summary text', onclick: addText }),
+      el('button', { class: 'btn small ghost danger', type: 'button', text: 'Clear all', onclick: () => { if ((p.meas || []).length && confirm('Remove all measurements on this panel?')) { snap(); p.meas = []; sel = -1; refresh(); } } })),
+    el('h4', { text: 'Measurements' }), listHost);
+  const m = D.modal({ title: 'Measure', sub: `${p.pxW} × ${p.pxH} px` + (IP.nmPerPx(p) ? ` · ${IP.fmtN(IP.nmPerPx(p))} nm per pixel` : ' · not calibrated'), wide: true,
+    body: el('div', { class: 'ms-wrap' }, host, right),
+    foot: [el('span', { class: 'hint', style: { margin: '0 auto 0 0' }, text: 'Everything you measure stays on the panel; Ctrl+Z in the figure removes the whole session.' }), el('button', { class: 'btn primary', type: 'button', text: 'Done', onclick: () => m.close() })],
+    onClose: () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKeyUp, true); RNBX.changed(); if (RNBX.inspector) RNBX.inspector.build(); } });
+  m.root.classList.add('ms-modal');
+  fillCls(); hint(); drawStats(); drawList();
+  IP.decode(p.href).then(im => {
+    img = im;
+    const r = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, w = Math.max(320, Math.round(r.width)), h = Math.max(260, Math.round(r.height));
+    cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    fit(); draw(); cv.focus();
+  });
+  MS._t = { setTool, add: q => add(Object.assign({ cls }, q)), get: () => p.meas, toImg, scr, close: () => m.close(), fitView: () => { fit(); draw(); }, view: () => ({ s, ox, oy }) };
+  return m;
+};
 })();
 
 </script>

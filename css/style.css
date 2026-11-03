@@ -290,3 +290,20 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .vs-info { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vs-info small { color: var(--muted); }
 .vs-acts { display: flex; gap: 6px; align-items: center; }
+
+/* measuring on image panels */
+.ms-modal { width: min(1280px, 96vw); }
+.ms-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; }
+.ms-view { position: relative; height: min(68vh, 640px); background: #0b0d12; border-radius: 8px; overflow: hidden; }
+.ms-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; outline: none; }
+.ms-side { display: flex; flex-direction: column; min-width: 0; max-height: min(68vh, 640px); overflow: auto; }
+.ms-side h4 { margin: 10px 0 4px; }
+.ms-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.ms-tab { width: 100%; font-size: 11.5px; }
+.ms-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.ms-list { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.ms-item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.ms-item b { margin-left: auto; }
+.ms-item.on { background: var(--accent-soft); }
+@media (max-width: 900px) { .ms-wrap { grid-template-columns: 1fr; } .ms-view { height: 52vh; } }
+.ms-acts .btn { flex: 0 0 auto; }

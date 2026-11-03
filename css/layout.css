@@ -241,3 +241,4 @@ a.icon-btn { text-decoration: none; }
 .live-dot { animation: rbxlive 2s ease-in-out infinite; }
 @keyframes rbxlive { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.handle.aux { fill: #ffd23f; cursor: move; }
