@@ -622,15 +622,15 @@ C.init = () => {
     if (data) { C.placeNew(JSON.parse(data), p, true); return; }
     const f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (!f) return;
-    if (/\.json$/i.test(f.name)) RNBX.project.openFile(f);
-    else if (/^image\//.test(f.type)) {
+    if (/\.json$/i.test(f.name) || f.type === 'application/json') RNBX.project.openFile(f).catch(() => {});
+    else if (RNBX.project.isImageFile(f)) {
       // onto an image panel: fill it; elsewhere: a new image
-      const files = [...e.dataTransfer.files].filter(x => /^image\//.test(x.type));
+      const files = [...e.dataTransfer.files].filter(x => RNBX.project.isImageFile(x));
       const hit = S.doc.objects.slice().reverse().find(o => o.type === 'micrograph' && !o.hidden && (b => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3])(lib.worldBox(o)));
       if (hit) RNBX.imgproc.fill(hit, f);
       else if (files.length > 1 && RNBX.panels) RNBX.panels.importFiles(files);
-      else RNBX.project.importImage(f, p[0], p[1]);
-    }
+      else RNBX.project.importImage(f, p[0], p[1]).catch(() => {});
+    } else RNBX.toast(`${f.name} cannot be opened here: drop an RNBeamX project (.rnbx.json) or an image (PNG, JPEG, TIFF, SVG…).`, 'error');
   });
   new ResizeObserver(() => setVB()).observe(svg);
   D.$('#zoomIn').onclick = () => C.zoomBy(1.25);

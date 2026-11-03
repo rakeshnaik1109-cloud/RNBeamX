@@ -261,7 +261,7 @@ lib.register({
       const k = Math.min(p.w / p.vb[2], p.h / p.vb[3]);
       return `<g transform="translate(${n(-p.vb[2] * k / 2)} ${n(-p.vb[3] * k / 2)}) scale(${n(k)}) translate(${n(-p.vb[0])} ${n(-p.vb[1])})">${p.svg}</g>`;
     }
-    if (p.href) return `<image href="${U.esc(p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" preserveAspectRatio="none"/>`;
+    if (p.href) return `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" preserveAspectRatio="none"/>`;
     return H.rect(S, -p.w / 2, -p.h / 2, p.w, p.h, '#f4f5f7', 'rx="0.8" stroke-dasharray="1 0.7"') + H.text(S, 0, 0, p.title || 'Custom', { size: Math.min(S.fs, p.h * 0.3), color: '#6b7280' });
   },
   optics(p) {

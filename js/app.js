@@ -63,6 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => RNBX.canvas.fit(), 0);
   // live "using now" count (anonymous presence; hidden if the service cannot be reached)
   if (window.RNPresence && !navigator.webdriver) RNPresence.bind('rnbeamx', { track: true });
-  window.addEventListener('beforeunload', () => U.store.set('rnbx_autosave_v1', { t: Date.now(), doc: S.doc }));
+  window.addEventListener('beforeunload', () => RNBX.project.autosaveNow());
 });
 })();

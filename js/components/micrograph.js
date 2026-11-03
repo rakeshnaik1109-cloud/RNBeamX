@@ -51,7 +51,11 @@ const keyOf = (href, o) => href.length + ':' + href.slice(-64) + ':' + [o.lo, o.
 IP.identity = p => !p.cmap && !p.invert && (p.lo || 0) === 0 && (p.hi == null ? 1 : p.hi) === 1 && (p.gamma || 1) === 1;
 IP.decode = href => {
   if (decoded.has(href)) return decoded.get(href);
-  const pr = new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('Could not read the image')); img.src = href; });
+  const load = src => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('Could not read the image')); img.src = src; });
+  // a TIFF kept in an older project: decode it first (browsers cannot)
+  const isTiff = /^data:image\/tiff/i.test(href);
+  const pr = isTiff && RNBX.tiff ? fetch(href).then(r => r.arrayBuffer()).then(b => RNBX.tiff.decode(b)).then(r => load(r.href)) : load(href);
+  pr.catch(() => decoded.delete(href));
   decoded.set(href, pr);
   return pr;
 };
@@ -243,7 +247,7 @@ lib.register({
     } else {
       const href = IP.get(p.href, p), FW = w / G.cw, FH = h / G.ch, ix = -w / 2 - (p.cx0 || 0) * FW, iy = -h / 2 - (p.cy0 || 0) * FH;
       const rend = p.smooth === false ? ' style="image-rendering:pixelated" image-rendering="optimizeSpeed"' : '';
-      const im = (extra = '') => `<image href="${U.esc(href)}" x="${n(ix)}" y="${n(iy)}" width="${n(FW)}" height="${n(FH)}" preserveAspectRatio="none"${rend}${extra}/>`;
+      const shown = RNBX.imgURL ? RNBX.imgURL(href, S.live) : href, im = (extra = '') => `<image href="${U.esc(shown)}" x="${n(ix)}" y="${n(iy)}" width="${n(FW)}" height="${n(FH)}" preserveAspectRatio="none"${rend}${extra}/>`;
       s += `<defs><clipPath id="${id}-c"><rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}"/></clipPath></defs>`;
       s += `<g clip-path="url(#${id}-c)">${im()}`;
       // zoom inset: a square of the image magnified zf times, in a corner
@@ -313,9 +317,14 @@ lib.register({
 });
 
 /* fill a micrograph from an image file (keeps its calibration and look) */
-IP.fill = (obj, file) => RNBX.project.readImage(file).then(r => {
+IP.fill = (obj, file) => RNBX.project.readImage(file).catch(e => { RNBX.toast(e.message || String(e), 'error'); throw e; }).then(r => {
   RNBX.history.checkpoint();
   Object.assign(obj.props, { href: r.href, aspect: r.aspect, pxW: r.pxW || 1000, pxH: r.pxH || Math.round(1000 / r.aspect), cx0: 0, cy0: 0, cx1: 1, cy1: 1 });
+  // calibration stored in the file (SEM / ImageJ TIFF) fills an uncalibrated panel
+  if (r.calib && !(obj.props.calib === 'pixel' && obj.props.pix > 0) && !(obj.props.calib === 'fov' && obj.props.fov > 0)) {
+    Object.assign(obj.props, { calib: 'pixel', pix: r.calib.pix, unit: r.calib.unit });
+    RNBX.toast(`Pixel size ${r.calib.pix} ${r.calib.unit} read from the file (${r.calib.source}).`);
+  }
   RNBX.changed();
   if (RNBX.inspector && RNBX.inspector.build) RNBX.inspector.build();
   return obj;

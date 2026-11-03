@@ -97,13 +97,17 @@ PN.grid = (rows, cols, opt = {}) => {
 
 /* several image files → image panels, laid out at the current width */
 PN.importFiles = (files, opt = {}) => {
-  files = files.filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(f.name));
+  files = files.filter(f => RNBX.project.isImageFile(f));
   if (!files.length) return Promise.resolve([]);
   RNBX.history.checkpoint();
-  const made = files.map((f, i) => { const o = RNBX.createObject('micrograph', 20 + i * 45, 20); S.doc.objects.push(o); return o; });
+  let made = files.map((f, i) => { const o = RNBX.createObject('micrograph', 20 + i * 45, 20); S.doc.objects.push(o); return o; });
   const hc = RNBX.history.checkpoint;
   RNBX.history.checkpoint = () => {};   // one undo step for the whole import
-  return Promise.all(made.map((o, i) => IP.fill(o, files[i]))).finally(() => { RNBX.history.checkpoint = hc; }).then(() => {
+  return Promise.allSettled(made.map((o, i) => IP.fill(o, files[i]))).finally(() => { RNBX.history.checkpoint = hc; }).then(res => {
+    // panels whose file could not be read are taken out again (the reason was shown)
+    res.forEach((r, i) => { if (r.status === 'rejected') S.doc.objects.splice(S.doc.objects.indexOf(made[i]), 1); });
+    made = made.filter((o, i) => res[i].status === 'fulfilled');
+    if (!made.length) { RNBX.changed(); return made; }
     PN.layout(made, Object.assign({ noCheckpoint: true }, opt));
     RNBX.select(made.map(o => o.id));
     return made;

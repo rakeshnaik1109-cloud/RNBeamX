@@ -174,7 +174,7 @@ function control(param, get, set, ctx = {}) {
           });
           return;
         }
-        RNBX.project.readImage(f).then(({ href, aspect }) => {
+        RNBX.project.readImage(f).catch(e => { RNBX.toast(e.message, 'error'); throw e; }).then(({ href, aspect }) => {
           RNBX.history.checkpoint();
           Object.assign(o.props, { href, svg: '', vb: null, aspect, h: U.round(o.props.w / aspect, 2) });
           RNBX.changed(); Ins.build();

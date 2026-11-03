@@ -310,7 +310,7 @@ ann({
   bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
   draw(p, S) {
     if (!p.href) return `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" fill="#f1f3f5" stroke="#9aa1ab" stroke-width="0.2" stroke-dasharray="1 0.8"/>` + H.text(S, 0, 0, 'Choose an image in the inspector', { size: Math.min(2.4, p.w / 12), color: '#6b7280' });
-    return `<image href="${U.esc(p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"/>`;
+    return `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"/>`;
   },
 });
 
