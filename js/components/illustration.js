@@ -110,9 +110,12 @@ lib.register({
      above or below), the side edges stop the beam */
   optics(p) {
     if (p.traced === false) return [];
-    const g = this.geom(p), top = Math.max(...g.bounds[g.bounds.length - 1]), x0 = -p.W / 2, x1 = p.W / 2;
-    return [{ kind: 'film', face: 'top', a: [x0, -top], b: [x1, -top] }, { kind: 'film', face: 'bottom', a: [x0, 0], b: [x1, 0] },
-      { kind: 'absorb', a: [x0, 0], b: [x0, -top] }, { kind: 'absorb', a: [x1, 0], b: [x1, -top] }];
+    // the beam runs in the slab's mid-depth plane (drawn D/2 behind the front face), so it meets
+    // the middle of the top face, not its front edge
+    const g = this.geom(p), top = Math.max(...g.bounds[g.bounds.length - 1]), dx = p.D / 2 * g.c.kx, dy = p.D / 2 * g.c.ky;
+    const x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -top - dy, yb = -dy;
+    return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
+      { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
   },
   calcNote: p => p.profile !== 'flat' ? 'The grating profile is not part of this calculation: it treats the layers as flat films. Grating and gap-plasmon resonances need RCWA or FDTD; import such spectra as data.' : '',
   variants: [
