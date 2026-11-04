@@ -302,15 +302,26 @@ ann({
 });
 
 ann({
-  type: 'image', name: 'Image (PNG / JPG / SVG)', keywords: 'image picture photo import logo micrograph',
-  defaults: { href: '', w: 30, h: 20, opacity: 1, aspect: 1.5 },
+  type: 'image', name: 'Image (PNG / JPG / SVG)', keywords: 'image picture photo import logo micrograph edit transparent background crop',
+  defaults: { href: '', w: 30, h: 20, opacity: 1, aspect: 1.5, rx: 0, border: '', borderW: 0.5, shadow: false },
   params: [{ key: 'href', label: 'Image', type: 'image' }, { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 },
-    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 }, { key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }],
+    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 }, { key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'rx', label: 'Rounded corners', type: 'number', unit: 'mm', min: 0, max: 100, step: 0.25 },
+    { key: 'border', label: 'Border', type: 'color', allowEmpty: true }, { key: 'borderW', label: 'Border weight', type: 'number', unit: 'pt', min: 0.1, max: 12, step: 0.05, show: p => !!p.border },
+    { key: 'shadow', label: 'Drop shadow', type: 'bool' }],
   resizable: true, keepAspect: true,
-  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
-  draw(p, S) {
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2 + (p.shadow ? Math.min(p.w, p.h) * 0.04 : 0), p.h / 2 + (p.shadow ? Math.min(p.w, p.h) * 0.04 : 0)],
+  draw(p, S, obj) {
     if (!p.href) return `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" fill="#f1f3f5" stroke="#9aa1ab" stroke-width="0.2" stroke-dasharray="1 0.8"/>` + H.text(S, 0, 0, 'Choose an image in the inspector', { size: Math.min(2.4, p.w / 12), color: '#6b7280' });
-    return `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"/>`;
+    const rx = Math.min(+p.rx || 0, p.w / 2, p.h / 2), id = 'rbx-img-' + (obj ? obj.id : 'x'), img = `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"${rx > 0 ? ` clip-path="url(#${id})"` : ''}/>`;
+    let s = rx > 0 ? `<defs><clipPath id="${id}"><rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}"/></clipPath></defs>` : '';
+    // drop shadow as soft offset layers (vector, so it survives PDF export)
+    // a cut-out (transparent) image casts a shadow of its own shape: a soft silhouette made by the image editor
+    if (p.shadow && p.silhouette) { const d = Math.min(p.w, p.h) * 0.035; s += `<image href="${U.esc(p.silhouette)}" x="${n(-p.w / 2 + d)}" y="${n(-p.h / 2 + d)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${n(0.45 * p.opacity)}" preserveAspectRatio="none"/>`; }
+    else if (p.shadow) { const d = Math.min(p.w, p.h) * 0.04; for (let i = 3; i >= 1; i--) s += `<rect x="${n(-p.w / 2 + d * i / 3)}" y="${n(-p.h / 2 + d * i / 3)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}" fill="#000000" fill-opacity="${n(0.07 * p.opacity)}"/>`; }
+    s += img;
+    if (p.border) s += `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}" fill="none" stroke="${p.border}" stroke-width="${n(U.pt2mm(p.borderW))}"/>`;
+    return s;
   },
 });
 

@@ -310,3 +310,15 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .po-big { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 8px; }
 .po-big b { font-size: 26px; }
 .po-big span { color: var(--muted); }
+
+/* image editor */
+.ie-view { background: #e9ebef; }
+.ie-side { gap: 2px; }
+.ie-sec { border-top: 1px solid var(--line); padding: 6px 0 8px; }
+.ie-sec h4 { margin: 2px 0 6px; }
+.ie-row { gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0; }
+.ie-row .btn { flex: 0 0 auto; }
+.ie-top { margin: 0 0 8px; }
+.ie-slider { display: grid; grid-template-columns: 96px minmax(0, 1fr) 74px; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0; }
+.ie-slider input[type=range] { width: 100%; }
+.ie-val { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }

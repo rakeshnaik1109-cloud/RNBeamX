@@ -177,6 +177,7 @@ function control(param, get, set, ctx = {}) {
         RNBX.project.readImage(f).catch(e => { RNBX.toast(e.message, 'error'); throw e; }).then(({ href, aspect }) => {
           RNBX.history.checkpoint();
           Object.assign(o.props, { href, svg: '', vb: null, aspect, h: U.round(o.props.w / aspect, 2) });
+          ['orig', 'edit', 'fileInfo', 'silhouette'].forEach(k => { delete o.props[k]; }); o.props.hasAlpha = false;   // a new picture: earlier edits do not apply
           RNBX.changed(); Ins.build();
         });
       });

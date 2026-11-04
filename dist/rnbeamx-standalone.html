@@ -330,6 +330,18 @@ body.learn-page { display: flex; flex-direction: column; height: 100vh; }
 .po-big b { font-size: 26px; }
 .po-big span { color: var(--muted); }
 
+/* image editor */
+.ie-view { background: #e9ebef; }
+.ie-side { gap: 2px; }
+.ie-sec { border-top: 1px solid var(--line); padding: 6px 0 8px; }
+.ie-sec h4 { margin: 2px 0 6px; }
+.ie-row { gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0; }
+.ie-row .btn { flex: 0 0 auto; }
+.ie-top { margin: 0 0 8px; }
+.ie-slider { display: grid; grid-template-columns: 96px minmax(0, 1fr) 74px; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0; }
+.ie-slider input[type=range] { width: 100%; }
+.ie-val { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+
 </style>
 <style>
 /* css/layout.css */
@@ -11240,15 +11252,26 @@ ann({
 });
 
 ann({
-  type: 'image', name: 'Image (PNG / JPG / SVG)', keywords: 'image picture photo import logo micrograph',
-  defaults: { href: '', w: 30, h: 20, opacity: 1, aspect: 1.5 },
+  type: 'image', name: 'Image (PNG / JPG / SVG)', keywords: 'image picture photo import logo micrograph edit transparent background crop',
+  defaults: { href: '', w: 30, h: 20, opacity: 1, aspect: 1.5, rx: 0, border: '', borderW: 0.5, shadow: false },
   params: [{ key: 'href', label: 'Image', type: 'image' }, { key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 },
-    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 }, { key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }],
+    { key: 'h', label: 'Height', type: 'number', unit: 'mm', min: 1, max: 500, step: 0.5 }, { key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'rx', label: 'Rounded corners', type: 'number', unit: 'mm', min: 0, max: 100, step: 0.25 },
+    { key: 'border', label: 'Border', type: 'color', allowEmpty: true }, { key: 'borderW', label: 'Border weight', type: 'number', unit: 'pt', min: 0.1, max: 12, step: 0.05, show: p => !!p.border },
+    { key: 'shadow', label: 'Drop shadow', type: 'bool' }],
   resizable: true, keepAspect: true,
-  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2, p.h / 2],
-  draw(p, S) {
+  bbox: p => [-p.w / 2, -p.h / 2, p.w / 2 + (p.shadow ? Math.min(p.w, p.h) * 0.04 : 0), p.h / 2 + (p.shadow ? Math.min(p.w, p.h) * 0.04 : 0)],
+  draw(p, S, obj) {
     if (!p.href) return `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" fill="#f1f3f5" stroke="#9aa1ab" stroke-width="0.2" stroke-dasharray="1 0.8"/>` + H.text(S, 0, 0, 'Choose an image in the inspector', { size: Math.min(2.4, p.w / 12), color: '#6b7280' });
-    return `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"/>`;
+    const rx = Math.min(+p.rx || 0, p.w / 2, p.h / 2), id = 'rbx-img-' + (obj ? obj.id : 'x'), img = `<image href="${U.esc(RNBX.imgURL ? RNBX.imgURL(p.href, S.live) : p.href)}" x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${p.opacity}" preserveAspectRatio="none"${rx > 0 ? ` clip-path="url(#${id})"` : ''}/>`;
+    let s = rx > 0 ? `<defs><clipPath id="${id}"><rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}"/></clipPath></defs>` : '';
+    // drop shadow as soft offset layers (vector, so it survives PDF export)
+    // a cut-out (transparent) image casts a shadow of its own shape: a soft silhouette made by the image editor
+    if (p.shadow && p.silhouette) { const d = Math.min(p.w, p.h) * 0.035; s += `<image href="${U.esc(p.silhouette)}" x="${n(-p.w / 2 + d)}" y="${n(-p.h / 2 + d)}" width="${n(p.w)}" height="${n(p.h)}" opacity="${n(0.45 * p.opacity)}" preserveAspectRatio="none"/>`; }
+    else if (p.shadow) { const d = Math.min(p.w, p.h) * 0.04; for (let i = 3; i >= 1; i--) s += `<rect x="${n(-p.w / 2 + d * i / 3)}" y="${n(-p.h / 2 + d * i / 3)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}" fill="#000000" fill-opacity="${n(0.07 * p.opacity)}"/>`; }
+    s += img;
+    if (p.border) s += `<rect x="${n(-p.w / 2)}" y="${n(-p.h / 2)}" width="${n(p.w)}" height="${n(p.h)}" rx="${n(rx)}" fill="none" stroke="${p.border}" stroke-width="${n(U.pt2mm(p.borderW))}"/>`;
+    return s;
   },
 });
 
@@ -15385,6 +15408,229 @@ RNBX.imgURL = (href, live) => {
 
 </script>
 <script>
+/* js/io/imgedit.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — io/imgedit.js
+   The image editor's pipeline (no UI here). An edit is a recipe
+   applied to the kept original, so it can always be changed or
+   undone:
+     1. background: colour keys, magic-wand fills and eraser /
+        restore brush strokes on the alpha channel (in the
+        original's pixel coordinates), then edge softening;
+     2. geometry: quarter turns, fine rotation, mirror;
+     3. colour: exposure, brightness, contrast, gamma, saturation,
+        temperature / tint, blur and sharpen, effects (grey,
+        sepia, invert, duotone, one-colour tint), auto levels;
+     4. crop (fractions of the rotated image);
+     5. size (output pixels, smooth downscaling);
+     6. file format and quality (PNG, JPEG, WebP).
+   Everything runs in the browser.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX = window.RNBX || {};
+const IE = RNBX.imgEdit = {};
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+IE.DEFAULT = () => ({
+  ops: [], feather: 0,
+  rot90: 0, rot: 0, flipH: false, flipV: false,
+  col: { exposure: 0, brightness: 0, contrast: 0, gamma: 1, saturation: 0, temp: 0, tint: 0, blur: 0, sharpen: 0, effect: 'none', c1: '#1f3b73', c2: '#ffd23f', lo: 0, hi: 255 },
+  crop: [0, 0, 1, 1], outW: 0, format: 'png', quality: 0.9, jpegBg: '#ffffff',
+});
+IE.isIdentity = e => !e || (!e.ops.length && !e.feather && !e.rot90 && !e.rot && !e.flipH && !e.flipV && e.crop.join() === '0,0,1,1' && !e.outW && JSON.stringify(e.col) === JSON.stringify(IE.DEFAULT().col));
+
+const hexRGB = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+
+/* the original as a canvas, at most `max` px on the long side; k = original px per px here */
+IE.source = (img, max = 1e9) => {
+  const W0 = img.naturalWidth || img.width || 1000, H0 = img.naturalHeight || img.height || 1000, k = Math.max(1, Math.max(W0, H0) / max);
+  const c = canvasOf(W0 / k, H0 / k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return { c, k, W0, H0 };
+};
+
+/* ---------- 1. background (alpha) ---------- */
+const dist2 = (d, i, r, g, b) => { const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b; return dr * dr + dg * dg + db * db; };
+IE.applyAlpha = (src, ops, feather, k) => {
+  if (!ops.length && !feather) return src;
+  const w = src.width, h = src.height, ctx = src.getContext('2d'), id = ctx.getImageData(0, 0, w, h), d = id.data, a0 = new Uint8ClampedArray(w * h);
+  for (let i = 0; i < w * h; i++) a0[i] = d[i * 4 + 3];
+  const A = Float32Array.from(a0);
+  ops.forEach(op => {
+    if (op.op === 'key') {   // a colour everywhere (with a soft edge of `soft` levels)
+      const [r, g, b] = op.color, t = op.tol * 4.42, t2 = t * t, s = (op.soft || 0) * 4.42;
+      for (let i = 0; i < w * h; i++) { const q = dist2(d, i * 4, r, g, b); if (q <= t2) A[i] = 0; else if (s > 0) { const dd = Math.sqrt(q); if (dd < t + s) A[i] = Math.min(A[i], a0[i] * (dd - t) / s); } }
+    } else if (op.op === 'wand') {   // the connected area around a point, of similar colour
+      const x0 = Math.round(op.x / k), y0 = Math.round(op.y / k); if (x0 < 0 || y0 < 0 || x0 >= w || y0 >= h) return;
+      const i0 = y0 * w + x0, r = d[i0 * 4], g = d[i0 * 4 + 1], b = d[i0 * 4 + 2], t = op.tol * 4.42, t2 = t * t;
+      const seen = new Uint8Array(w * h), st = new Int32Array(w * h); let sp = 0; st[sp++] = i0; seen[i0] = 1;
+      while (sp) {
+        const i = st[--sp]; A[i] = 0; const x = i % w;
+        const nb = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+        for (let j = 0; j < 4; j++) { const q = nb[j]; if (q < 0 || q >= w * h || seen[q]) continue; seen[q] = 1; if (dist2(d, q * 4, r, g, b) <= t2) st[sp++] = q; }
+      }
+    } else if (op.op === 'brush') {   // eraser or restore, soft round brush along a path
+      const R = Math.max(0.5, op.r / k), hard = clamp(op.hard == null ? 0.6 : op.hard, 0, 0.98), pts = op.pts.map(q => [q[0] / k, q[1] / k]);
+      const stamp = (cx, cy) => {
+        const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(w - 1, Math.ceil(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(h - 1, Math.ceil(cy + R));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const r = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / R; if (r >= 1) continue;
+          const wgt = r <= hard ? 1 : 1 - (r - hard) / (1 - hard), i = y * w + x;
+          if (op.mode === 'restore') A[i] = Math.max(A[i], a0[i] * wgt); else A[i] = A[i] * (1 - wgt);
+        }
+      };
+      for (let j = 0; j < pts.length; j++) {
+        if (!j) { stamp(pts[0][0], pts[0][1]); continue; }
+        const [ax, ay] = pts[j - 1], [bx, by] = pts[j], L = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(L / (R * 0.3)));
+        for (let s = 1; s <= n; s++) stamp(ax + (bx - ax) * s / n, ay + (by - ay) * s / n);
+      }
+    }
+  });
+  // soften the cut-out edge: blur the alpha a little where it changed
+  if (feather > 0) {
+    const r = Math.max(1, Math.round(feather / k)), B = Float32Array.from(A);
+    const pass = (src2, dst, horiz) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0, n = 0; for (let t = -r; t <= r; t++) { const xx = horiz ? x + t : x, yy = horiz ? y : y + t; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; s += src2[yy * w + xx]; n++; } dst[y * w + x] = s / n; } };
+    const T = new Float32Array(w * h); pass(A, T, true); pass(T, B, false);
+    for (let i = 0; i < w * h; i++) A[i] = Math.min(a0[i], B[i]);
+  }
+  for (let i = 0; i < w * h; i++) d[i * 4 + 3] = A[i];
+  const out = canvasOf(w, h); out.getContext('2d').putImageData(id, 0, 0);
+  return out;
+};
+
+/* ---------- 2. geometry ---------- */
+IE.angle = e => ((e.rot90 || 0) * 90 + (+e.rot || 0)) * Math.PI / 180;
+IE.geomSize = (w, h, e) => { const t = IE.angle(e), c = Math.abs(Math.cos(t)), s = Math.abs(Math.sin(t)); return [Math.round(w * c + h * s), Math.round(w * s + h * c)]; };
+IE.applyGeom = (src, e) => {
+  if (!e.rot90 && !e.rot && !e.flipH && !e.flipV) return src;
+  const [W, H] = IE.geomSize(src.width, src.height, e), out = canvasOf(W, H), ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.translate(W / 2, H / 2); ctx.rotate(IE.angle(e)); ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
+  ctx.drawImage(src, -src.width / 2, -src.height / 2);
+  return out;
+};
+/* a point in the rotated image ↔ the original (both in original pixels) */
+IE.toOriginal = (e, W0, H0, p) => {
+  const [GW, GH] = IE.geomSize(W0, H0, e), t = -IE.angle(e), x = p[0] - GW / 2, y = p[1] - GH / 2;
+  let u = x * Math.cos(t) - y * Math.sin(t), v = x * Math.sin(t) + y * Math.cos(t);
+  if (e.flipH) u = -u; if (e.flipV) v = -v;
+  return [u + W0 / 2, v + H0 / 2];
+};
+
+/* ---------- 3. colour ---------- */
+const boxBlurRGBA = (d, w, h, r) => {
+  const out = new Float32Array(d.length), tmp = new Float32Array(d.length), k = 2 * r + 1;
+  for (let c = 0; c < 4; c++) {
+    for (let y = 0; y < h; y++) { let acc = 0; for (let x = -r; x <= r; x++) acc += d[(y * w + clamp(x, 0, w - 1)) * 4 + c]; for (let x = 0; x < w; x++) { tmp[(y * w + x) * 4 + c] = acc / k; acc += d[(y * w + Math.min(w - 1, x + r + 1)) * 4 + c] - d[(y * w + Math.max(0, x - r)) * 4 + c]; } }
+    for (let x = 0; x < w; x++) { let acc = 0; for (let y = -r; y <= r; y++) acc += tmp[(clamp(y, 0, h - 1) * w + x) * 4 + c]; for (let y = 0; y < h; y++) { out[(y * w + x) * 4 + c] = acc / k; acc += tmp[(Math.min(h - 1, y + r + 1) * w + x) * 4 + c] - tmp[(Math.max(0, y - r) * w + x) * 4 + c]; } }
+  }
+  return out;
+};
+/* black and white points that clip 0.5 % of the opaque pixels at each end */
+IE.autoLevels = canvas => {
+  const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, hist = new Uint32Array(256); let N = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 8) continue; hist[Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2])]++; N++; }
+  const cut = N * 0.005; let a = 0, s = 0; while (a < 255 && s + hist[a] <= cut) s += hist[a++]; let b = 255; s = 0; while (b > 0 && s + hist[b] <= cut) s += hist[b--];
+  return b > a ? { lo: a, hi: b } : { lo: 0, hi: 255 };
+};
+IE.applyColour = (src, c, k = 1) => {
+  const D = IE.DEFAULT().col; if (JSON.stringify(c) === JSON.stringify(D)) return src;
+  const w = src.width, h = src.height, id = src.getContext('2d').getImageData(0, 0, w, h), d = id.data;
+  let f = d;
+  if (c.blur > 0) f = boxBlurRGBA(d, w, h, Math.max(1, Math.round(c.blur / k)));
+  if (c.sharpen > 0) { const b = boxBlurRGBA(d, w, h, Math.max(1, Math.round(1.5 / k))), amt = c.sharpen / 50; const g = new Float32Array(d.length); for (let i = 0; i < d.length; i++) g[i] = (i & 3) === 3 ? f[i] : f[i] + amt * (f[i] - b[i]); f = g; }
+  const ex = Math.pow(2, c.exposure || 0), br = (c.brightness || 0) * 2.55, ct = (100 + (c.contrast || 0)) / 100, gm = 1 / (c.gamma || 1), sat = 1 + (c.saturation || 0) / 100;
+  const lo = c.lo || 0, hi = c.hi == null ? 255 : c.hi, span = Math.max(1, hi - lo), tR = 1 + (c.temp || 0) / 200, tB = 1 - (c.temp || 0) / 200, tG = 1 - (c.tint || 0) / 200;
+  const c1 = hexRGB(c.c1 || '#000000'), c2 = hexRGB(c.c2 || '#ffffff');
+  for (let i = 0; i < d.length; i += 4) {
+    let r = f[i], g = f[i + 1], b = f[i + 2];
+    r = (r - lo) / span * 255; g = (g - lo) / span * 255; b = (b - lo) / span * 255;
+    r *= ex * tR; g *= ex * tG; b *= ex * tB;
+    r = (r - 128) * ct + 128 + br; g = (g - 128) * ct + 128 + br; b = (b - 128) * ct + 128 + br;
+    if (gm !== 1) { r = 255 * Math.pow(clamp(r, 0, 255) / 255, gm); g = 255 * Math.pow(clamp(g, 0, 255) / 255, gm); b = 255 * Math.pow(clamp(b, 0, 255) / 255, gm); }
+    const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (sat !== 1) { r = Y + (r - Y) * sat; g = Y + (g - Y) * sat; b = Y + (b - Y) * sat; }
+    const e = c.effect, t = clamp(Y / 255, 0, 1);
+    if (e === 'grey') { r = g = b = Y; }
+    else if (e === 'sepia') { const R0 = r, G0 = g, B0 = b; r = 0.393 * R0 + 0.769 * G0 + 0.189 * B0; g = 0.349 * R0 + 0.686 * G0 + 0.168 * B0; b = 0.272 * R0 + 0.534 * G0 + 0.131 * B0; }
+    else if (e === 'invert') { r = 255 - r; g = 255 - g; b = 255 - b; }
+    else if (e === 'duotone') { r = c1[0] + (c2[0] - c1[0]) * t; g = c1[1] + (c2[1] - c1[1]) * t; b = c1[2] + (c2[2] - c1[2]) * t; }
+    else if (e === 'tint') { r = c1[0]; g = c1[1]; b = c1[2]; }   // one colour, shape from the alpha (icons, logos)
+    d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = f === d ? d[i + 3] : clamp(f[i + 3], 0, 255);
+  }
+  const out = canvasOf(w, h); out.getContext('2d').putImageData(id, 0, 0);
+  return out;
+};
+
+/* ---------- 4–5. crop and size ---------- */
+IE.applyCrop = (src, cr) => {
+  if (cr.join() === '0,0,1,1') return src;
+  const x = Math.round(cr[0] * src.width), y = Math.round(cr[1] * src.height), w = Math.max(1, Math.round((cr[2] - cr[0]) * src.width)), h = Math.max(1, Math.round((cr[3] - cr[1]) * src.height));
+  const out = canvasOf(w, h); out.getContext('2d').drawImage(src, x, y, w, h, 0, 0, w, h);
+  return out;
+};
+/* smooth downscaling: halve repeatedly, then the last step */
+IE.resize = (src, W) => {
+  if (!W || Math.abs(W - src.width) < 1) return src;
+  const H = Math.max(1, Math.round(src.height * W / src.width));
+  let cur = src;
+  while (cur.width / 2 >= W) { const c = canvasOf(cur.width / 2, cur.height / 2), x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, c.width, c.height); cur = c; }
+  const out = canvasOf(W, H), x = out.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, W, H);
+  return out;
+};
+
+/* the whole recipe: { canvas, hasAlpha } at a working scale (k = original px per px) */
+IE.render = (src, e, k = 1, stages = { alpha: true, colour: true }) => {
+  let c = stages.alpha ? IE.applyAlpha(src, e.ops, e.feather, k) : src;
+  c = IE.applyGeom(c, e);
+  if (stages.colour) c = IE.applyColour(c, e.col, k);
+  c = IE.applyCrop(c, e.crop);
+  return c;
+};
+/* the box around everything not transparent, as crop fractions (null if nothing to trim) */
+IE.contentBox = (canvas, pad = 0.01) => {
+  const w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;
+  const px = pad * Math.max(w, h);
+  return [Math.max(0, (x0 - px) / w), Math.max(0, (y0 - px) / h), Math.min(1, (x1 + 1 + px) / w), Math.min(1, (y1 + 1 + px) / h)].map(v => Math.round(v * 1e4) / 1e4);
+};
+IE.hasAlpha = canvas => { const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true; return false; };
+/* encode: JPEG has no transparency, so it goes on the chosen background */
+IE.encode = (canvas, e) => {
+  let c = canvas;
+  if (e.format === 'jpeg') { c = canvasOf(canvas.width, canvas.height); const x = c.getContext('2d'); x.fillStyle = e.jpegBg || '#ffffff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, 0, 0); }
+  const type = e.format === 'jpeg' ? 'image/jpeg' : e.format === 'webp' ? 'image/webp' : 'image/png';
+  const url = c.toDataURL(type, e.format === 'png' ? undefined : clamp(+e.quality || 0.9, 0.3, 1));
+  return { url, bytes: IE.bytesOf(url), type: url.slice(5, url.indexOf(';')) };
+};
+IE.bytesOf = url => { const i = url.indexOf(','); return Math.floor((url.length - i - 1) * 3 / 4) - (url.endsWith('==') ? 2 : url.endsWith('=') ? 1 : 0); };
+IE.fmtBytes = b => (b >= 1048576 ? (b / 1048576).toFixed(2) + ' MB' : b >= 1024 ? Math.round(b / 1024) + ' kB' : b + ' B');
+/* a soft black silhouette of a cut-out, for its drop shadow in the figure */
+IE.silhouette = canvas => {
+  const k = Math.max(1, Math.max(canvas.width, canvas.height) / 400), c = canvasOf(canvas.width / k, canvas.height / k), x = c.getContext('2d');
+  x.drawImage(canvas, 0, 0, c.width, c.height);
+  const id = x.getImageData(0, 0, c.width, c.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] = d[i + 1] = d[i + 2] = 0; }
+  const bl = boxBlurRGBA(d, c.width, c.height, Math.max(1, Math.round(c.width / 80)));
+  for (let i = 3; i < d.length; i += 4) d[i] = bl[i];
+  x.putImageData(id, 0, 0);
+  return c.toDataURL('image/png');
+};
+/* full-resolution result of a recipe on an original image href */
+IE.bake = async (orig, e, decode) => {
+  const img = await decode(orig), S = IE.source(img, 6000);
+  let c = IE.render(S.c, e, S.k);
+  if (e.outW) c = IE.resize(c, e.outW);
+  const enc = IE.encode(c, e), alpha = e.format !== 'jpeg' && IE.hasAlpha(c);
+  return Object.assign(enc, { w: c.width, h: c.height, alpha, silhouette: alpha ? IE.silhouette(c) : '' });
+};
+})();
+
+</script>
+<script>
 /* js/io/project.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — io/project.js
@@ -18134,6 +18380,7 @@ function control(param, get, set, ctx = {}) {
         RNBX.project.readImage(f).catch(e => { RNBX.toast(e.message, 'error'); throw e; }).then(({ href, aspect }) => {
           RNBX.history.checkpoint();
           Object.assign(o.props, { href, svg: '', vb: null, aspect, h: U.round(o.props.w / aspect, 2) });
+          ['orig', 'edit', 'fileInfo', 'silhouette'].forEach(k => { delete o.props[k]; }); o.props.hasAlpha = false;   // a new picture: earlier edits do not apply
           RNBX.changed(); Ins.build();
         });
       });
@@ -19663,6 +19910,239 @@ PO.open = obj => {
   });
   PO._d = { o, run, close: () => m.close(), last: () => PO._last, apply };
   return m;
+};
+})();
+
+</script>
+<script>
+/* js/ui/imgeditor.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/imgeditor.js
+   "Edit image…" for the Image part (photos, logos, artwork; not
+   for data images — the microscope panel keeps to the global,
+   documented adjustments journals allow). Background removal
+   (colour key, magic wand, eraser / restore brush, soft edges),
+   crop / rotate / mirror, colour controls and effects, output
+   size and file format with the file size. Before / after split
+   view, undo; the original is kept, so every edit can be
+   changed again or reverted.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, D = RNBX.dom, el = D.el, lib = RNBX.lib, IE = RNBX.imgEdit;
+const ED = RNBX.imageEditor = {};
+const decode = href => (RNBX.imgproc ? RNBX.imgproc.decode(href) : new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = href; }));
+
+ED.open = obj => {
+  const p = obj.props;
+  if (!p.href) { RNBX.toast('Choose an image first'); return null; }
+  const orig = p.orig || p.href;
+  let e = Object.assign(IE.DEFAULT(), JSON.parse(JSON.stringify(p.edit || {})));
+  e.col = Object.assign(IE.DEFAULT().col, e.col || {});
+  const hist = [], redoS = [], snap = () => { hist.push(JSON.stringify(e)); if (hist.length > 150) hist.shift(); redoS.length = 0; };
+  let img = null, src = null, k = 1, W0 = 0, H0 = 0, out = null, before = null, alphaKey = '', alphaC = null, tool = 'move', split = 0, brush = 22, hard = 0.6, tolW = 18, cur = null, view = { s: 1, ox: 0, oy: 0 };
+  const cv = el('canvas', { class: 'ms-canvas', tabindex: 0 }), host = el('div', { class: 'ms-view ie-view' }, cv), info = el('div', { class: 'hint' }), sizeInfo = el('div', { class: 'readout' });
+
+  /* ---------- rendering the preview ---------- */
+  const cropTool = () => tool === 'crop';
+  const renderNow = () => {
+    if (!src) return;
+    const ak = JSON.stringify([e.ops, e.feather]);
+    if (ak !== alphaKey) { alphaC = IE.applyAlpha(src, e.ops, e.feather, k); alphaKey = ak; }
+    const e2 = cropTool() ? Object.assign({}, e, { crop: [0, 0, 1, 1] }) : e;
+    let c = IE.applyGeom(alphaC, e2); c = IE.applyColour(c, e2.col, k); out = IE.applyCrop(c, e2.crop);
+    before = split > 0 ? IE.applyCrop(IE.applyGeom(src, e2), e2.crop) : null;
+    draw(); estimate();
+  };
+  let rt = 0; const render = (now) => { clearTimeout(rt); if (now) renderNow(); else rt = setTimeout(renderNow, 40); };
+  const fit = () => { const W = cv.clientWidth, H = cv.clientHeight; view.s = Math.min(W / out.width, H / out.height) * 0.94; view.ox = (W - out.width * view.s) / 2; view.oy = (H - out.height * view.s) / 2; };
+  let fitted = false, lastSize = '';
+  function draw() {
+    if (!out) return;
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight, ctx = cv.getContext('2d');
+    const sz = out.width + 'x' + out.height + tool; if (!fitted || sz !== lastSize) { fit(); fitted = true; lastSize = sz; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#e9ebef'; ctx.fillRect(0, 0, W, H);
+    // a checkerboard shows transparency
+    const { s, ox, oy } = view, iw = out.width * s, ih = out.height * s;
+    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, iw, ih); ctx.clip();
+    for (let y = 0; y < ih; y += 10) for (let x = 0; x < iw; x += 10) { ctx.fillStyle = ((x + y) / 10) % 2 ? '#ffffff' : '#d5d9e0'; ctx.fillRect(ox + x, oy + y, 10, 10); }
+    ctx.restore();
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(out, ox, oy, iw, ih);
+    if (before && split > 0) { const xs = ox + iw * split; ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, xs - ox, ih); ctx.clip(); ctx.fillStyle = '#fff'; ctx.fillRect(ox, oy, iw, ih); ctx.drawImage(before, ox, oy, iw, ih); ctx.restore(); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xs, oy); ctx.lineTo(xs, oy + ih); ctx.stroke(); ctx.font = 'bold 11px Arial'; ctx.fillStyle = '#ffd23f'; ctx.fillText('before', xs - 46, oy + 14); ctx.fillText('after', xs + 6, oy + 14); }
+    if (cropTool()) {
+      const c = cur && cur.crop ? cur.crop : e.crop, X0 = ox + c[0] * iw, Y0 = oy + c[1] * ih, X1 = ox + c[2] * iw, Y1 = oy + c[3] * ih;
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(ox, oy, iw, Y0 - oy); ctx.fillRect(ox, Y1, iw, oy + ih - Y1); ctx.fillRect(ox, Y0, X0 - ox, Y1 - Y0); ctx.fillRect(X1, Y0, ox + iw - X1, Y1 - Y0);
+      ctx.strokeStyle = '#ffd23f'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.6; ctx.strokeRect(X0, Y0, X1 - X0, Y1 - Y0); ctx.setLineDash([]);
+    }
+    if (cur && cur.brush) { ctx.strokeStyle = cur.brush.mode === 'restore' ? '#1f9d3a' : '#d62728'; ctx.lineWidth = 1.5; const q = cur.screen; if (q) { ctx.beginPath(); ctx.arc(q[0], q[1], brush, 0, 2 * Math.PI); ctx.stroke(); } }
+  }
+
+  /* ---------- pointer: screen → original pixels ---------- */
+  const scr = ev => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+  const toWork = q => [(q[0] - view.ox) / view.s, (q[1] - view.oy) / view.s];   // pixels of the displayed (cropped) result
+  const toOrig = q => {
+    const w = toWork(q), [GW, GH] = IE.geomSize(src.width, src.height, e), c = cropTool() ? [0, 0, 1, 1] : e.crop;
+    return IE.toOriginal(e, W0, H0, [(w[0] + c[0] * GW) * k, (w[1] + c[1] * GH) * k]);
+  };
+  const pixelAt = q => { const o = toOrig(q), x = Math.round(o[0] / k), y = Math.round(o[1] / k); if (x < 0 || y < 0 || x >= src.width || y >= src.height) return null; const d = src.getContext('2d').getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; };
+  cv.addEventListener('contextmenu', ev => ev.preventDefault());
+  cv.addEventListener('pointerdown', ev => {
+    cv.setPointerCapture(ev.pointerId); const q = scr(ev);
+    if (tool === 'move' || ev.button === 1 || ev.button === 2) { cur = { pan: { x: q[0], y: q[1], ox: view.ox, oy: view.oy } }; return; }
+    if (tool === 'wand') { snap(); const o = toOrig(q); e.ops.push({ op: 'wand', x: U.round(o[0], 1), y: U.round(o[1], 1), tol: tolW }); render(true); return; }
+    if (tool === 'pick') { const c = pixelAt(q); if (c) { snap(); e.ops.push({ op: 'key', color: c, tol: tolW, soft: 6 }); render(true); setTool('move'); } return; }
+    if (tool === 'erase' || tool === 'restore') { snap(); const o = toOrig(q); cur = { brush: { op: 'brush', mode: tool === 'restore' ? 'restore' : 'erase', r: U.round(brush / view.s * k, 2), hard, pts: [[U.round(o[0], 1), U.round(o[1], 1)]] }, screen: q }; e.ops.push(cur.brush); render(true); return; }
+    if (tool === 'crop') { const w = toWork(q); cur = { crop: null, a: [U.clamp(w[0] / out.width, 0, 1), U.clamp(w[1] / out.height, 0, 1)] }; }
+  });
+  cv.addEventListener('pointermove', ev => {
+    const q = scr(ev);
+    if (cur && cur.pan) { view.ox = cur.pan.ox + q[0] - cur.pan.x; view.oy = cur.pan.oy + q[1] - cur.pan.y; draw(); return; }
+    if (cur && cur.brush) { const o = toOrig(q); cur.brush.pts.push([U.round(o[0], 1), U.round(o[1], 1)]); cur.screen = q; render(); return; }
+    if (cur && cur.a) { const w = toWork(q), b = [U.clamp(w[0] / out.width, 0, 1), U.clamp(w[1] / out.height, 0, 1)]; let c = [Math.min(cur.a[0], b[0]), Math.min(cur.a[1], b[1]), Math.max(cur.a[0], b[0]), Math.max(cur.a[1], b[1])];
+      const ar = ratioOf(); if (ar) { const wpx = (c[2] - c[0]) * out.width, hpx = wpx / ar; c[3] = Math.min(1, c[1] + hpx / out.height); if (b[1] < cur.a[1]) { c[1] = Math.max(0, cur.a[1] - hpx / out.height); c[3] = cur.a[1]; } }
+      cur.crop = c.map(v => U.round(v, 4)); draw(); return; }
+    if (tool === 'erase' || tool === 'restore') { cur = cur && cur.brush ? cur : { screen: q, brush: { mode: tool } }; cur.screen = q; draw(); if (!ev.buttons) cur = null; }
+  });
+  cv.addEventListener('pointerup', () => {
+    if (cur && cur.crop) { if (cur.crop[2] - cur.crop[0] > 0.01 && cur.crop[3] - cur.crop[1] > 0.01) { snap(); e.crop = cur.crop; } }
+    cur = null; render(true);
+  });
+  cv.addEventListener('wheel', ev => { ev.preventDefault(); const q = scr(ev), f = Math.exp(-ev.deltaY * 0.0015), ns = U.clamp(view.s * f, 0.02, 40); view.ox = q[0] - (q[0] - view.ox) * ns / view.s; view.oy = q[1] - (q[1] - view.oy) * ns / view.s; view.s = ns; draw(); }, { passive: false });
+
+  /* ---------- controls ---------- */
+  const sec = (title, ...kids) => el('div', { class: 'ie-sec' }, el('h4', { text: title }), ...kids);
+  const row = (...kids) => el('div', { class: 'row ie-row' }, ...kids);
+  const btn = (text, fn, o = {}) => el('button', Object.assign({ class: 'btn small' + (o.primary ? ' primary' : '') + (o.ghost ? ' ghost' : ''), type: 'button', text, onclick: fn }, o.title ? { title: o.title } : {}));
+  const slider = (label, get, set, min, max, step, fmtv) => {
+    const val = el('span', { class: 'ie-val' }), r = el('input', { type: 'range', min, max, step, value: get() });
+    const show = () => { val.textContent = fmtv ? fmtv(+r.value) : r.value; };
+    r.addEventListener('pointerdown', () => snap()); r.addEventListener('keydown', () => snap());
+    r.oninput = () => { set(+r.value); show(); render(); }; show();
+    sliders.push(() => { r.value = get(); show(); });
+    return el('label', { class: 'ie-slider' }, el('span', { text: label }), r, val);
+  };
+  const sliders = [];
+  const toolBtns = {};
+  const setTool = t => { tool = t; Object.entries(toolBtns).forEach(([k2, b]) => b.classList.toggle('primary', k2 === t)); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; info.textContent = { move: 'Drag to move around; wheel to zoom.', wand: 'Click an area to make it transparent (connected pixels of similar colour).', pick: 'Click the background colour to remove it everywhere.', erase: 'Paint over what should become transparent.', restore: 'Paint to bring back what was removed.', crop: 'Drag a rectangle to keep.' }[t] + ' Ctrl+Z: undo.'; fitted = false; render(true); };
+  const T = (id, text) => (toolBtns[id] = btn(text, () => setTool(id)));
+
+  // background
+  const autoWhite = () => { if (!src) return; const c = src.getContext('2d'), w = src.width, h = src.height, px = [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]].map(([x, y]) => c.getImageData(x, y, 1, 1).data), col = [0, 1, 2].map(i => Math.round(px.reduce((a, d) => a + d[i], 0) / 4)); snap(); e.ops.push({ op: 'key', color: col, tol: tolW, soft: 6 }); render(true); RNBX.toast('Background colour from the corners removed (' + col.join(', ') + ').'); };
+  const bgSec = sec('Background',
+    row(btn('Remove the background colour (auto)', autoWhite, { primary: true, title: 'Takes the colour of the corners and makes it transparent everywhere' })),
+    row(T('pick', 'Pick colour'), T('wand', 'Magic wand'), T('erase', 'Eraser'), T('restore', 'Restore')),
+    slider('Tolerance', () => tolW, v => { tolW = v; }, 1, 60, 1),
+    slider('Brush size', () => brush, v => { brush = v; }, 3, 120, 1, v => v + ' px'),
+    slider('Brush hardness', () => hard * 100, v => { hard = v / 100; }, 0, 95, 5, v => v + ' %'),
+    slider('Soften edges', () => e.feather, v => { e.feather = v; }, 0, 8, 0.5, v => v + ' px'),
+    row(btn('Undo last background step', () => { if (e.ops.length) { snap(); e.ops.pop(); render(true); } }, { ghost: true }), btn('Reset background', () => { snap(); e.ops = []; e.feather = 0; render(true); }, { ghost: true })));
+  // crop and rotate
+  const ratioSel = el('select', {}, [['free', 'Free'], ['1', '1 : 1'], ['1.3333', '4 : 3'], ['1.5', '3 : 2'], ['1.7778', '16 : 9'], ['0.75', '3 : 4']].map(q => el('option', { value: q[0], text: q[1] })));
+  const ratioOf = () => (ratioSel.value === 'free' ? 0 : +ratioSel.value);
+  const geoSec = sec('Crop, rotate, mirror',
+    row(T('crop', 'Crop'), ratioSel, btn('Trim empty edges', () => { if (!alphaC) return; const full = IE.applyColour(IE.applyGeom(alphaC, e), e.col, k), b = IE.contentBox(full); if (!b) return; snap(); e.crop = b; fitted = false; render(true); }, { title: 'Crop to the picture after its background was removed' }), btn('No crop', () => { snap(); e.crop = [0, 0, 1, 1]; render(true); }, { ghost: true })),
+    row(btn('⟲ 90°', () => { snap(); e.rot90 = (e.rot90 + 3) % 4; e.crop = [0, 0, 1, 1]; fitted = false; render(true); }), btn('⟳ 90°', () => { snap(); e.rot90 = (e.rot90 + 1) % 4; e.crop = [0, 0, 1, 1]; fitted = false; render(true); }),
+      btn('Mirror ↔', () => { snap(); e.flipH = !e.flipH; render(true); }), btn('Mirror ↕', () => { snap(); e.flipV = !e.flipV; render(true); })),
+    slider('Straighten', () => e.rot, v => { e.rot = v; fitted = false; }, -45, 45, 0.1, v => v.toFixed(1) + '°'));
+  // colour
+  const c = () => e.col;
+  const effSel = el('select', { onchange: () => { snap(); c().effect = effSel.value; c1.parentNode.style.display = /duotone|tint/.test(effSel.value) ? '' : 'none'; c2.style.display = effSel.value === 'duotone' ? '' : 'none'; render(true); } },
+    [['none', 'No effect'], ['grey', 'Greyscale'], ['sepia', 'Sepia'], ['invert', 'Invert'], ['duotone', 'Duotone (two colours)'], ['tint', 'One colour (icons, logos)']].map(q => el('option', { value: q[0], text: q[1] })));
+  effSel.value = c().effect;
+  const c1 = el('input', { type: 'color', value: c().c1, oninput: () => { c().c1 = c1.value; render(); } }), c2 = el('input', { type: 'color', value: c().c2, oninput: () => { c().c2 = c2.value; render(); } });
+  const colRow = row(el('span', { class: 'hint', style: { margin: 0 }, text: 'colours' }), c1, c2);
+  colRow.style.display = /duotone|tint/.test(c().effect) ? '' : 'none'; c2.style.display = c().effect === 'duotone' ? '' : 'none';
+  const colSec = sec('Colour',
+    row(btn('Auto levels', () => { if (!out) return; snap(); const l = IE.autoLevels(IE.applyGeom(alphaC || src, e)); c().lo = l.lo; c().hi = l.hi; render(true); sliders.forEach(f => f()); }, { title: 'Stretch the darkest and brightest 0.5 % to black and white' }),
+      btn('Reset colour', () => { snap(); e.col = IE.DEFAULT().col; effSel.value = 'none'; colRow.style.display = 'none'; sliders.forEach(f => f()); render(true); }, { ghost: true })),
+    slider('Exposure', () => c().exposure, v => { c().exposure = v; }, -2, 2, 0.05, v => (v > 0 ? '+' : '') + v.toFixed(2) + ' EV'),
+    slider('Brightness', () => c().brightness, v => { c().brightness = v; }, -100, 100, 1),
+    slider('Contrast', () => c().contrast, v => { c().contrast = v; }, -100, 100, 1),
+    slider('Gamma', () => c().gamma, v => { c().gamma = v; }, 0.3, 3, 0.01, v => v.toFixed(2)),
+    slider('Saturation', () => c().saturation, v => { c().saturation = v; }, -100, 100, 1),
+    slider('Temperature', () => c().temp, v => { c().temp = v; }, -100, 100, 1, v => (v < 0 ? 'cooler ' : v > 0 ? 'warmer ' : '') + v),
+    slider('Tint', () => c().tint, v => { c().tint = v; }, -100, 100, 1, v => (v < 0 ? 'green ' : v > 0 ? 'magenta ' : '') + v),
+    slider('Sharpen', () => c().sharpen, v => { c().sharpen = v; }, 0, 100, 1),
+    slider('Blur', () => c().blur, v => { c().blur = v; }, 0, 20, 0.5, v => v + ' px'),
+    row(el('span', { class: 'hint', style: { margin: 0 }, text: 'Effect' }), effSel), colRow);
+  // size and file
+  const fmtSel = el('select', { onchange: () => { snap(); e.format = fmtSel.value; qRow.style.display = e.format === 'png' ? 'none' : ''; bgRow.style.display = e.format === 'jpeg' ? '' : 'none'; estimate(true); } }, [['png', 'PNG (lossless, transparency)'], ['jpeg', 'JPEG (photos, smallest)'], ['webp', 'WebP (small, transparency)']].map(q => el('option', { value: q[0], text: q[1] })));
+  fmtSel.value = e.format;
+  const qIn = el('input', { type: 'range', min: 0.3, max: 1, step: 0.01, value: e.quality, oninput: () => { e.quality = +qIn.value; qVal.textContent = Math.round(e.quality * 100) + ' %'; estimate(); } }), qVal = el('span', { class: 'ie-val', text: Math.round(e.quality * 100) + ' %' });
+  const qRow = el('label', { class: 'ie-slider' }, el('span', { text: 'Quality' }), qIn, qVal); qRow.style.display = e.format === 'png' ? 'none' : '';
+  const jb = el('input', { type: 'color', value: e.jpegBg, oninput: () => { e.jpegBg = jb.value; estimate(); } }), bgRow = row(el('span', { class: 'hint', style: { margin: 0 }, text: 'JPEG has no transparency; background' }), jb); bgRow.style.display = e.format === 'jpeg' ? '' : 'none';
+  const wIn = el('input', { type: 'number', min: 16, max: 8000, step: 1, style: { width: '86px' }, placeholder: 'original', value: e.outW || '', onchange: () => { snap(); e.outW = Math.max(0, Math.round(+wIn.value || 0)); estimate(true); } });
+  const dpiBtn = dpi => btn(dpi + ' dpi', () => { snap(); e.outW = Math.max(16, Math.round(p.w / 25.4 * dpi)); wIn.value = e.outW; estimate(true); }, { title: `Pixels for ${dpi} dpi at the printed width (${U.fmt(p.w, 1)} mm)` });
+  const fileSec = sec('Size and file',
+    row(el('span', { class: 'hint', style: { margin: 0 }, text: 'Width (px)' }), wIn, dpiBtn(300), dpiBtn(600), btn('Original', () => { snap(); e.outW = 0; wIn.value = ''; estimate(true); }, { ghost: true })),
+    row(el('span', { class: 'hint', style: { margin: 0 }, text: 'Format' }), fmtSel), qRow, bgRow, sizeInfo,
+    row(btn('Download the edited image', async () => { const r = await IE.bake(orig, e, decode); const a = document.createElement('a'); a.href = r.url; a.download = U.slug(S.doc.meta.title || 'image') + '_edited.' + (e.format === 'jpeg' ? 'jpg' : e.format); a.click(); })));
+  // before / after, undo
+  const splitIn = el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0, oninput: () => { split = +splitIn.value; render(true); } });
+  const viewSec = el('div', { class: 'row ie-row ie-top' }, T('move', 'Move / zoom'), el('label', { class: 'ie-slider', style: { flex: '1 1 160px' } }, el('span', { text: 'Before | after' }), splitIn),
+    btn('↶', undo, { title: 'Undo (Ctrl+Z)' }), btn('↷', redo, { title: 'Redo (Ctrl+Y)' }), btn('Fit', () => { fitted = false; draw(); }, { ghost: true }));
+  function undo() { if (!hist.length) return; redoS.push(JSON.stringify(e)); e = JSON.parse(hist.pop()); syncAll(); render(true); }
+  function redo() { if (!redoS.length) return; hist.push(JSON.stringify(e)); e = JSON.parse(redoS.pop()); syncAll(); render(true); }
+  const syncAll = () => { sliders.forEach(f => f()); effSel.value = e.col.effect; fmtSel.value = e.format; wIn.value = e.outW || ''; qIn.value = e.quality; qRow.style.display = e.format === 'png' ? 'none' : ''; bgRow.style.display = e.format === 'jpeg' ? '' : 'none'; fitted = false; };
+
+  /* the final pixel size and file size (at full resolution, after a short pause) */
+  let et = 0, estTok = 0;
+  function estimate(now) {
+    clearTimeout(et);
+    et = setTimeout(async () => {
+      const tok = ++estTok; sizeInfo.textContent = 'Working out the file size…';
+      try {
+        const r = await IE.bake(orig, e, decode); if (tok !== estTok) return;
+        const was = IE.bytesOf(orig), dpi = r.w / (p.w / 25.4);
+        sizeInfo.innerHTML = `<b>${r.w} × ${r.h} px</b> · ${U.esc(r.type.replace('image/', '').toUpperCase())} · <b>${IE.fmtBytes(r.bytes)}</b> (original ${IE.fmtBytes(was)}) · ${Math.round(dpi)} dpi at ${U.fmt(p.w, 1)} mm wide${r.alpha ? ' · transparent background' : ''}` + (dpi < 300 ? '<br><span style="color:var(--danger)">Below 300 dpi at its printed size: journals usually ask for 300 dpi (photos) or more.</span>' : '');
+      } catch (err) { sizeInfo.textContent = 'Could not work out the size: ' + err.message; }
+    }, now ? 30 : 500);
+  }
+
+  /* apply: the edited image goes into the figure, the original is kept */
+  const apply = async () => {
+    const r = await IE.bake(orig, e, decode);
+    RNBX.history.checkpoint();
+    if (IE.isIdentity(e) && e.format === 'png' && !p.orig) { m.close(); return; }
+    p.orig = orig; p.edit = JSON.parse(JSON.stringify(e)); p.href = r.url; p.aspect = r.w / r.h; p.h = U.round(p.w / p.aspect, 2);
+    p.hasAlpha = r.alpha; p.silhouette = r.silhouette; p.fileInfo = { w: r.w, h: r.h, bytes: r.bytes, type: r.type };
+    RNBX.changed(); if (RNBX.inspector) RNBX.inspector.build();
+    RNBX.toast(`Image edited: ${r.w} × ${r.h} px, ${IE.fmtBytes(r.bytes)}. The original is kept (Revert to original in the inspector); Ctrl+Z undoes.`);
+    m.close();
+  };
+  const side = el('div', { class: 'ms-side ie-side' }, bgSec, geoSec, colSec, fileSec);
+  const onKey = ev => {
+    if (!document.body.contains(cv)) return;
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement.type !== 'range') return;
+    const k2 = ev.key.toLowerCase();
+    if ((ev.ctrlKey || ev.metaKey) && k2 === 'z') { ev.preventDefault(); ev.stopPropagation(); ev.shiftKey ? redo() : undo(); }
+    else if ((ev.ctrlKey || ev.metaKey) && k2 === 'y') { ev.preventDefault(); ev.stopPropagation(); redo(); }
+  };
+  window.addEventListener('keydown', onKey, true);
+  const m = D.modal({ title: 'Edit image', sub: 'Photos, logos and artwork — for microscope data use the image panel, which keeps to the adjustments journals allow', wide: true,
+    body: el('div', { class: 'ms-wrap ie-wrap' }, el('div', {}, viewSec, host, info), side),
+    foot: [btn('Reset everything', () => { snap(); e = IE.DEFAULT(); syncAll(); render(true); }, { ghost: true }), el('span', { style: { flex: '1 1 auto' } }), btn('Cancel', () => m.close(), { ghost: true }), btn('Apply', apply, { primary: true })],
+    onClose: () => window.removeEventListener('keydown', onKey, true) });
+  m.root.classList.add('ms-modal');
+  setTool('move');
+  decode(orig).then(im => {
+    img = im; const S0 = IE.source(im, 1400); src = S0.c; k = S0.k; W0 = S0.W0; H0 = S0.H0;
+    const r = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.max(320, Math.round(r.width)) * dpr; cv.height = Math.max(260, Math.round(r.height)) * dpr;
+    render(true); estimate(true);
+  }).catch(err => RNBX.toast('Could not open the image: ' + err.message, 'error'));
+  ED._t = { get e() { return e; }, set: v => { e = Object.assign(IE.DEFAULT(), v); syncAll(); render(true); }, apply, setTool, toOrig, scr: q => q, view: () => view, close: () => m.close(), out: () => out };
+  return m;
+};
+
+/* inspector buttons of the Image part */
+lib.get('image').tools = obj => {
+  const p = obj.props; if (!p.href) return null;
+  const fi = p.fileInfo, row = el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '10px' } },
+    el('button', { class: 'btn small primary', type: 'button', style: { flex: '0 0 auto' }, text: 'Edit image…', title: 'Transparent background, crop, rotate, colour, size and file format', onclick: () => ED.open(obj) }),
+    p.orig ? el('button', { class: 'btn small ghost', type: 'button', style: { flex: '0 0 auto' }, text: 'Revert to original', onclick: () => { RNBX.history.checkpoint(); RNBX.imgEdit && decode(p.orig).then(im => { p.href = p.orig; p.aspect = (im.naturalWidth || 1) / (im.naturalHeight || 1); p.h = U.round(p.w / p.aspect, 2); delete p.edit; delete p.orig; delete p.fileInfo; p.hasAlpha = false; p.silhouette = ''; RNBX.changed(); RNBX.inspector.build(); }); } }) : null);
+  return el('div', {}, fi ? el('div', { class: 'readout', style: { marginBottom: '8px' }, text: `${fi.w} × ${fi.h} px · ${fi.type.replace('image/', '').toUpperCase()} · ${IE.fmtBytes(fi.bytes)} · ${Math.round(fi.w / (p.w / 25.4))} dpi at this size${p.hasAlpha ? ' · transparent background' : ''}` }) : null, row);
 };
 })();
 
