@@ -543,6 +543,27 @@ RNBX.trace = function trace(doc) {
         if (T + Rr + Tdrop < 0.999) { const lost = Object.assign({}, rayAt, { P: ray.P * (1 - T - Rr - Tdrop) }); if (lost.P > 0) record(o, lost); }
         break;
       }
+      case 'film': {
+        // a multilayer stack (Layer Studio / 'layers' part): reflected and transmitted with the
+        // stack's thin-film rp, rs and Tp, Ts at the beam's wavelength and angle; the face the beam
+        // leaves through after crossing the stack lets it pass
+        const def = RNBX.lib.get(s.obj.type), TF = RNBX.thinfilm;
+        if (vert || !TF || !def || !def.stack) { out.push(child(ray, Object.assign({}, base))); break; }
+        const up = V.norm(U.dirToWorld(s.obj, [0, -1])), down = V.dot(d, up) < 0;
+        if ((s.face === 'top') !== down) { out.push(child(ray, Object.assign({}, base))); break; }
+        const st = def.stack(Object.assign({}, s.obj.props, { side: down ? 'top' : 'bottom' }));
+        if (!st) { out.push(child(ray, Object.assign({}, base))); break; }
+        const th = U.deg(Math.acos(Math.min(1, Math.abs(V.dot(d, up))))), solve = TF.solveThick || TF.solve;
+        const sP = solve(st, ray.lambda, th, 'p'), sS = solve(st, ray.lambda, th, 's');
+        let Er = null, Pr, Et = null, Pt;
+        if (ray.E) {
+          Er = [C.mul(ray.E[0], { re: sP.r[0], im: sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; Pr = O.powerJ(Er);
+          Et = [C.scale(ray.E[0], Math.sqrt(sP.T)), C.scale(ray.E[1], Math.sqrt(sS.T))]; Pt = O.powerJ(Et);
+        } else { Pr = ray.P * (sP.R + sS.R) / 2; Pt = ray.P * (sP.T + sS.T) / 2; }
+        if (Pr > ray.P0 * 1e-6) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, up), P: Pr, E: Er })));
+        if (Pt > ray.P0 * 1e-6) out.push(child(ray, Object.assign({}, base, { P: Pt, E: Et })));
+        break;
+      }
       case 'pass':
         out.push(child(ray, Object.assign({}, base)));
         break;

@@ -82,7 +82,7 @@ lib.register({
   keywords: 'multilayer stack thin film metasurface grating corrugated substrate device cross section mim absorber layers pdms silver tio2',
   defaults: { W: 46, D: 24, ang: 32, depthK: 0.55, profile: 'flat', period: 8, duty: 0.5, amp: 1.6, layers: LAYER_PRESETS.film, labels: 'front', legend: false,
     showPeriod: true, periodLabel: 'Λ', dutyLabel: 'w', edge: true, sheen: true,
-    ambient: 'air', ambientN: 1.33, side: 'top', bottomMode: 'semi', calc: { scan: 'wl', lmin: 400, lmax: 1500, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } },
+    ambient: 'air', ambientN: 1.33, side: 'top', bottomMode: 'semi', traced: true, calc: { scan: 'wl', lmin: 400, lmax: 1500, angle: 0, pol: 'avg', show: 'RTA', points: 301, unit: 'nm', amin: 0, amax: 89, lambda: 633 } },
   params: [
     { key: 'layers', label: 'Layers (bottom → top)', type: 'layers' },
     { key: 'profile', label: 'Surface profile', type: 'select', options: [['flat', 'Flat'], ['sine', 'Sinusoidal grating'], ['trapezoid', 'Trapezoid grating'], ['square', 'Square grating']] },
@@ -103,8 +103,17 @@ lib.register({
     { key: 'ambientN', label: 'Its refractive index', type: 'number', min: 1, max: 4, step: 0.001, animatable: true, show: p => p.ambient === 'custom' },
     { key: 'side', label: 'Light arrives from', type: 'select', options: [['top', 'Above (through the top layer)'], ['bottom', 'Below (through the substrate)']] },
     { key: 'bottomMode', label: 'Bottom layer', type: 'select', options: [['semi', 'Thick substrate (semi-infinite)'], ['film', 'Thin film, air below']] },
+    { key: 'traced', label: 'Beams interact (reflect and transmit with this R and T)', type: 'bool' },
   ],
   stack: layerStack,
+  /* traced beams: the top and bottom faces carry the stack's thin-film response (light from
+     above or below), the side edges stop the beam */
+  optics(p) {
+    if (p.traced === false) return [];
+    const g = this.geom(p), top = Math.max(...g.bounds[g.bounds.length - 1]), x0 = -p.W / 2, x1 = p.W / 2;
+    return [{ kind: 'film', face: 'top', a: [x0, -top], b: [x1, -top] }, { kind: 'film', face: 'bottom', a: [x0, 0], b: [x1, 0] },
+      { kind: 'absorb', a: [x0, 0], b: [x0, -top] }, { kind: 'absorb', a: [x1, 0], b: [x1, -top] }];
+  },
   calcNote: p => p.profile !== 'flat' ? 'The grating profile is not part of this calculation: it treats the layers as flat films. Grating and gap-plasmon resonances need RCWA or FDTD; import such spectra as data.' : '',
   variants: [
     { name: 'MIM grating stack', props: { layers: LAYER_PRESETS.mim, profile: 'square', period: 8, duty: 0.5, amp: 1.6, legend: true } },
