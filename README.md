@@ -63,6 +63,7 @@ The tracer is a real 2D optical model, not just a line router:
 
 ## Figure-making extras
 
+- **Project planning** for proposals, reports and theses: a **Gantt chart** written as plain text (`Task | 0-6`, phases, milestones, progress, arrows, a review-date line), or scheduled for you from durations and predecessors; a **PERT / CPM network** that lays itself out and works out earliest / latest times, slack and the **critical path**; and **task cards** (task, duration, title, partners) to arrange by hand with connectors that stay attached. Three templates under *Project planning*.
 - **Multi-panel figures**: add a vector data plot as panel b. Import CSV/TXT, paste data, or press **→ RNBeamX** in RNSpectraX to send a processed spectrum across.
 - **Automatic label placement** (Shift+L), with leader lines, in 2D and 3D.
 - **Custom components**: import your own SVG drawing (stays vector) or photo, give it an optical behaviour, and keep it in *My components*.

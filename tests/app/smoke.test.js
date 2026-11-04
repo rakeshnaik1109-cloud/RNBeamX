@@ -29,7 +29,7 @@ module.exports = async ({ base, getBrowser, H }) => {
     } catch (e) { return { id: t.id, bad: e.message }; }
   }));
   tpl.forEach(t => H.check(`template "${t.id}" builds and renders in all styles`, !t.bad, t.bad || `${t.segs} segments, ${t.hits} detectors hit`));
-  const optical = tpl.filter(t => !['absorber', 'nanoprep', 'specml', 'evaporator', 'results', 'biosensor'].includes(t.id));   // illustrations without light
+  const optical = tpl.filter(t => !['absorber', 'nanoprep', 'specml', 'evaporator', 'results', 'biosensor', 'gantt', 'pertnet', 'workplan'].includes(t.id));   // illustrations without light
   H.check('every optical template traces beams to at least one detector', optical.every(t => t.hits > 0), optical.filter(t => !t.hits).map(t => t.id).join(','));
   // building a setup by clicking library tiles
   await page.evaluate(() => RNBX.setDocument(RNBX.newDocument('nature-2')));

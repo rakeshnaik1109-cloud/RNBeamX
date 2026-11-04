@@ -18,6 +18,7 @@ an error if any fails. Screenshots and exported files land in `tests/output/`
 | `physics/thinfilm` | Transfer-matrix method against Fresnel, Brewster, antireflection, Bragg-mirror closed forms, energy conservation, reciprocity, thick metals, and published SPR angles and sensitivity |
 | `physics/rcwa` | Grating solver: identical to the transfer-matrix method for flat layers, R + T = 1 for lossless gratings, effective-medium limit (TE and TM), symmetry, surface-plasmon absorption at the grating-equation wavelength |
 | `app/smoke` | The app loads; every library part creates, renders in all styles and has a thumbnail; every template builds, traces and renders; a setup can be built by clicking tiles |
+| `app/planning` | Gantt chart, PERT / CPM network and task cards draw in every style; critical-path times and slack on a textbook network; loops detected; task-list parsing; cards work with connectors; planning templates build |
 | `app/optics` | Beam tracing: Brewster window, Gaussian focus, Michelson phase, Fabry–Pérot, periscope, live fringes, microring, the SPR dip in the traced beam |
 | `app/features` | Reset and undo, groups, My components, stacking blocks, calculated panels, keyframe interpolation, Tidy, Fit to width, equal-spacing guides, old files, SVG sanitising, data panels |
 | `app/export` | SVG, PDF, raster, PowerPoint package, TikZ, share links (round trip and opening one), video formats |

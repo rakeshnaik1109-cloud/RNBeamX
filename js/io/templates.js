@@ -477,6 +477,7 @@ T.GROUPS = [
   ['Lab & chemistry', ['nanoprep', 'lockinbench', 'evaporator']],
   ['Results figures', ['results']],
   ['Diagrams & AI', ['specml']],
+  ['Project planning', ['gantt', 'pertnet', 'workplan']],
 ];
 /* ---------- fibre Raman probe (inside view, working optics) ---------- */
 T.list.push({
@@ -528,6 +529,49 @@ T.list.push({
     const dec = box(150, 74, 'Accuracy\n> 95 %?', { shape: 'decision', fill: '#fdebc8', w: 28, h: 15 }), out = box(92, 80, 'Report', { shape: 'terminal', fill: '#d8f0dc', w: 22, h: 9 });
     const fl = (p, q, o) => link('flow', p, q, o);
     d.objects.push(a, b, c, cnn, net, dec, out, fl(a, b), fl(b, c), fl(c, cnn, { route: 'hv' }), fl(cnn, net), fl(net, dec), fl(dec, out, { label: 'yes' }), fl(dec, cnn, { label: 'no', route: 'curve', bend: 0.45, dashed: true }));
+    return d;
+  },
+});
+
+/* ---------- project planning: Gantt chart ---------- */
+T.list.push({
+  id: 'gantt', name: 'Project timeline (Gantt chart)', desc: 'Planning example: phases, tasks, progress, milestones, a dependency and a review-date marker on a month axis — edit the task list as plain text (generic)',
+  build() {
+    const d = base('nature-2', 183, 122, 'Project timeline');
+    d.objects.push(mk('gantt', 90, 60, 0, { colorBy: 'section', durLabels: 'inside', deps: '4>5', now: '14', nowLabel: 'Review', labelW: 50, chartW: 112 }));
+    return d;
+  },
+});
+
+/* ---------- project planning: PERT / CPM network ---------- */
+T.list.push({
+  id: 'pertnet', name: 'Project network with critical path (PERT / CPM)', desc: 'Planning example: tasks with durations and predecessors laid out automatically; earliest / latest times, slack and the critical path are calculated and highlighted (generic)',
+  build() {
+    const d = base('nature-2', 250, 92, 'Project network');
+    d.objects.push(mk('pert', 125, 44, 0, {}));
+    return d;
+  },
+});
+
+/* ---------- project planning: work plan from task cards ---------- */
+T.list.push({
+  id: 'workplan', name: 'Work plan with task cards and partners', desc: 'Planning example: task cards (task, duration, title, partner) placed by hand and joined with connectors that stay attached — the layout of a proposal work plan (generic)',
+  build() {
+    const d = base('nature-2', 250, 120, 'Work plan');
+    const c = (x, y, id, dur, title, who, o) => mk('pertcard', x, y, 0, Object.assign({ id, dur, title, who, w: 40, h: 21, size: 6.5 }, o || {}));
+    const start = mk('fcbox', 16, 60, 0, { shape: 'terminal', text: 'Start', fill: '#d8f0dc', w: 20, h: 9, bold: true });
+    const t1 = c(52, 60, 'Task 1', '4 months', 'Planning and\nprocurement', 'Team 1, Team 2');
+    const t2 = c(104, 20, 'Task 2', '6 months', 'Design and simulation', 'Team 1');
+    const t3 = c(104, 60, 'Task 3', '18 months', 'Sample collection', 'Team 2');
+    const t4 = c(104, 100, 'Task 4', '12 months', 'Software and data pipeline', 'Team 1');
+    const t5 = c(156, 40, 'Task 5', '8 months', 'Measurements', 'Team 1, Team 2', { crit: true });
+    const t6 = c(156, 92, 'Task 6', '3 months', 'Review and\nrecalibration', 'Team 1, Team 2', { bodyFill: '#fbe3d0' });
+    const t7 = c(206, 60, 'Task 7', '4 months', 'Validation and report', 'Team 1, Team 2');
+    const fin = mk('fcbox', 238, 60, 0, { shape: 'terminal', text: 'Finish', fill: '#f8d6d6', w: 20, h: 9, bold: true });
+    const fl = (p, q, o) => link('flow', p, q, o);
+    d.objects.push(start, t1, t2, t3, t4, t5, t6, t7, fin,
+      fl(start, t1), fl(t1, t2, { route: 'hvh' }), fl(t1, t3), fl(t1, t4, { route: 'hvh' }), fl(t2, t5, { route: 'hvh' }), fl(t3, t5, { route: 'hvh' }),
+      fl(t4, t6, { route: 'hvh' }), fl(t5, t6, { route: 'vhv', dashed: true, label: 'if needed' }), fl(t5, t7, { route: 'hvh' }), fl(t6, t7, { route: 'hvh' }), fl(t7, fin));
     return d;
   },
 });

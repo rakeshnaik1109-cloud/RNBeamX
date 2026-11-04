@@ -59,7 +59,7 @@ function control(param, get, set, ctx = {}) {
       return wrap;
     }
     case 'textarea': {
-      input = el('textarea', { id, rows: 2, spellcheck: 'false', oninput: () => set(param.key, input.value) });
+      input = el('textarea', { id, rows: param.rows || 2, spellcheck: 'false', oninput: () => set(param.key, input.value) });
       sync = () => { input.value = val() == null ? '' : val(); };
       break;
     }
