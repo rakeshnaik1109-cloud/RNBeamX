@@ -562,7 +562,8 @@ function objectPanel(obj) {
     ...(def.annotation ? [] : [el('div', { class: 'grid2' },
       control({ key: 'z', label: 'Height z', type: 'number', unit: 'mm', step: 0.5, hint: 'above the beam plane' }, k => obj[k] || 0, tset),
       lib.canVertical(obj.type) ? control({ key: 'axis', label: 'Optical axis', type: 'select', options: [['h', 'In table plane'], ['up', 'Vertical, facing up'], ['down', 'Vertical, facing down']] }, k => obj[k] || 'h', (k, v) => tset(k, v, true)) : el('span'))]),
-    control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset)));
+    control({ key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 1, step: 0.01 }, k => obj[k] == null ? 1 : obj[k], tset),
+    (def.optics || def.source) ? control({ key: 'drawOnly', label: 'Ignore light (drawing only)', type: 'bool', hint: 'The part is drawn but takes no part in the physics: beams pass through it and a source stops emitting. Use it for parts you place by hand.' }, k => !!obj[k], (k, v) => tset(k, v, true)) : null));
     if (!def.annotation && !def.special) root.push(lookSection([obj]));
   }
   const keys = (S.doc.animation.tracks[obj.id] || []).length;

@@ -268,6 +268,7 @@ function onKey(e) {
     case 'f': case 'F': RNBX.inspector.flip(); break;
     case 'o': case 'O': RNBX.canvas.orientToBeam(); break;
     case 'g': case 'G': toggleUi('grid', 'Grid'); break;
+    case 'd': case 'D': if (RNBX.draw) RNBX.draw.toggle(); break;
     case 'l': case 'L': if (e.shiftKey) RNBX.labels.arrange(); else toggleStyle('showLabels', 'Labels'); break;
     case 'p': case 'P': toggleStyle('polarization', 'Polarisation marks'); break;
     case 't': case 'T': if (e.shiftKey) RNBX.layout.tidy(); else RNBX.timeline.toggle(); break;

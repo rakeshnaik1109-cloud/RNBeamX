@@ -96,7 +96,7 @@ function buildScene(doc) {
   const scale = doc.style.scale || 10;
   // parts inside groups take part in world coordinates
   for (const obj of (RNBX.lib.expandIfNeeded ? RNBX.lib.expandIfNeeded(doc.objects) : doc.objects)) {
-    if (obj.hidden) continue;
+    if (obj.hidden || obj.drawOnly) continue;   // "Ignore light": drawn, but not part of the physics
     const def = RNBX.lib.get(obj.type);
     if (!def) continue;
     if (obj.type === 'fiber' && obj.props.from && obj.props.to) fibers[obj.props.from] = obj;
