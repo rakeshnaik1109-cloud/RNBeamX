@@ -10,12 +10,12 @@ computer.
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23697703.svg)](https://doi.org/10.5281/zenodo.23697703)
 
-**Version 1.2** · **DOI:** [10.5281/zenodo.23697703](https://doi.org/10.5281/zenodo.23697703) · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
+**Version 1.3** · **DOI:** [10.5281/zenodo.23697703](https://doi.org/10.5281/zenodo.23697703) · **Authors:** [Rakesh Naik](https://scholar.google.com/citations?user=xDMzlr0AAAAJ&hl=en "Google Scholar")<sup>1</sup>, Sachin Kumar Srivastava<sup>1,2</sup>
 <sup>1</sup>Centre for Photonics and Quantum Communication Technology, IIT Roorkee ·
 <sup>2</sup>Department of Physics, IIT Roorkee
 © 2026 Rakesh Naik and Sachin Kumar Srivastava. All rights reserved.
 
-**How to cite:** Naik, R., & Srivastava, S. K. (2026). *RNBeamX (Optical Setup Designer)* (Version 1.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703 — BibTeX in [Citing RNBeamX](#citing-rnbeamx).
+**How to cite:** Naik, R., & Srivastava, S. K. (2026). *RNBeamX (Optical Setup Designer)* (Version 1.3) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703 — BibTeX in [Citing RNBeamX](#citing-rnbeamx).
 
 ---
 
@@ -155,13 +155,13 @@ included, so GitHub shows a "Cite this repository" box with ready-made BibTeX
 and APA entries.
 
 > Naik, R., & Srivastava, S. K. (2026). *RNBeamX (Optical Setup Designer)*
-> (Version 1.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703
+> (Version 1.3) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23697703
 
 ```bibtex
 @software{naik_rnbeamx_2026,
   author    = {Naik, Rakesh and Srivastava, Sachin Kumar},
   title     = {{RNBeamX (Optical Setup Designer)}},
-  version   = {1.2},
+  version   = {1.3},
   year      = {2026},
   publisher = {Zenodo},
   doi       = {10.5281/zenodo.23697703},
