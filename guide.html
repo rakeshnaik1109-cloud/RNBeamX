@@ -108,6 +108,7 @@ footer .bar { padding: 20px 16px; }
       <li><b>Tune in the inspector</b>Wavelength, focal length, reflectance, wave-plate angle… the beams update live.</li>
       <li><b>Export</b>Press <i>Export</i>, choose the width and format, and get a file ready to submit.</li>
     </ol>
+    <div class="tip"><b>Type it:</b> <i>File ▸ Setup from text…</i> builds a figure from a chain such as <code>HeNe → Pol 0° → L1 f=50 → L2 f=200 → M → SLM → L3 f=200 → SF → L4 f=200 → CCD</code>. Tags (L1, M2, BS1) become labels; lenses are spaced by their focal lengths along the beam (f₁ + f₂ between lenses, f to a pinhole, SLM or camera), so folds keep the spacing; a distance on its own (<code>→ 150 mm →</code>) fixes a gap. <b>M</b> folds the path (add up, down, left or right), and a new line such as <code>BS1 down → M → PD</code> follows a splitter’s reflected beam. Every part is placed on the traced beam, the figure scale is chosen so the setup fits the page, and anything it cannot do is listed under the preview.</div>
     <div class="tip"><b>Faster:</b> press <i>Templates</i> (grouped by topic, with a search box) and start from a finished setup: interferometers, Raman, epi-fluorescence, confocal and light-sheet microscopes, 4f imaging, pump–probe, SPR, FTIR, a coated grating and more.</div>
   </section>
 

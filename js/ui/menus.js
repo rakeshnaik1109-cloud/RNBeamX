@@ -49,6 +49,7 @@ M.items = {
     { label: 'New figure', icon: 'file', action: M.newDoc },
     { label: 'Reset everything', icon: 'reset', action: M.resetAll },
     { label: 'Templates…', icon: 'grid', action: () => RNBX.dialogs.templates() },
+    { label: 'Setup from text…', icon: 'file', action: () => RNBX.setupText.open() },
     { label: 'Open project…', key: mod + 'O', action: () => RNBX.project.pickFile('.json,application/json', f => RNBX.project.openFile(f)) },
     { label: 'Save project', key: mod + 'S', action: () => RNBX.project.save() },
     { label: 'Versions… (history, kept in this browser)', action: () => RNBX.versions.dialog() },

@@ -245,3 +245,10 @@ a.icon-btn { text-decoration: none; }
 .readout .ro-tab { border-collapse: collapse; margin: 6px 0 4px; width: 100%; }
 .readout .ro-tab th, .readout .ro-tab td { text-align: right; padding: 1px 6px; border-bottom: 1px solid var(--line); }
 .readout .ro-tab th:first-child, .readout .ro-tab td:first-child { text-align: left; }
+
+/* setup from text */
+.st-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+.st-text { width: 100%; box-sizing: border-box; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; line-height: 1.5; padding: 8px 10px; margin: 8px 0; border: 1px solid var(--line, #d5d9e0); border-radius: 8px; resize: vertical; background: var(--panel, #fff); color: inherit; }
+.st-preview { min-height: 220px; }
+.st-warn { color: #b45309; margin-top: 3px; }
+@media (max-width: 760px) { .st-grid { grid-template-columns: 1fr; } }
