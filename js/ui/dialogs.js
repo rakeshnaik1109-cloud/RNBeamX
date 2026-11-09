@@ -17,13 +17,14 @@ const FORMATS = [
   { id: 'jpeg', name: 'JPEG', desc: 'Raster · small files' },
   { id: 'pptx', name: 'PowerPoint (.pptx)', desc: 'Vector picture on a slide · Convert to Shape to edit' },
   { id: 'tikz', name: 'TikZ (.tex)', desc: 'LaTeX drawing commands · theses and papers' },
+  { id: 'glb', name: '3D scene (.glb)', desc: 'glTF for Blender · glass, metal, glowing beams' },
   { id: 'video', name: 'Video (MP4 / WebM)', desc: 'Animation · talks, social media' },
   { id: 'gif', name: 'Animated GIF', desc: 'Animation · LinkedIn, websites, slides' },
   { id: 'project', name: 'Project (.rnbx.json)', desc: 'Save to edit later or share' },
 ];
 Dl.exporter = (initial = 'svg') => {
   let fmt = initial;
-  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15, lettering: 'with' };
+  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15, lettering: 'with', glb: { table: true, beams: true, glow: 6, camera: true, light: true } };
   const list = el('div', { class: 'fmt-list' });
   const right = el('div');
   const go = el('button', { class: 'btn primary', type: 'button', text: 'Export' });
@@ -83,10 +84,18 @@ Dl.exporter = (initial = 'svg') => {
       right.append(el('div', { class: 'grid2' }, el('div', { class: 'field' }, el('label', {}, 'Width'), res), el('div', { class: 'field' }, el('label', {}, 'Frame rate'), fr)),
         el('div', { class: 'note', text: live ? `${U.fmt(an.duration, 1)} s, looping. GIFs have 256 colours: smaller widths and fewer frames give smaller files. For talks, a video looks better.` : 'Nothing is animated yet. Press Animate (A) and pick a preset first.' }), prog);
     }
+    if (fmt === 'glb') {
+      const cb = (key, label) => { const c = el('input', { type: 'checkbox', checked: opts.glb[key], onchange: () => { opts.glb[key] = c.checked; } }); return el('label', { class: 'check' }, c, label); };
+      const glow = el('select', { onchange: () => { opts.glb.glow = +glow.value; } }, [[2, 'Soft'], [6, 'Bright (default)'], [15, 'Very bright']].map(v => el('option', { value: v[0], text: v[1] })));
+      glow.value = String(opts.glb.glow);
+      right.append(cb('table', 'Optical table'), cb('beams', 'Traced beams (glowing tubes, real width)'), cb('camera', 'Camera matching the 3D view'), cb('light', 'Sun light'),
+        el('div', { class: 'field' }, el('label', {}, 'Beam glow'), glow),
+        el('div', { class: 'note', html: 'A binary glTF 2.0 file of the 3D view: every part as a mesh with physically based materials (glass with transmission and IOR, mirrors and mounts metallic), the traced beams as emissive tubes, in millimetres. In Blender: <i>File ▸ Import ▸ glTF 2.0</i>, then render with Cycles (or Eevee with Bloom) to make the beams glow. Parts arrive as separate, named objects, ready to re-light and re-material.' }));
+    }
     if (fmt === 'project') right.append(el('div', { class: 'note', text: 'A small JSON file with everything needed to continue editing: components, labels, styles, 3D camera and animation.' }));
     if (fmt === 'pptx') right.append(el('div', { class: 'note', text: 'One slide the size of the figure, with the figure as a vector picture (and a 300 dpi fallback for old versions). In PowerPoint, right-click the picture ▸ Convert to Shape to edit every line and label.' }));
     if (fmt === 'tikz') right.append(el('div', { class: 'note', text: 'A standalone LaTeX file with TikZ commands for every path and label, coordinates in mm. Compile with LuaLaTeX or XeLaTeX (Unicode letters); \\input the tikzpicture into your document. Gradients become their average colour.' }));
-    if (fmt !== 'video' && fmt !== 'gif' && fmt !== 'project') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
+    if (fmt !== 'video' && fmt !== 'gif' && fmt !== 'project' && fmt !== 'glb') right.append(el('div', { class: 'row', style: { marginTop: '6px' } },
       el('button', { class: 'btn small', type: 'button', text: 'Copy as PNG', onclick: () => RNBX.exporter.copyPng(300).then(() => RNBX.toast('Copied: paste into slides or documents'), e => RNBX.toast('Clipboard not available: ' + e.message, 'error')) }),
       el('button', { class: 'btn small', type: 'button', text: 'Copy SVG code', onclick: () => RNBX.exporter.copySvg().then(() => RNBX.toast('SVG copied')) })));
   };
@@ -103,6 +112,7 @@ Dl.exporter = (initial = 'svg') => {
       else if (fmt === 'jpeg') await X.lettered(X.jpeg, opts);
       else if (fmt === 'project') RNBX.project.save();
       else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
+      else if (fmt === 'glb') RNBX.gltf.download(S.doc, opts.glb);
       else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');
       else if (fmt === 'gif') {
         prog.hidden = false;
