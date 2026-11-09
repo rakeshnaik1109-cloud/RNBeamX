@@ -811,7 +811,9 @@ onmessage = ev => {
   const { id, items, geo, pol, phi, call, args } = ev.data;
   if (call) { const r = core[call](...args); postMessage({ id, result: r }); return; }
   const out = [], g = geo || ev.data;
-  const one = (pb, it, p) => g.dim === 2 ? core.solve2(pb, it.lam, it.th, phi || 0, p) : core.solve(pb, it.lam, it.th, p);
+  // a degenerate point (exact symmetry, an order at grazing) can come out as NaN: retry just off it
+  const one0 = (pb, it, p, th) => g.dim === 2 ? core.solve2(pb, it.lam, th, phi || 0, p) : core.solve(pb, it.lam, th, p);
+  const one = (pb, it, p) => { let r = one0(pb, it, p, it.th); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(pb, it, p, it.th + 1e-3); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(pb, it, p, it.th + 2e-2); return r; };
   for (let i = 0; i < items.length; i++) {
     const it = items[i], pb = Object.assign({}, g, { inc: 0, sub: 1, eps: it.eps });
     let r;
@@ -886,7 +888,8 @@ let workerUrl = null;
 const newWorker = () => { if (workerFailed) return null; try { workerUrl = workerUrl || URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' })); return new Worker(workerUrl); } catch (e) { return null; } };
 const solveAny = (geo, it, pol, phi) => {
   const pb = Object.assign({}, geo, { inc: 0, sub: 1, eps: it.eps });
-  const one = p => (geo.dim === 2 ? core.solve2(pb, it.lam, it.th, phi || 0, p) : core.solve(pb, it.lam, it.th, p));
+  const one0 = (p, th) => (geo.dim === 2 ? core.solve2(pb, it.lam, th, phi || 0, p) : core.solve(pb, it.lam, th, p));
+  const one = p => { let r = one0(p, it.th); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(p, it.th + 1e-3); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(p, it.th + 2e-2); return r; };
   if (pol === 'avg') { const a = one('s'), b = one('p'); return [(a.R + b.R) / 2, (a.T + b.T) / 2]; }
   const r = one(pol); return [r.R, r.T];
 };

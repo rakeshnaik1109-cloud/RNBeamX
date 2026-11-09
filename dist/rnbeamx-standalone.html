@@ -2676,7 +2676,9 @@ onmessage = ev => {
   const { id, items, geo, pol, phi, call, args } = ev.data;
   if (call) { const r = core[call](...args); postMessage({ id, result: r }); return; }
   const out = [], g = geo || ev.data;
-  const one = (pb, it, p) => g.dim === 2 ? core.solve2(pb, it.lam, it.th, phi || 0, p) : core.solve(pb, it.lam, it.th, p);
+  // a degenerate point (exact symmetry, an order at grazing) can come out as NaN: retry just off it
+  const one0 = (pb, it, p, th) => g.dim === 2 ? core.solve2(pb, it.lam, th, phi || 0, p) : core.solve(pb, it.lam, th, p);
+  const one = (pb, it, p) => { let r = one0(pb, it, p, it.th); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(pb, it, p, it.th + 1e-3); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(pb, it, p, it.th + 2e-2); return r; };
   for (let i = 0; i < items.length; i++) {
     const it = items[i], pb = Object.assign({}, g, { inc: 0, sub: 1, eps: it.eps });
     let r;
@@ -2751,7 +2753,8 @@ let workerUrl = null;
 const newWorker = () => { if (workerFailed) return null; try { workerUrl = workerUrl || URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' })); return new Worker(workerUrl); } catch (e) { return null; } };
 const solveAny = (geo, it, pol, phi) => {
   const pb = Object.assign({}, geo, { inc: 0, sub: 1, eps: it.eps });
-  const one = p => (geo.dim === 2 ? core.solve2(pb, it.lam, it.th, phi || 0, p) : core.solve(pb, it.lam, it.th, p));
+  const one0 = (p, th) => (geo.dim === 2 ? core.solve2(pb, it.lam, th, phi || 0, p) : core.solve(pb, it.lam, th, p));
+  const one = p => { let r = one0(p, it.th); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(p, it.th + 1e-3); if (!(isFinite(r.R) && isFinite(r.T))) r = one0(p, it.th + 2e-2); return r; };
   if (pol === 'avg') { const a = one('s'), b = one('p'); return [(a.R + b.R) / 2, (a.T + b.T) / 2]; }
   const r = one(pol); return [r.R, r.T];
 };
@@ -7580,6 +7583,11 @@ lib.register({
       const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}), Sv = DataIO.sensitivity(src, S.doc);
       if (Sv != null) info.push('S = ' + U.fmt(Sv, c.scan === 'wl' ? 0 : 1) + ' ' + (c.scan === 'wl' ? 'nm' : '°') + '/RIU');
     }
+    // invalid points (NaN from a failed calculation step) are skipped, never allowed to blank the panel
+    let bad = 0;
+    series = series.map(sr => { const keep = sr.x.map((x, i) => isFinite(x) && isFinite(sr.y[i])); bad += keep.filter(k => !k).length; return keep.every(Boolean) ? sr : Object.assign({}, sr, { x: sr.x.filter((_, i) => keep[i]), y: sr.y.filter((_, i) => keep[i]) }); }).filter(sr => sr.x.length);
+    if (bad && !series.length) msg = msg || 'The calculation gave no valid values — check the materials and the number of orders';
+    else if (bad) info.push(bad + ' invalid points skipped');
     let xs = [], ys = [];
     const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
     const off = series.length ? p.offset * Math.max(...series.map(range)) : 0;
@@ -7758,7 +7766,9 @@ lib.register({
     // the beam runs in the slab's mid-depth plane (drawn D/2 behind the front face), so it meets
     // the middle of the top face, not its front edge
     const g = this.geom(p), top = Math.max(...g.bounds[g.bounds.length - 1]), dx = p.D / 2 * g.c.kx, dy = p.D / 2 * g.c.ky;
-    const x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -top - dy, yb = -dy;
+    // across the whole visible width (front-left corner to back-right corner), so a beam aimed
+    // anywhere at the drawn top face lands on it rather than on an invisible side wall
+    const x0 = -p.W / 2, x1 = p.W / 2 + 2 * dx, yt = -top - dy, yb = -dy;
     return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
       { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
   },
@@ -8643,7 +8653,7 @@ lib.register({
      the bottom face too when light comes from below; the side edges stop the beam */
   optics(p) {
     if (p.traced === false) return [];
-    const g = this.geom(p), dx = g.D / 2 * g.c.kx, dy = g.D / 2 * g.c.ky, x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -g.top - dy, yb = -dy;
+    const g = this.geom(p), dx = g.D / 2 * g.c.kx, dy = g.D / 2 * g.c.ky, x0 = -p.W / 2, x1 = p.W / 2 + 2 * dx, yt = -g.top - dy, yb = -dy;   // the whole visible width
     return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
       { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
   },

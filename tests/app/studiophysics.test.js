@@ -37,7 +37,11 @@ module.exports = async ({ base, getBrowser, H }) => {
       const svg = RNBX.render.build(d, {}).svg || RNBX.render.build(d, {}), str = typeof svg === 'string' ? svg : JSON.stringify(svg);
       const iBeams = str.indexOf('rbx-beams'), iSpot = str.indexOf('fill="#ffffff" fill-opacity');
       const t = RNBX.trace(d); out.spot = { spots: (t.hits[lay.id].spots || []).length, beamsAt: iBeams, spotAfterBeams: iSpot > iBeams }; }
-    // 5. turning interaction off makes the structure an illustration again
+    // 5. a data panel with an invalid point still draws its curve and axis numbers
+    { const pl = mk('plot', 100, 100, 0, { w: 80, h: 50, series: [{ name: 'R', x: [400, 500, 600, 700], y: [0.2, NaN, 0.5, 0.4] }, { name: 'T', x: [400, 500, 600, 700], y: [0.7, 0.6, 0.4, 0.5] }] });
+      const d = RNBX.newDocument(); d.objects = [pl]; const svg = RNBX.lib.get('plot').draw(pl.props, RNBX.lib.style(d, { mode: 'schematic' }));
+      out.nanPlot = { nan: /NaN|Infinity/.test(svg), ticks: (svg.match(/text-anchor="end">0\.\d/g) || []).length, skipped: svg.includes('invalid points skipped') }; }
+    // 6. turning interaction off makes the structure an illustration again
     { const uc = mk('ucell', 80, 50, -90, { traced: false }); out.off = run([mk('laser', 20, 50, 0, { lambda: 633 }), uc]).t.segments.length; }
     return out;
   });
@@ -49,6 +53,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   const hex = r.mix || '#000000', rr = parseInt(hex.slice(1, 3), 16), bb = parseInt(hex.slice(5, 7), 16);
   H.check('white light off gold, shown as one beam: mixed colour is warm (red > blue) and drawn', rr > bb + 40 && r.mixSvg, hex);
   H.check('a lit structure gets a landing spot drawn with the beams (structure underneath)', r.spot.spots > 0 && r.spot.beamsAt > 0 && r.spot.spotAfterBeams, r.spot);
+  H.check('a data panel with an invalid (NaN) point still draws curves and axis numbers', !r.nanPlot.nan && r.nanPlot.ticks > 0 && r.nanPlot.skipped, r.nanPlot);
   H.check('"Beams interact" off on a patterned structure: the beam passes', r.off === 1, r.off);
   await page.close();
 };

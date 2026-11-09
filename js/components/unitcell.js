@@ -108,7 +108,7 @@ lib.register({
      the bottom face too when light comes from below; the side edges stop the beam */
   optics(p) {
     if (p.traced === false) return [];
-    const g = this.geom(p), dx = g.D / 2 * g.c.kx, dy = g.D / 2 * g.c.ky, x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -g.top - dy, yb = -dy;
+    const g = this.geom(p), dx = g.D / 2 * g.c.kx, dy = g.D / 2 * g.c.ky, x0 = -p.W / 2, x1 = p.W / 2 + 2 * dx, yt = -g.top - dy, yb = -dy;   // the whole visible width
     return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
       { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
   },

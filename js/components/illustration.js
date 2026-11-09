@@ -113,7 +113,9 @@ lib.register({
     // the beam runs in the slab's mid-depth plane (drawn D/2 behind the front face), so it meets
     // the middle of the top face, not its front edge
     const g = this.geom(p), top = Math.max(...g.bounds[g.bounds.length - 1]), dx = p.D / 2 * g.c.kx, dy = p.D / 2 * g.c.ky;
-    const x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -top - dy, yb = -dy;
+    // across the whole visible width (front-left corner to back-right corner), so a beam aimed
+    // anywhere at the drawn top face lands on it rather than on an invisible side wall
+    const x0 = -p.W / 2, x1 = p.W / 2 + 2 * dx, yt = -top - dy, yb = -dy;
     return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
       { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
   },

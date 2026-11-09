@@ -307,6 +307,11 @@ lib.register({
       const c = Object.assign({}, RNBX.thinfilm.DEFAULT_CALC, src.props.calc || {}), Sv = DataIO.sensitivity(src, S.doc);
       if (Sv != null) info.push('S = ' + U.fmt(Sv, c.scan === 'wl' ? 0 : 1) + ' ' + (c.scan === 'wl' ? 'nm' : '°') + '/RIU');
     }
+    // invalid points (NaN from a failed calculation step) are skipped, never allowed to blank the panel
+    let bad = 0;
+    series = series.map(sr => { const keep = sr.x.map((x, i) => isFinite(x) && isFinite(sr.y[i])); bad += keep.filter(k => !k).length; return keep.every(Boolean) ? sr : Object.assign({}, sr, { x: sr.x.filter((_, i) => keep[i]), y: sr.y.filter((_, i) => keep[i]) }); }).filter(sr => sr.x.length);
+    if (bad && !series.length) msg = msg || 'The calculation gave no valid values — check the materials and the number of orders';
+    else if (bad) info.push(bad + ' invalid points skipped');
     let xs = [], ys = [];
     const range = (s) => { const r = Math.max(...s.y) - Math.min(...s.y); return isFinite(r) ? r : 1; };
     const off = series.length ? p.offset * Math.max(...series.map(range)) : 0;
