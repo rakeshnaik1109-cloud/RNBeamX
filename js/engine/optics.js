@@ -79,7 +79,7 @@ O.describe = E => {
   if (S0 < 1e-15) return { kind: 'none' };
   const S1 = C.abs2(p) - C.abs2(s);
   const ps = C.mul(p, C.conj(s));
-  const S2 = 2 * ps.re, S3 = -2 * ps.im;
+  const S2 = 2 * ps.re, S3 = 2 * ps.im;   // same sign as O.stokes: S3 = +1 for right circular (1, −i)/√2
   const ell = S3 / S0;
   const psi = 0.5 * U.deg(Math.atan2(S2, S1));
   if (Math.abs(ell) > 0.85) return { kind: 'circ', hand: ell > 0 ? 'R' : 'L', psi };
@@ -122,6 +122,20 @@ O.refract = (d, n, eta) => {
 
 /* Fresnel amplitude coefficients for a planar interface.
    cosi: cosine of incidence; returns {rs, rp, ts, tp, Rs, Rp, tir}. */
+/* Complex Fresnel coefficients (Born & Wolf convention, e^(−iωt)): r_s and r_p for the
+   beam's own (p, s) frame, which keeps its handedness on reflection — so a perfect mirror is
+   r_p = +1, r_s = −1 and reflection turns right circular into left circular. Beyond the critical
+   angle cos θt = +i·√(sin²θt − 1) and both have modulus 1 with different phases (Fresnel rhomb). */
+O.fresnelC = (cosi, n1, n2) => {
+  cosi = Math.min(1, Math.abs(cosi));
+  const sint2 = Math.pow(n1 / n2, 2) * (1 - cosi * cosi);
+  const ct = sint2 < 1 ? { re: Math.sqrt(1 - sint2), im: 0 } : { re: 0, im: Math.sqrt(sint2 - 1) };
+  const a = { re: n1 * cosi, im: 0 }, b = C.scale(ct, n2), c = { re: n2 * cosi, im: 0 }, e = C.scale(ct, n1);
+  const sub = (x, y) => ({ re: x.re - y.re, im: x.im - y.im }), div = (x, y) => { const d = y.re * y.re + y.im * y.im; return { re: (x.re * y.re + x.im * y.im) / d, im: (x.im * y.re - x.re * y.im) / d }; };
+  return { rs: div(sub(a, b), C.add(a, b)), rp: div(sub(c, e), C.add(c, e)), tir: sint2 >= 1 };
+};
+/* a perfect mirror in the beam's frame: E_p unchanged, E_s reversed */
+O.mirrorJ = E => E ? [E[0], C.scale(E[1], -1)] : null;
 O.fresnel = (cosi, n1, n2) => {
   cosi = Math.min(1, Math.abs(cosi));
   const sint2 = Math.pow(n1 / n2, 2) * (1 - cosi * cosi);

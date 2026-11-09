@@ -242,6 +242,8 @@ RNBX.trace = function trace(doc) {
 
   // tS: direction of the surface a ray starts on (set through `base`), so its drawn beam is cut along that surface
   const child = (ray, patch) => Object.assign({}, ray, { depth: ray.depth + 1, tS: null }, patch);
+  // does the beam cross a polarisation element against the element's own forward direction (its local +x)?
+  const backThrough = (s, d, vert) => !vert && s.obj && V.dot(d, U.dirToWorld(s.obj, [1, 0])) < 0;
   const record = (obj, ray) => {
     const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} };
     h.P += ray.P;
@@ -277,11 +279,11 @@ RNBX.trace = function trace(doc) {
   /* Fresnel ghost: a weak reflection at a glass surface */
   const ghostOf = (ray, base, dRefl, cosi, n2, vertical) => {
     if (!ghosts || ray.P < ray.P0 * 2e-3) return null;
-    let Rs, Rp;
-    if (ghosts === 'ar') { Rs = Rp = 0.0025; }
-    else { const fr = O.fresnel(cosi, 1, n2 || 1.5); Rs = fr.Rs; Rp = fr.Rp; }
+    let Rs, Rp, rs, rp;
+    if (ghosts === 'ar') { Rs = Rp = 0.0025; rs = -0.05; rp = 0.05; }
+    else { const fr = O.fresnel(cosi, 1, n2 || 1.5); Rs = fr.Rs; Rp = fr.Rp; rs = fr.rs; rp = fr.rp; }
     let E = null, P;
-    if (ray.E) { E = [C.scale(ray.E[0], Math.sqrt(Rp)), C.scale(ray.E[1], Math.sqrt(Rs))]; P = O.powerJ(E); }
+    if (ray.E) { E = [C.scale(ray.E[0], rp), C.scale(ray.E[1], rs)]; P = O.powerJ(E); }
     else P = ray.P * (Rs + Rp) / 2;
     if (P < ray.P0 * 1e-4) return null;
     const g = child(ray, Object.assign({}, base, { P, E, ghost: true, phx: (ray.phx || 0) + Math.PI }));
@@ -319,19 +321,19 @@ RNBX.trace = function trace(doc) {
         let patch = refl(), dw = ray.dw, q = {};
         if (s.f) { const f = s.f / scale; if (!vert) patch.d = lensDeflect(patch.d, s, hit, f); dw = dw - w / f; q = lensQ(f); }
         const piezo = (s.obj.props.piezo || 0) * 2e-6;   // nm → mm, double pass
-        out.push(child(ray, Object.assign({}, base, patch, q, { dw, P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)), opl: ray.opl + piezo, phx: ray.phx + Math.PI })));
+        out.push(child(ray, Object.assign({}, base, patch, q, { dw, P: ray.P * R, E: O.mirrorJ(O.scaleJ(ray.E, Math.sqrt(R))), opl: ray.opl + piezo, phx: ray.phx + Math.PI })));
         break;
       }
       case 'splitter': {
         const R = U.clamp(s.R == null ? 0.5 : s.R, 0, 1);
-        if (R > 0) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * R, E: O.scaleJ(ray.E, Math.sqrt(R)), phx: ray.phx + Math.PI / 2 })));
+        if (R > 0) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * R, E: O.mirrorJ(O.scaleJ(ray.E, Math.sqrt(R))), phx: ray.phx + Math.PI / 2 })));
         if (R < 1) out.push(child(ray, Object.assign({}, base, { P: ray.P * (1 - R), E: O.scaleJ(ray.E, Math.sqrt(1 - R)) })));
         break;
       }
       case 'pbs': {
         let Et, Er;
         if (!ray.E) { const a = Math.sqrt(ray.P / 2); Et = [C.c(a), C.c(0)]; Er = [C.c(0), C.c(a)]; }
-        else { Et = [ray.E[0], C.c(0)]; Er = [C.c(0), ray.E[1]]; }
+        else { Et = [ray.E[0], C.c(0)]; Er = [C.c(0), C.scale(ray.E[1], -1)]; }
         const Pt = O.powerJ(Et), Pr = O.powerJ(Er);
         if (Pt > 0) out.push(child(ray, Object.assign({}, base, { P: Pt, E: Et })));
         if (Pr > 0) out.push(child(ray, Object.assign({}, base, refl(), { P: Pr, E: Er, phx: ray.phx + Math.PI / 2 })));
@@ -340,7 +342,7 @@ RNBX.trace = function trace(doc) {
       case 'dichroic': {
         const pass = s.mode === 'shortpass' ? ray.lambda <= s.edge : ray.lambda >= s.edge;
         if (pass) out.push(child(ray, Object.assign({}, base)));
-        else out.push(child(ray, Object.assign({}, base, refl(), { phx: ray.phx + Math.PI })));
+        else out.push(child(ray, Object.assign({}, base, refl(), { E: O.mirrorJ(ray.E), phx: ray.phx + Math.PI })));
         break;
       }
       case 'filter': {
@@ -360,7 +362,8 @@ RNBX.trace = function trace(doc) {
         break;
       }
       case 'waveplate': {
-        const E = ray.E ? O.applyM(O.waveplate(s.angle || 0, U.rad(s.retardance == null ? 180 : s.retardance)), ray.E) : null;
+        // the beam's (p, s) frame keeps its handedness, so a beam crossing the plate backwards sees its axis at −θ
+        const E = ray.E ? O.applyM(O.waveplate(backThrough(s, d, vert) ? -(s.angle || 0) : (s.angle || 0), U.rad(s.retardance == null ? 180 : s.retardance)), ray.E) : null;
         const gh = ghostOf(ray, base, vert ? null : V.reflect(d, s.n), cosi, 1.5, vert);
         if (gh) out.push(gh.g);
         const a = afterGhost(Object.assign({}, ray, { E }), gh);
@@ -369,8 +372,9 @@ RNBX.trace = function trace(doc) {
       }
       case 'polarizer': {
         let E;
-        if (!ray.E) E = O.scaleJ(O.jones('lin', s.angle || 0), Math.sqrt(ray.P / 2));
-        else E = O.applyM(O.polarizer(s.angle || 0), ray.E);
+        const pa = backThrough(s, d, vert) ? -(s.angle || 0) : (s.angle || 0);
+        if (!ray.E) E = O.scaleJ(O.jones('lin', pa), Math.sqrt(ray.P / 2));
+        else E = O.applyM(O.polarizer(pa), ray.E);
         const P = O.powerJ(E);
         if (P > 0) out.push(child(ray, Object.assign({}, base, { E, P })));
         break;
@@ -378,12 +382,15 @@ RNBX.trace = function trace(doc) {
       case 'rotator': {
         const axis = s.axis ? U.dirToWorld(s.obj, s.axis) : s.n;
         if (s.isolator && (vert ? ray.vz < 0 : V.dot(d, axis) < 0)) { record(s.obj, rayAt); break; }
-        const E = ray.E ? O.applyM(O.rotator(s.angle == null ? 45 : s.angle), ray.E) : null;
+        // Faraday rotation is fixed by the magnetic field, not the beam: seen from a beam going back
+        // through it, the rotation is reversed (which is what makes the double pass add up to 2θ)
+        const ra = s.angle == null ? 45 : s.angle;
+        const E = ray.E ? O.applyM(O.rotator(backThrough(s, d, vert) ? -ra : ra), ray.E) : null;
         out.push(child(ray, Object.assign({}, base, { E })));
         break;
       }
       case 'grating': {
-        if (vert) { out.push(child(ray, Object.assign({}, base, s.transmit ? {} : refl()))); break; }
+        if (vert) { out.push(child(ray, Object.assign({}, base, s.transmit ? {} : Object.assign(refl(), { E: O.mirrorJ(ray.E) })))); break; }
         const G = s.G || 600, kt0 = V.dot(d, s.t), sn = Math.sign(V.dot(d, s.n)) || 1;
         const orders = String(s.orders || '-1,0,1').split(',').map(x => parseInt(x, 10)).filter(x => isFinite(x));
         const valid = [];
@@ -395,7 +402,7 @@ RNBX.trace = function trace(doc) {
           if (frac <= 0) return;
           const kn = Math.sqrt(1 - v.kt * v.kt) * (s.transmit ? sn : -sn);
           const nd = V.norm(V.add(V.mul(s.t, v.kt), V.mul(s.n, kn)));
-          out.push(child(ray, Object.assign({}, base, { d: nd, P: ray.P * frac, E: O.scaleJ(ray.E, Math.sqrt(frac)) })));
+          out.push(child(ray, Object.assign({}, base, { d: nd, P: ray.P * frac, E: s.transmit ? O.scaleJ(ray.E, Math.sqrt(frac)) : O.mirrorJ(O.scaleJ(ray.E, Math.sqrt(frac))) })));
         });
         break;
       }
@@ -412,18 +419,18 @@ RNBX.trace = function trace(doc) {
           const th = U.deg(Math.acos(Math.min(1, Math.abs(V.dot(d, s.n))))), TF = RNBX.thinfilm;
           const sP = TF.solve(s.film, ray.lambda, th, 'p'), sS = TF.solve(s.film, ray.lambda, th, 's');
           let E = null, P;
-          if (ray.E) { E = [C.mul(ray.E[0], { re: sP.r[0], im: sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; P = O.powerJ(E); }
+          if (ray.E) { E = [C.mul(ray.E[0], { re: -sP.r[0], im: -sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; P = O.powerJ(E); }   // admittance r_p → Fresnel r_p
           else P = ray.P * (sP.R + sS.R) / 2;
           if (P > ray.P0 * 1e-6) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside, P, E })));
           break;
         }
-        if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside }))); break; }
+        if (!td) { const fc = O.fresnelC(Math.abs(V.dot(d, facing)), n1, n2); out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside, E: ray.E ? [C.mul(ray.E[0], fc.rp), C.mul(ray.E[1], fc.rs)] : null }))); break; }
         let tPatch = {};
         if (ghosts) {
           const fr = O.fresnel(Math.abs(V.dot(d, facing)), n1, n2);
-          const R = ghosts === 'ar' ? { Rs: 0.0025, Rp: 0.0025 } : fr;
+          const R = ghosts === 'ar' ? { Rs: 0.0025, Rp: 0.0025, rs: -0.05 * Math.sign(n2 - n1), rp: 0.05 * Math.sign(n2 - n1) } : fr;
           let E = null, P;
-          if (ray.E) { E = [C.scale(ray.E[0], Math.sqrt(R.Rp)), C.scale(ray.E[1], Math.sqrt(R.Rs))]; P = O.powerJ(E); }
+          if (ray.E) { E = [C.scale(ray.E[0], R.rp), C.scale(ray.E[1], R.rs)]; P = O.powerJ(E); }
           else P = ray.P * (R.Rs + R.Rp) / 2;
           if (P > ray.P0 * 1e-4) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, s.n), inside: ray.inside, P, E, ghost: true, phx: ray.phx + (entering ? Math.PI : 0) })));
           if (ray.E) { const Et = [C.scale(ray.E[0], Math.sqrt(1 - R.Rp)), C.scale(ray.E[1], Math.sqrt(1 - R.Rs))]; tPatch = { E: Et, P: O.powerJ(Et) }; }
@@ -441,7 +448,7 @@ RNBX.trace = function trace(doc) {
         const n1 = fwd ? nA : nB, n2 = fwd ? nB : nA;
         const facing = V.dot(d, nrm0) < 0 ? nrm0 : V.mul(nrm0, -1);
         const td = O.refract(d, facing, n1 / n2);
-        if (!td) { out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, nrm0) }))); break; }
+        if (!td) { const fc = O.fresnelC(Math.abs(V.dot(d, facing)), n1, n2); out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, nrm0), E: ray.E ? [C.mul(ray.E[0], fc.rp), C.mul(ray.E[1], fc.rs)] : null }))); break; }
         // paraxial envelope and Gaussian q: surface power (n2 − n1)·c, c > 0 when the centre lies ahead
         const c = s.arcC ? (V.dot(V.sub(s.arcC, hit), d) > 0 ? 1 : -1) / s.arcR : 0, Pw = (n2 - n1) * c;
         const dw = (n1 * ray.dw - w * Pw) / n2;
@@ -601,7 +608,7 @@ RNBX.trace = function trace(doc) {
             out.push(child(ray, Object.assign({}, base, { o: exit, s: base.s + span, opl: base.opl + span * scale * 1.5, P: ray.P * T, E: O.scaleJ(ray.E, Math.sqrt(T)), ignore: o.id, last: -1 })));
           }
         }
-        if (Rr > 1e-6) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * Rr, E: O.scaleJ(ray.E, Math.sqrt(Rr)) })));
+        if (Rr > 1e-6) out.push(child(ray, Object.assign({}, base, refl(), { P: ray.P * Rr, E: O.mirrorJ(O.scaleJ(ray.E, Math.sqrt(Rr))) })));
         if (Tdrop > 1e-6 && !vert && s.dropPort) {
           const dp = U.toWorld(o, s.dropPort.o), dd = U.dirToWorld(o, s.dropPort.d);
           out.push(child(ray, { o: dp, d: V.norm(dd), s: base.s + span, opl: base.opl + span * scale * 1.5, P: ray.P * Tdrop, E: O.scaleJ(ray.E, Math.sqrt(Tdrop)), w: w, ignore: o.id, last: -1, inside: null, q: base.q }));
@@ -633,7 +640,7 @@ RNBX.trace = function trace(doc) {
             if (Math.abs(st) >= 1) { book.lost += P; return; }   // trapped in the slab (guided)
             const nrm = side === 'R' ? back : fwd, dir = V.norm(V.add(V.mul(tg, st), V.mul(nrm, Math.sqrt(1 - st * st))));
             book[side] += P; book.orders.push({ side, m: o.m, P });
-            out.push(child(ray, Object.assign({}, base, { d: dir, P, E: scaled(o.p, o.s) })));
+            out.push(child(ray, Object.assign({}, base, { d: dir, P, E: side === 'R' ? O.mirrorJ(scaled(o.p, o.s)) : scaled(o.p, o.s) })));
           };
           G.R.forEach(o => emit(o, 'R')); G.T.forEach(o => emit(o, 'T'));
           // 2D cells: orders leaving the drawing plane
@@ -647,7 +654,7 @@ RNBX.trace = function trace(doc) {
         const sP = solve(st, lam, th, 'p'), sS = solve(st, lam, th, 's');
         let Er = null, Pr, Et = null, Pt;
         if (ray.E) {
-          Er = [C.mul(ray.E[0], { re: sP.r[0], im: sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; Pr = O.powerJ(Er);
+          Er = [C.mul(ray.E[0], { re: -sP.r[0], im: -sP.r[1] }), C.mul(ray.E[1], { re: sS.r[0], im: sS.r[1] })]; Pr = O.powerJ(Er);   // admittance r_p → Fresnel r_p
           Et = [C.scale(ray.E[0], Math.sqrt(sP.T)), C.scale(ray.E[1], Math.sqrt(sS.T))]; Pt = O.powerJ(Et);
         } else { Pr = ray.P * (sP.R + sS.R) / 2; Pt = ray.P * (sP.T + sS.T) / 2; }
         if (Pr > cut) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, up), P: Pr, E: Er })));
