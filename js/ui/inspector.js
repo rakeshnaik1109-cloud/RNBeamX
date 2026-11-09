@@ -355,6 +355,19 @@ function readout(obj) {
     if (!fl) return el('div', { class: 'readout', text: 'No light reaches the input coupler yet.' });
     return el('div', { class: 'readout', html: 'Carries ' + Object.keys(fl).map(l => `<b>${U.fmt(Number(l), 1)} nm</b> (${fmtP(fl[l])})`).join(', ') });
   }
+  if (h && h.stack) {
+    // a Studio structure: where the light went, per wavelength
+    const ls = Object.keys(h.stack).map(Number).sort((a, b) => a - b), tot = { in: 0, R: 0, T: 0, A: 0, lost: 0 };
+    ls.forEach(l => Object.keys(tot).forEach(k => { tot[k] += h.stack[l][k]; }));
+    const pc = (v, b) => b > 0 ? (100 * v / b).toFixed(100 * v / b < 10 ? 2 : 1) + '%' : '—';
+    let html = `Light on this structure: <b>${fmtP(tot.in)}</b><br>reflected <b>${pc(tot.R, tot.in)}</b> · transmitted <b>${pc(tot.T, tot.in)}</b> · absorbed <b>${pc(tot.A, tot.in)}</b>` + (tot.lost > tot.in * 1e-4 ? ` · trapped or out of plane ${pc(tot.lost, tot.in)}` : '');
+    if (ls.length) html += `<table class="ro-tab"><tr><th>λ (nm)</th><th>R</th><th>T</th><th>A</th></tr>` + ls.map(l => { const q = h.stack[l]; return `<tr><td>${U.fmt(l, 4)}</td><td>${pc(q.R, q.in)}</td><td>${pc(q.T, q.in)}</td><td>${pc(q.A, q.in)}</td></tr>`; }).join('') + '</table>';
+    const ord = {}; ls.forEach(l => Object.keys(h.stack[l].orders || {}).forEach(k => { ord[k] = (ord[k] || 0) + h.stack[l].orders[k]; }));
+    const ok = Object.keys(ord).filter(k => ord[k] > tot.in * 1e-3);
+    if (ok.length > 2 || ok.some(k => !/^[RT]0$/.test(k))) html += 'Diffraction orders: ' + ok.sort().map(k => `${k[0] === 'R' ? 'reflected' : 'transmitted'} m = ${k.slice(1)} ${pc(ord[k], tot.in)}`).join(' · ');
+    return el('div', { class: 'readout', html });
+  }
+  if ((def.stack || def.grating) && def.optics && obj.props.traced !== false && !h) return el('div', { class: 'readout', text: 'No beam reaches this structure yet. Light that does is split into reflected, transmitted and absorbed parts, listed here per wavelength.' });
   if (h) {
     let html = `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ');
     if (h.interf) {
@@ -674,6 +687,7 @@ function docPanel() {
     el('div', { class: 'grid2' },
       control({ key: 'beamFade', label: 'Fade weak beams', type: 'bool' }, k => st[k], dset('style')),
       control({ key: 'polarization', label: 'Polarisation marks', type: 'bool' }, k => st[k], dset('style'))),
+    control({ key: 'spectralMix', label: 'White light as one beam of its mixed colour', type: 'bool', hint: 'shows the colour left after a stack or grating absorbs or reflects some wavelengths; off: one band per wavelength' }, k => !!st[k], dset('style')),
     control({ key: 'scale', label: 'Figure scale (physical mm per drawn mm)', type: 'number', min: 0.001, max: 100000, step: 1, hint: 'sets drawn focal lengths' }, k => st[k], dset('style')),
     el('div', { class: 'grid2' },
       control({ key: 'fiberColor', label: 'Fibre jacket', type: 'color' }, k => st[k], dset('style')),

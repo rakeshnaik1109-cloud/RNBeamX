@@ -76,7 +76,7 @@ function draw2(p, S, g) {
 lib.register({
   type: 'ucell', name: 'Patterned structure (unit cell)', category: 'Nanostructures & films', annotation: true, autoLabel: false, abbr: '',
   keywords: 'grating unit cell periodic pattern metasurface lamellar trapezoid slanted blazed sawtooth sinusoidal wire grid gmr rcwa layer studio',
-  defaults: { pattern: DEFAULT, periods: 5, rows: 4, W: 50, D: 16, ang: 32, depthK: 0.55, vex: 0, labels: false,
+  defaults: { pattern: DEFAULT, periods: 5, rows: 4, W: 50, D: 16, ang: 32, depthK: 0.55, vex: 0, labels: false, traced: true,
     calc: { scan: 'wl', lmin: 400, lmax: 1000, angle: 0, pol: 'p', show: 'RTA', points: 151, unit: 'nm', amin: 0, amax: 89, lambda: 633, method: 'auto', orders: 15, slices: 12, rpoints: 151 } },
   params: [
     { key: 'periods', label: 'Periods drawn', type: 'number', min: 1, max: 40, step: 1 },
@@ -85,6 +85,7 @@ lib.register({
     { key: 'rows', label: 'Rows drawn (in depth)', type: 'number', min: 1, max: 30, step: 1, show: p => (p.pattern || {}).dim === 2 },
     { key: 'vex', label: 'Height scale (0 = automatic)', type: 'number', min: 0, max: 50, step: 0.5, hint: 'heights are stretched when the structure is very flat' },
     { key: 'labels', label: 'Layer names on the front', type: 'bool' },
+    { key: 'traced', label: 'Beams interact (diffraction orders, R, T, A from RCWA)', type: 'bool' },
     { key: 'ang', label: 'View angle', type: 'range', min: 5, max: 85, step: 1 },
     { key: 'depthK', label: 'Depth scale', type: 'range', min: 0.1, max: 1.2, step: 0.01 },
   ],
@@ -103,6 +104,14 @@ lib.register({
   },
   calcNote: p => (p.pattern || {}).dim === 2 ? `2D unit cell ${U.fmt(p.pattern.px, 0)} × ${U.fmt(p.pattern.py, 0)} nm. Open it in Layer Studio ▸ Pattern to change the shapes, check convergence and see the near field.` : `Unit cell: period ${U.fmt((p.pattern || DEFAULT).period, 0)} nm. Open it in Layer Studio ▸ Pattern to change the shapes; there you also get the diffraction orders and a wavelength × angle map.`,
   resizable: false,
+  /* traced beams meet the mid-depth plane: the top face answers with the RCWA orders,
+     the bottom face too when light comes from below; the side edges stop the beam */
+  optics(p) {
+    if (p.traced === false) return [];
+    const g = this.geom(p), dx = g.D / 2 * g.c.kx, dy = g.D / 2 * g.c.ky, x0 = -p.W / 2 + dx, x1 = p.W / 2 + dx, yt = -g.top - dy, yb = -dy;
+    return [{ kind: 'film', face: 'top', a: [x0, yt], b: [x1, yt] }, { kind: 'film', face: 'bottom', a: [x0, yb], b: [x1, yb] },
+      { kind: 'absorb', a: [x0, yb], b: [x0, yt] }, { kind: 'absorb', a: [x1, yb], b: [x1, yt] }];
+  },
   geom(p) {
     const pat = p.pattern || DEFAULT, dim2 = pat.dim === 2, P = Math.max(1, +(dim2 ? pat.px : pat.period) || 400), N = Math.max(1, Math.round(p.periods) || 1);
     const sx = p.W / (N * P), tot = flatL(pat.layers).reduce((a, L) => a + (+L.nm || 0), 0) || 1;

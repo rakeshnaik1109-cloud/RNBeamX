@@ -115,10 +115,29 @@ B.groups = segs => {
     if (ls.length < 2) return;
     const uniq = [];
     list.slice().sort((a, b) => a.lambda - b.lambda).forEach(s => { if (!uniq.some(u => u.lambda === s.lambda)) uniq.push(s); });
-    uniq.forEach((s, i) => out.set(s, { i, k: uniq.length }));
+    uniq.forEach((s, i) => out.set(s, { i, k: uniq.length, list: uniq }));
     list.forEach(s => { if (!out.has(s)) out.set(s, { skip: true }); });
   });
   return out;
+};
+/* the colour the eye would see from a group of wavelengths sharing one path: the spectrum
+   of what is left of each (P / P0, interpolated between the samples) under the CIE observer,
+   brightness normalised; the overall strength goes into the opacity */
+B.mixed = (doc, list) => {
+  const ls = list.slice().sort((a, b) => a.lambda - b.lambda), rel = ls.map(s => s.P0 ? U.clamp(s.P / s.P0, 0, 1) : 1);
+  const mean = rel.reduce((a, v) => a + v, 0) / rel.length, CO = RNBX.colour;
+  let col;
+  if (!CO || ls.length < 2 || Math.max(...rel) <= 0) col = B.color(doc, ls[rel.indexOf(Math.max(...rel))] || ls[0]);
+  else {
+    // relative to the source's own light: a beam that has lost nothing stays neutral (light grey),
+    // a beam that lost its blue turns warm, and so on
+    const x = ls.map(s => s.lambda), lin = f => CO.srgbLinear(CO.xyz(l => { const v = f(l); return v == null ? 0 : v; }));
+    const a = lin(CO.interp(x, rel)), w = lin(CO.interp(x, rel.map(() => 1)));
+    const q = a.map((v, i) => w[i] > 1e-9 ? Math.max(0, v) / w[i] : 0), k = 0.82 / Math.max(1e-9, ...q);
+    const enc = v => { v = U.clamp(v * k, 0, 1); return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); };
+    col = CO.hex(q.map(enc));
+  }
+  return { col, f: mean };
 };
 /* single rays of a ray bundle: fine lines of a fixed width */
 B.rayLine = (doc, seg) => `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.min(1, B.opacity(doc, seg) + 0.05))}" stroke-width="${n(doc.style.rayWidth || 0.16)}" stroke-linecap="round"/>`;
@@ -143,9 +162,15 @@ B.draw2D = (trace, doc, opt = {}) => {
       core += `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.max(0.35, B.opacity(doc, seg)))}" stroke-width="${n(w)}" stroke-dasharray="${n(w * 4)} ${n(w * 3)}"/>`;
       continue;
     }
-    const g = groups.get(seg);
+    let g = groups.get(seg);
     if (g && g.skip) continue;
-    const col = B.color(doc, seg), op = B.opacity(doc, seg);
+    let col = B.color(doc, seg), op = B.opacity(doc, seg);
+    if (g && st.spectralMix && st.colorMode !== 'mono' && st.colorMode !== 'safe') {
+      // one beam of the mixed colour instead of side-by-side bands
+      if (g.i > 0) continue;
+      const mx = B.mixed(doc, g.list), base = st.beamOpacity == null ? 0.92 : st.beamOpacity;
+      col = mx.col; op = st.beamFade ? base * (0.3 + 0.7 * Math.pow(U.clamp(mx.f, 0, 1), 0.45)) : base; g = null;
+    }
     const coreCol = dark && glow ? U.lighten(col, 0.25) : col;
     const k = seg.emitted ? B.signalScale : 1;
     if (g) {

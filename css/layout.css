@@ -242,3 +242,6 @@ a.icon-btn { text-decoration: none; }
 @keyframes rbxlive { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 .handle.aux { fill: #ffd23f; cursor: move; }
+.readout .ro-tab { border-collapse: collapse; margin: 6px 0 4px; width: 100%; }
+.readout .ro-tab th, .readout .ro-tab td { text-align: right; padding: 1px 6px; border-bottom: 1px solid var(--line); }
+.readout .ro-tab th:first-child, .readout .ro-tab td:first-child { text-align: left; }
