@@ -51,6 +51,25 @@ O.describePol = st => {
 };
 O.scaleJ = (E, k) => E && [C.scale(E[0], k), C.scale(E[1], k)];
 O.powerJ = E => C.abs2(E[0]) + C.abs2(E[1]);
+
+/* integer-order Bessel function J_m(x), from J_m(x) = (1/π)∫₀^π cos(mτ − x sin τ) dτ (Simpson, ample for |x| < 40) */
+O.besselJn = (m, x) => {
+  const N = 240, h = Math.PI / N; let s = 0;
+  for (let i = 0; i <= N; i++) { const t = i * h, f = Math.cos(m * t - x * Math.sin(t)); s += f * (i === 0 || i === N ? 1 : i % 2 ? 4 : 2); }
+  return s * h / 3 / Math.PI;
+};
+/* Scalar (thin-grating) diffraction efficiency of order m, for gratings whose period is several wavelengths:
+     sinus  — sinusoidal phase profile, peak-to-peak phase Δφ:   η_m = J_m²(Δφ/2)
+     binary — 50 % duty square phase profile of depth Δφ:         η_0 = cos²(Δφ/2), η_m = [2 sin(Δφ/2)/(mπ)]² for odd m, 0 for even m
+     blazed — ideal sawtooth, blazed for order 1 at λ_B:           η_m = sinc²(λ_B/λ − m)
+   Δφ = 4π h cosθ / λ for a reflection grating of groove depth h, 2π (n − 1) h / λ for a transmission grating. */
+O.gratingPhase = (p, lambdaNm, cosi) => p.transmit ? 2 * Math.PI * ((p.nG || 1.5) - 1) * (p.depth || 0) / lambdaNm : 4 * Math.PI * (p.depth || 0) * (cosi == null ? 1 : cosi) / lambdaNm;
+O.gratingEff = (p, m, lambdaNm, cosi) => {
+  if (p.profile === 'blazed') { const x = (p.blazeNm || 500) / lambdaNm - m; return Math.abs(x) < 1e-9 ? 1 : Math.pow(Math.sin(Math.PI * x) / (Math.PI * x), 2); }
+  const dphi = O.gratingPhase(p, lambdaNm, cosi);
+  if (p.profile === 'binary') return m === 0 ? Math.pow(Math.cos(dphi / 2), 2) : (Math.abs(m) % 2 ? Math.pow(2 * Math.sin(dphi / 2) / (m * Math.PI), 2) : 0);
+  return Math.pow(O.besselJn(Math.abs(m), dphi / 2), 2);
+};
 O.applyM = (M, E) => [C.add(C.mul(M[0][0], E[0]), C.mul(M[0][1], E[1])), C.add(C.mul(M[1][0], E[0]), C.mul(M[1][1], E[1]))];
 
 /* Retarder with fast axis at θ from p and retardance Γ. */

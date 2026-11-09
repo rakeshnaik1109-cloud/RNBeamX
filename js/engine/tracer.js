@@ -397,8 +397,10 @@ RNBX.trace = function trace(doc) {
         orders.forEach(m => { const kt = kt0 + m * ray.lambda * 1e-6 * G; if (Math.abs(kt) <= 1) valid.push({ m, kt }); });
         const nz = valid.filter(v => v.m !== 0).length;
         const e0 = valid.some(v => v.m === 0) ? U.clamp(s.eff0 == null ? 0.2 : s.eff0, 0, 1) : 0;
+        const scalar = s.profile && s.profile !== 'manual', cosi = Math.abs(V.dot(d, s.n));
         valid.forEach(v => {
-          const frac = v.m === 0 ? e0 : (nz ? (1 - e0) / nz : 0);
+          // scalar theory: each order its own efficiency (orders not traced or not propagating carry the rest away)
+          const frac = scalar ? U.clamp(O.gratingEff(s, v.m, ray.lambda, cosi), 0, 1) : v.m === 0 ? e0 : (nz ? (1 - e0) / nz : 0);
           if (frac <= 0) return;
           const kn = Math.sqrt(1 - v.kt * v.kt) * (s.transmit ? sn : -sn);
           const nd = V.norm(V.add(V.mul(s.t, v.kt), V.mul(s.n, kn)));

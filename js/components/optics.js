@@ -411,11 +411,16 @@ lib.register({
 
 lib.register({
   type: 'grating', name: 'Diffraction grating', abbr: 'G', category: 'Filters & dispersion', keywords: 'grating diffraction blazed reflective transmission spectrometer',
-  defaults: { w: 11, t: 2.4, G: 1200, orders: '-1,0,1', eff0: 0.15, transmit: false },
+  defaults: { w: 11, t: 2.4, G: 1200, orders: '-1,0,1', eff0: 0.15, transmit: false, profile: 'manual', depth: 150, blazeNm: 500, nG: 1.5 },
   params: [{ key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 3, max: 60, step: 0.5 }, P.thick(2.4),
     { key: 'G', label: 'Groove density', type: 'number', unit: 'lines/mm', min: 1, max: 5000, step: 1 },
     { key: 'orders', label: 'Orders traced', type: 'text', placeholder: '-1,0,1' },
-    { key: 'eff0', label: 'Zero-order fraction', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'profile', label: 'Order powers', type: 'select', options: [['manual', 'Set by hand (zero-order fraction)'], ['sinus', 'Sinusoidal grooves (scalar theory)'], ['binary', 'Binary grooves, 50 % duty (scalar theory)'], ['blazed', 'Blazed grooves (scalar theory)']],
+      hint: 'Scalar theory gives each order its efficiency at every wavelength, so weak orders are drawn fainter. It holds when the period is several wavelengths; for fine or deep gratings use a Studio structure (RCWA).' },
+    { key: 'eff0', label: 'Zero-order fraction', type: 'range', min: 0, max: 1, step: 0.01, show: p => !p.profile || p.profile === 'manual' },
+    { key: 'depth', label: 'Groove depth', type: 'number', unit: 'nm', min: 0, max: 5000, step: 5, show: p => p.profile === 'sinus' || p.profile === 'binary' },
+    { key: 'nG', label: 'Grating index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.transmit && (p.profile === 'sinus' || p.profile === 'binary') },
+    { key: 'blazeNm', label: 'Blaze wavelength (order +1)', type: 'number', unit: 'nm', min: 100, max: 20000, step: 5, show: p => p.profile === 'blazed' },
     { key: 'transmit', label: 'Transmission grating', type: 'bool' }],
   variants: [{ name: 'Transmission grating', props: { transmit: true, t: 0.8, G: 600 }, keywords: 'transmission grating' }],
   snap: 'grating', mount: true, labelPos: [0, 8],
@@ -431,7 +436,7 @@ lib.register({
     s += H.sheen(S, 0, -p.w / 2, p.t, p.w * 0.4);
     return s + `<path d="${teeth} Z" fill="${S.shaded ? 'url(#rbx-rainbow)' : '#c9b46a'}" ${H.stroke(S, 0.8)}/>`;
   },
-  optics: p => [{ kind: 'grating', a: [0, -p.w / 2], b: [0, p.w / 2], G: p.G, orders: p.orders, eff0: p.eff0, transmit: p.transmit }],
+  optics: p => [{ kind: 'grating', a: [0, -p.w / 2], b: [0, p.w / 2], G: p.G, orders: p.orders, eff0: p.eff0, transmit: p.transmit, profile: p.profile, depth: p.depth, blazeNm: p.blazeNm, nG: p.nG }],
   solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: p.transmit ? 'glass' : 'grating' }],
 });
 

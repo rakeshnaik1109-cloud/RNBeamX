@@ -133,6 +133,7 @@ R.inset = (obj, doc) => {
 };
 
 /* ---------- full build ---------- */
+const LETTERING = { text: 1, panel: 1 };
 R.build = (srcDoc, opt = {}) => {
   const time = opt.time != null ? opt.time : null;
   const doc = time != null && RNBX.anim ? RNBX.anim.evaluate(srcDoc, time) : srcDoc;
@@ -151,7 +152,7 @@ R.build = (srcDoc, opt = {}) => {
   if (mode === '3d' && RNBX.render3d) {
     const r3 = RNBX.render3d.scene(doc, trace, S, { interactive: I, time, motion: opt.motion });
     scene = r3.markup;
-    labels = r3.labels;
+    labels = opt.labels === false ? '' : r3.labels;
     R.last3d = r3.camera;
   } else {
     let under = '', conns = '', comps = '';
@@ -163,7 +164,7 @@ R.build = (srcDoc, opt = {}) => {
       if (def.connection) conns += R.connection(o, doc, S, trace, I);
       else if (def.under) under += R.object2D(o, S, I);
       else comps += R.object2D(o, S, I);
-      if (!def.connection) labels += R.label(o, doc, o.x + (o.label ? o.label.dx : 0), o.y + (o.label ? o.label.dy : 0), I);
+      if (!def.connection && opt.labels !== false) labels += R.label(o, doc, o.x + (o.label ? o.label.dx : 0), o.y + (o.label ? o.label.dy : 0), I);
     }
     scene = under + conns + RNBX.beams.draw2D(trace, doc, { time, motion: opt.motion }) + comps;
   }
@@ -175,14 +176,19 @@ R.build = (srcDoc, opt = {}) => {
     if (def.special === 'inset') { insets += I ? `<g data-id="${o.id}">${R.inset(o, doc)}</g>` : R.inset(o, doc); continue; }
     if (!def.annotation) continue;
     if (mode !== '3d' && litStudio(o, def)) continue;   // already drawn under the beams
+    // free text and panel letters are lettering: they go with the labels (and are left out of an unlabelled export)
+    if (LETTERING[o.type]) { if (opt.labels !== false) labels += R.object2D(o, S, I); continue; }
     if (def.under) annUnder += R.object2D(o, S, I); else over += R.object2D(o, S, I);
   }
 
   const inner =
     `<defs>${RNBX.renderDefs()}<clipPath id="rbx-page"><rect x="0" y="0" width="${n(W)}" height="${n(H)}"/></clipPath></defs>` +
     RNBX.renderBackground(doc.page, opt.transparent) +
-    `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${over}${labels}</g>${insets}</g>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${n(W)}mm" height="${n(H)}mm" viewBox="0 0 ${n(W)} ${n(H)}">` +
+    (opt.layers
+      // exported files: Inkscape / Illustrator layers, so all lettering can be restyled, hidden or replaced in one place
+      ? `<g clip-path="url(#rbx-page)" inkscape:groupmode="layer" inkscape:label="Figure"><g id="rbx-content">${annUnder}${scene}${over}<g id="rbx-labels" inkscape:groupmode="layer" inkscape:label="Labels">${labels}</g></g>${insets}</g>`
+      : `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${over}${labels}</g>${insets}</g>`);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"${opt.layers ? ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"' : ''} version="1.1" width="${n(W)}mm" height="${n(H)}mm" viewBox="0 0 ${n(W)} ${n(H)}">` +
     `<title>${U.esc(doc.meta.title || 'RNBeamX figure')}</title><desc>Created with RNBeamX ${RNBX.VERSION}</desc>${inner}</svg>`;
   return { svg, inner, trace, doc };
 };

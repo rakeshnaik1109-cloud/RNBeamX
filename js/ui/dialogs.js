@@ -23,7 +23,7 @@ const FORMATS = [
 ];
 Dl.exporter = (initial = 'svg') => {
   let fmt = initial;
-  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15 };
+  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15, lettering: 'with' };
   const list = el('div', { class: 'fmt-list' });
   const right = el('div');
   const go = el('button', { class: 'btn primary', type: 'button', text: 'Export' });
@@ -36,7 +36,7 @@ Dl.exporter = (initial = 'svg') => {
   const renderRight = () => {
     right.innerHTML = '';
     const W = S.doc.page.width, H = S.doc.page.height;
-    const prev = el('div', { class: 'exp-preview', html: RNBX.render.build(S.doc, { time: RNBX.anim.isLive(S.doc) ? S.time : null, transparent: opts.transparent }).svg });
+    const prev = el('div', { class: 'exp-preview', html: RNBX.render.build(S.doc, { time: RNBX.anim.isLive(S.doc) ? S.time : null, transparent: opts.transparent, labels: opts.lettering !== 'without' }).svg });
     right.append(prev);
     const info = el('div', { class: 'note' });
     if (['png', 'tiff', 'jpeg'].includes(fmt)) {
@@ -49,6 +49,13 @@ Dl.exporter = (initial = 'svg') => {
     if (['svg', 'png', 'tiff', 'pdf'].includes(fmt)) {
       const cb = el('input', { type: 'checkbox', checked: opts.transparent, onchange: () => { opts.transparent = cb.checked; renderRight(); } });
       right.append(el('label', { class: 'check' }, cb, 'Transparent background'));
+    }
+    if (['svg', 'pdf', 'png', 'tiff', 'jpeg'].includes(fmt)) {
+      const ls = el('select', { onchange: () => { opts.lettering = ls.value; renderRight(); } },
+        el('option', { value: 'with', text: 'With labels' }), el('option', { value: 'without', text: 'Without labels (clean figure)' }), el('option', { value: 'both', text: 'Both: labelled and unlabelled files' }));
+      ls.value = opts.lettering;
+      right.append(el('div', { class: 'field' }, el('label', {}, 'Lettering'), ls),
+        el('div', { class: 'note', text: 'Unlabelled leaves out component labels, free text and panel letters, so you can letter the figure yourself in the journal font.' + (fmt === 'svg' ? ' In the SVG all lettering sits in its own “Labels” layer.' : '') }));
     }
     if (fmt === 'svg') right.append(el('div', { class: 'note', text: 'Text stays as live text in Arial/Helvetica, so editors and journals can restyle it. Open in Illustrator, Inkscape or Affinity for final touches.' }));
     if (fmt === 'pdf') right.append(el('div', { class: 'note', text: 'Vector PDF. Greek letters are set in the standard Symbol font so they display correctly everywhere.' }));
@@ -89,11 +96,11 @@ Dl.exporter = (initial = 'svg') => {
     const X = RNBX.exporter;
     go.disabled = true;
     try {
-      if (fmt === 'svg') X.svg(opts);
-      else if (fmt === 'pdf') await X.pdf(opts);
-      else if (fmt === 'png') await X.png(opts);
-      else if (fmt === 'tiff') await X.tiff(opts);
-      else if (fmt === 'jpeg') await X.jpeg(opts);
+      if (fmt === 'svg') await X.lettered(o => X.svg(o), opts);
+      else if (fmt === 'pdf') await X.lettered(X.pdf, opts);
+      else if (fmt === 'png') await X.lettered(X.png, opts);
+      else if (fmt === 'tiff') await X.lettered(X.tiff, opts);
+      else if (fmt === 'jpeg') await X.lettered(X.jpeg, opts);
       else if (fmt === 'project') RNBX.project.save();
       else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
       else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');

@@ -1195,6 +1195,25 @@ O.describePol = st => {
 };
 O.scaleJ = (E, k) => E && [C.scale(E[0], k), C.scale(E[1], k)];
 O.powerJ = E => C.abs2(E[0]) + C.abs2(E[1]);
+
+/* integer-order Bessel function J_m(x), from J_m(x) = (1/π)∫₀^π cos(mτ − x sin τ) dτ (Simpson, ample for |x| < 40) */
+O.besselJn = (m, x) => {
+  const N = 240, h = Math.PI / N; let s = 0;
+  for (let i = 0; i <= N; i++) { const t = i * h, f = Math.cos(m * t - x * Math.sin(t)); s += f * (i === 0 || i === N ? 1 : i % 2 ? 4 : 2); }
+  return s * h / 3 / Math.PI;
+};
+/* Scalar (thin-grating) diffraction efficiency of order m, for gratings whose period is several wavelengths:
+     sinus  — sinusoidal phase profile, peak-to-peak phase Δφ:   η_m = J_m²(Δφ/2)
+     binary — 50 % duty square phase profile of depth Δφ:         η_0 = cos²(Δφ/2), η_m = [2 sin(Δφ/2)/(mπ)]² for odd m, 0 for even m
+     blazed — ideal sawtooth, blazed for order 1 at λ_B:           η_m = sinc²(λ_B/λ − m)
+   Δφ = 4π h cosθ / λ for a reflection grating of groove depth h, 2π (n − 1) h / λ for a transmission grating. */
+O.gratingPhase = (p, lambdaNm, cosi) => p.transmit ? 2 * Math.PI * ((p.nG || 1.5) - 1) * (p.depth || 0) / lambdaNm : 4 * Math.PI * (p.depth || 0) * (cosi == null ? 1 : cosi) / lambdaNm;
+O.gratingEff = (p, m, lambdaNm, cosi) => {
+  if (p.profile === 'blazed') { const x = (p.blazeNm || 500) / lambdaNm - m; return Math.abs(x) < 1e-9 ? 1 : Math.pow(Math.sin(Math.PI * x) / (Math.PI * x), 2); }
+  const dphi = O.gratingPhase(p, lambdaNm, cosi);
+  if (p.profile === 'binary') return m === 0 ? Math.pow(Math.cos(dphi / 2), 2) : (Math.abs(m) % 2 ? Math.pow(2 * Math.sin(dphi / 2) / (m * Math.PI), 2) : 0);
+  return Math.pow(O.besselJn(Math.abs(m), dphi / 2), 2);
+};
 O.applyM = (M, E) => [C.add(C.mul(M[0][0], E[0]), C.mul(M[0][1], E[1])), C.add(C.mul(M[1][0], E[0]), C.mul(M[1][1], E[1]))];
 
 /* Retarder with fast axis at θ from p and retardance Γ. */
@@ -4204,8 +4223,10 @@ RNBX.trace = function trace(doc) {
         orders.forEach(m => { const kt = kt0 + m * ray.lambda * 1e-6 * G; if (Math.abs(kt) <= 1) valid.push({ m, kt }); });
         const nz = valid.filter(v => v.m !== 0).length;
         const e0 = valid.some(v => v.m === 0) ? U.clamp(s.eff0 == null ? 0.2 : s.eff0, 0, 1) : 0;
+        const scalar = s.profile && s.profile !== 'manual', cosi = Math.abs(V.dot(d, s.n));
         valid.forEach(v => {
-          const frac = v.m === 0 ? e0 : (nz ? (1 - e0) / nz : 0);
+          // scalar theory: each order its own efficiency (orders not traced or not propagating carry the rest away)
+          const frac = scalar ? U.clamp(O.gratingEff(s, v.m, ray.lambda, cosi), 0, 1) : v.m === 0 ? e0 : (nz ? (1 - e0) / nz : 0);
           if (frac <= 0) return;
           const kn = Math.sqrt(1 - v.kt * v.kt) * (s.transmit ? sn : -sn);
           const nd = V.norm(V.add(V.mul(s.t, v.kt), V.mul(s.n, kn)));
@@ -5516,11 +5537,16 @@ lib.register({
 
 lib.register({
   type: 'grating', name: 'Diffraction grating', abbr: 'G', category: 'Filters & dispersion', keywords: 'grating diffraction blazed reflective transmission spectrometer',
-  defaults: { w: 11, t: 2.4, G: 1200, orders: '-1,0,1', eff0: 0.15, transmit: false },
+  defaults: { w: 11, t: 2.4, G: 1200, orders: '-1,0,1', eff0: 0.15, transmit: false, profile: 'manual', depth: 150, blazeNm: 500, nG: 1.5 },
   params: [{ key: 'w', label: 'Width', type: 'number', unit: 'mm', min: 3, max: 60, step: 0.5 }, P.thick(2.4),
     { key: 'G', label: 'Groove density', type: 'number', unit: 'lines/mm', min: 1, max: 5000, step: 1 },
     { key: 'orders', label: 'Orders traced', type: 'text', placeholder: '-1,0,1' },
-    { key: 'eff0', label: 'Zero-order fraction', type: 'range', min: 0, max: 1, step: 0.01 },
+    { key: 'profile', label: 'Order powers', type: 'select', options: [['manual', 'Set by hand (zero-order fraction)'], ['sinus', 'Sinusoidal grooves (scalar theory)'], ['binary', 'Binary grooves, 50 % duty (scalar theory)'], ['blazed', 'Blazed grooves (scalar theory)']],
+      hint: 'Scalar theory gives each order its efficiency at every wavelength, so weak orders are drawn fainter. It holds when the period is several wavelengths; for fine or deep gratings use a Studio structure (RCWA).' },
+    { key: 'eff0', label: 'Zero-order fraction', type: 'range', min: 0, max: 1, step: 0.01, show: p => !p.profile || p.profile === 'manual' },
+    { key: 'depth', label: 'Groove depth', type: 'number', unit: 'nm', min: 0, max: 5000, step: 5, show: p => p.profile === 'sinus' || p.profile === 'binary' },
+    { key: 'nG', label: 'Grating index', type: 'number', min: 1, max: 4, step: 0.01, show: p => p.transmit && (p.profile === 'sinus' || p.profile === 'binary') },
+    { key: 'blazeNm', label: 'Blaze wavelength (order +1)', type: 'number', unit: 'nm', min: 100, max: 20000, step: 5, show: p => p.profile === 'blazed' },
     { key: 'transmit', label: 'Transmission grating', type: 'bool' }],
   variants: [{ name: 'Transmission grating', props: { transmit: true, t: 0.8, G: 600 }, keywords: 'transmission grating' }],
   snap: 'grating', mount: true, labelPos: [0, 8],
@@ -5536,7 +5562,7 @@ lib.register({
     s += H.sheen(S, 0, -p.w / 2, p.t, p.w * 0.4);
     return s + `<path d="${teeth} Z" fill="${S.shaded ? 'url(#rbx-rainbow)' : '#c9b46a'}" ${H.stroke(S, 0.8)}/>`;
   },
-  optics: p => [{ kind: 'grating', a: [0, -p.w / 2], b: [0, p.w / 2], G: p.G, orders: p.orders, eff0: p.eff0, transmit: p.transmit }],
+  optics: p => [{ kind: 'grating', a: [0, -p.w / 2], b: [0, p.w / 2], G: p.G, orders: p.orders, eff0: p.eff0, transmit: p.transmit, profile: p.profile, depth: p.depth, blazeNm: p.blazeNm, nG: p.nG }],
   solid: (p, bh) => [{ kind: 'box', x: [0, p.t], y: [-p.w / 2, p.w / 2], z: [bh - p.w * 0.4, bh + p.w * 0.4], mat: p.transmit ? 'glass' : 'grating' }],
 });
 
@@ -14445,6 +14471,7 @@ R.inset = (obj, doc) => {
 };
 
 /* ---------- full build ---------- */
+const LETTERING = { text: 1, panel: 1 };
 R.build = (srcDoc, opt = {}) => {
   const time = opt.time != null ? opt.time : null;
   const doc = time != null && RNBX.anim ? RNBX.anim.evaluate(srcDoc, time) : srcDoc;
@@ -14463,7 +14490,7 @@ R.build = (srcDoc, opt = {}) => {
   if (mode === '3d' && RNBX.render3d) {
     const r3 = RNBX.render3d.scene(doc, trace, S, { interactive: I, time, motion: opt.motion });
     scene = r3.markup;
-    labels = r3.labels;
+    labels = opt.labels === false ? '' : r3.labels;
     R.last3d = r3.camera;
   } else {
     let under = '', conns = '', comps = '';
@@ -14475,7 +14502,7 @@ R.build = (srcDoc, opt = {}) => {
       if (def.connection) conns += R.connection(o, doc, S, trace, I);
       else if (def.under) under += R.object2D(o, S, I);
       else comps += R.object2D(o, S, I);
-      if (!def.connection) labels += R.label(o, doc, o.x + (o.label ? o.label.dx : 0), o.y + (o.label ? o.label.dy : 0), I);
+      if (!def.connection && opt.labels !== false) labels += R.label(o, doc, o.x + (o.label ? o.label.dx : 0), o.y + (o.label ? o.label.dy : 0), I);
     }
     scene = under + conns + RNBX.beams.draw2D(trace, doc, { time, motion: opt.motion }) + comps;
   }
@@ -14487,14 +14514,19 @@ R.build = (srcDoc, opt = {}) => {
     if (def.special === 'inset') { insets += I ? `<g data-id="${o.id}">${R.inset(o, doc)}</g>` : R.inset(o, doc); continue; }
     if (!def.annotation) continue;
     if (mode !== '3d' && litStudio(o, def)) continue;   // already drawn under the beams
+    // free text and panel letters are lettering: they go with the labels (and are left out of an unlabelled export)
+    if (LETTERING[o.type]) { if (opt.labels !== false) labels += R.object2D(o, S, I); continue; }
     if (def.under) annUnder += R.object2D(o, S, I); else over += R.object2D(o, S, I);
   }
 
   const inner =
     `<defs>${RNBX.renderDefs()}<clipPath id="rbx-page"><rect x="0" y="0" width="${n(W)}" height="${n(H)}"/></clipPath></defs>` +
     RNBX.renderBackground(doc.page, opt.transparent) +
-    `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${over}${labels}</g>${insets}</g>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${n(W)}mm" height="${n(H)}mm" viewBox="0 0 ${n(W)} ${n(H)}">` +
+    (opt.layers
+      // exported files: Inkscape / Illustrator layers, so all lettering can be restyled, hidden or replaced in one place
+      ? `<g clip-path="url(#rbx-page)" inkscape:groupmode="layer" inkscape:label="Figure"><g id="rbx-content">${annUnder}${scene}${over}<g id="rbx-labels" inkscape:groupmode="layer" inkscape:label="Labels">${labels}</g></g>${insets}</g>`
+      : `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${over}${labels}</g>${insets}</g>`);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"${opt.layers ? ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"' : ''} version="1.1" width="${n(W)}mm" height="${n(H)}mm" viewBox="0 0 ${n(W)} ${n(H)}">` +
     `<title>${U.esc(doc.meta.title || 'RNBeamX figure')}</title><desc>Created with RNBeamX ${RNBX.VERSION}</desc>${inner}</svg>`;
   return { svg, inner, trace, doc };
 };
@@ -16594,11 +16626,13 @@ VS.dialog = async () => {
 const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state;
 const X = RNBX.exporter = {};
 
-X.svgString = (opt = {}) => RNBX.render.build(S.doc, { time: opt.time != null ? opt.time : (RNBX.anim.isLive(S.doc) ? S.time : null), transparent: opt.transparent }).svg;
+X.svgString = (opt = {}) => RNBX.render.build(S.doc, { time: opt.time != null ? opt.time : (RNBX.anim.isLive(S.doc) ? S.time : null), transparent: opt.transparent, labels: opt.labels, layers: opt.layers }).svg;
+/* file name for an export; an unlabelled copy gets "_unlabelled" */
+const fname = (opt, tail) => U.slug(S.doc.meta.title) + (opt.labels === false ? '_unlabelled' : '') + tail;
 
 X.svg = opt => {
-  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n' + X.svgString(opt);
-  U.download(new Blob([svg], { type: 'image/svg+xml' }), U.slug(S.doc.meta.title) + '.svg');
+  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n' + X.svgString(Object.assign({ layers: true }, opt));
+  U.download(new Blob([svg], { type: 'image/svg+xml' }), fname(opt, '.svg'));
 };
 
 /* rasterise the figure SVG onto a canvas */
@@ -16640,13 +16674,13 @@ X.png = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   const c = await X.rasterize(X.svgString(opt), w, h, opt.transparent ? null : null);
   const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-  U.download(await X.pngWithDpi(blob, dpi), U.slug(S.doc.meta.title) + `_${dpi}dpi.png`);
+  U.download(await X.pngWithDpi(blob, dpi), fname(opt, `_${dpi}dpi.png`));
 };
 X.jpeg = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   const c = await X.rasterize(X.svgString(Object.assign({}, opt, { transparent: false })), w, h, '#ffffff');
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
-  U.download(blob, U.slug(S.doc.meta.title) + `_${dpi}dpi.jpg`);
+  U.download(blob, fname(opt, `_${dpi}dpi.jpg`));
 };
 
 /* ---------- TIFF (baseline, uncompressed) ---------- */
@@ -16687,7 +16721,7 @@ X.tiff = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   if (w * h > 60e6) throw new Error('That size is too large for TIFF in the browser; lower the DPI.');
   const c = await X.rasterize(X.svgString(opt), w, h, opt.transparent ? null : '#ffffff');
-  U.download(X.tiffBlob(c, dpi, !!opt.transparent), U.slug(S.doc.meta.title) + `_${dpi}dpi.tif`);
+  U.download(X.tiffBlob(c, dpi, !!opt.transparent), fname(opt, `_${dpi}dpi.tif`));
 };
 
 /* ---------- PDF (vector) ----------
@@ -16758,7 +16792,13 @@ X.pdfBlob = async (opt = {}) => {
   finally { host.remove(); }
   return pdf.output('blob');
 };
-X.pdf = async (opt = {}) => U.download(await X.pdfBlob(opt), U.slug(S.doc.meta.title) + '.pdf');
+X.pdf = async (opt = {}) => U.download(await X.pdfBlob(opt), fname(opt, '.pdf'));
+/* "both": a labelled and an unlabelled file in one go */
+X.lettered = async (fn, opt = {}) => {
+  const L = opt.lettering || 'with';
+  if (L !== 'without') await fn(Object.assign({}, opt, { labels: true }));
+  if (L !== 'with') await fn(Object.assign({}, opt, { labels: false }));
+};
 
 /* ---------- clipboard ---------- */
 X.copyPng = async (dpi = 300) => {
@@ -24933,7 +24973,7 @@ const FORMATS = [
 ];
 Dl.exporter = (initial = 'svg') => {
   let fmt = initial;
-  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15 };
+  const opts = { dpi: 600, transparent: S.doc.page.background === 'transparent', container: 'mp4', width: 1920, gifWidth: 960, gifFps: 15, lettering: 'with' };
   const list = el('div', { class: 'fmt-list' });
   const right = el('div');
   const go = el('button', { class: 'btn primary', type: 'button', text: 'Export' });
@@ -24946,7 +24986,7 @@ Dl.exporter = (initial = 'svg') => {
   const renderRight = () => {
     right.innerHTML = '';
     const W = S.doc.page.width, H = S.doc.page.height;
-    const prev = el('div', { class: 'exp-preview', html: RNBX.render.build(S.doc, { time: RNBX.anim.isLive(S.doc) ? S.time : null, transparent: opts.transparent }).svg });
+    const prev = el('div', { class: 'exp-preview', html: RNBX.render.build(S.doc, { time: RNBX.anim.isLive(S.doc) ? S.time : null, transparent: opts.transparent, labels: opts.lettering !== 'without' }).svg });
     right.append(prev);
     const info = el('div', { class: 'note' });
     if (['png', 'tiff', 'jpeg'].includes(fmt)) {
@@ -24959,6 +24999,13 @@ Dl.exporter = (initial = 'svg') => {
     if (['svg', 'png', 'tiff', 'pdf'].includes(fmt)) {
       const cb = el('input', { type: 'checkbox', checked: opts.transparent, onchange: () => { opts.transparent = cb.checked; renderRight(); } });
       right.append(el('label', { class: 'check' }, cb, 'Transparent background'));
+    }
+    if (['svg', 'pdf', 'png', 'tiff', 'jpeg'].includes(fmt)) {
+      const ls = el('select', { onchange: () => { opts.lettering = ls.value; renderRight(); } },
+        el('option', { value: 'with', text: 'With labels' }), el('option', { value: 'without', text: 'Without labels (clean figure)' }), el('option', { value: 'both', text: 'Both: labelled and unlabelled files' }));
+      ls.value = opts.lettering;
+      right.append(el('div', { class: 'field' }, el('label', {}, 'Lettering'), ls),
+        el('div', { class: 'note', text: 'Unlabelled leaves out component labels, free text and panel letters, so you can letter the figure yourself in the journal font.' + (fmt === 'svg' ? ' In the SVG all lettering sits in its own “Labels” layer.' : '') }));
     }
     if (fmt === 'svg') right.append(el('div', { class: 'note', text: 'Text stays as live text in Arial/Helvetica, so editors and journals can restyle it. Open in Illustrator, Inkscape or Affinity for final touches.' }));
     if (fmt === 'pdf') right.append(el('div', { class: 'note', text: 'Vector PDF. Greek letters are set in the standard Symbol font so they display correctly everywhere.' }));
@@ -24999,11 +25046,11 @@ Dl.exporter = (initial = 'svg') => {
     const X = RNBX.exporter;
     go.disabled = true;
     try {
-      if (fmt === 'svg') X.svg(opts);
-      else if (fmt === 'pdf') await X.pdf(opts);
-      else if (fmt === 'png') await X.png(opts);
-      else if (fmt === 'tiff') await X.tiff(opts);
-      else if (fmt === 'jpeg') await X.jpeg(opts);
+      if (fmt === 'svg') await X.lettered(o => X.svg(o), opts);
+      else if (fmt === 'pdf') await X.lettered(X.pdf, opts);
+      else if (fmt === 'png') await X.lettered(X.png, opts);
+      else if (fmt === 'tiff') await X.lettered(X.tiff, opts);
+      else if (fmt === 'jpeg') await X.lettered(X.jpeg, opts);
       else if (fmt === 'project') RNBX.project.save();
       else if (fmt === 'pptx') U.download(await RNBX.share.pptx(), U.slug(S.doc.meta.title) + '.pptx');
       else if (fmt === 'tikz') U.download(new Blob([RNBX.share.tikz()], { type: 'application/x-tex' }), U.slug(S.doc.meta.title) + '.tex');

@@ -13,11 +13,13 @@
 const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state;
 const X = RNBX.exporter = {};
 
-X.svgString = (opt = {}) => RNBX.render.build(S.doc, { time: opt.time != null ? opt.time : (RNBX.anim.isLive(S.doc) ? S.time : null), transparent: opt.transparent }).svg;
+X.svgString = (opt = {}) => RNBX.render.build(S.doc, { time: opt.time != null ? opt.time : (RNBX.anim.isLive(S.doc) ? S.time : null), transparent: opt.transparent, labels: opt.labels, layers: opt.layers }).svg;
+/* file name for an export; an unlabelled copy gets "_unlabelled" */
+const fname = (opt, tail) => U.slug(S.doc.meta.title) + (opt.labels === false ? '_unlabelled' : '') + tail;
 
 X.svg = opt => {
-  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n' + X.svgString(opt);
-  U.download(new Blob([svg], { type: 'image/svg+xml' }), U.slug(S.doc.meta.title) + '.svg');
+  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n' + X.svgString(Object.assign({ layers: true }, opt));
+  U.download(new Blob([svg], { type: 'image/svg+xml' }), fname(opt, '.svg'));
 };
 
 /* rasterise the figure SVG onto a canvas */
@@ -59,13 +61,13 @@ X.png = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   const c = await X.rasterize(X.svgString(opt), w, h, opt.transparent ? null : null);
   const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-  U.download(await X.pngWithDpi(blob, dpi), U.slug(S.doc.meta.title) + `_${dpi}dpi.png`);
+  U.download(await X.pngWithDpi(blob, dpi), fname(opt, `_${dpi}dpi.png`));
 };
 X.jpeg = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   const c = await X.rasterize(X.svgString(Object.assign({}, opt, { transparent: false })), w, h, '#ffffff');
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
-  U.download(blob, U.slug(S.doc.meta.title) + `_${dpi}dpi.jpg`);
+  U.download(blob, fname(opt, `_${dpi}dpi.jpg`));
 };
 
 /* ---------- TIFF (baseline, uncompressed) ---------- */
@@ -106,7 +108,7 @@ X.tiff = async (opt = {}) => {
   const dpi = opt.dpi || 600, [w, h] = pxSize(dpi);
   if (w * h > 60e6) throw new Error('That size is too large for TIFF in the browser; lower the DPI.');
   const c = await X.rasterize(X.svgString(opt), w, h, opt.transparent ? null : '#ffffff');
-  U.download(X.tiffBlob(c, dpi, !!opt.transparent), U.slug(S.doc.meta.title) + `_${dpi}dpi.tif`);
+  U.download(X.tiffBlob(c, dpi, !!opt.transparent), fname(opt, `_${dpi}dpi.tif`));
 };
 
 /* ---------- PDF (vector) ----------
@@ -177,7 +179,13 @@ X.pdfBlob = async (opt = {}) => {
   finally { host.remove(); }
   return pdf.output('blob');
 };
-X.pdf = async (opt = {}) => U.download(await X.pdfBlob(opt), U.slug(S.doc.meta.title) + '.pdf');
+X.pdf = async (opt = {}) => U.download(await X.pdfBlob(opt), fname(opt, '.pdf'));
+/* "both": a labelled and an unlabelled file in one go */
+X.lettered = async (fn, opt = {}) => {
+  const L = opt.lettering || 'with';
+  if (L !== 'without') await fn(Object.assign({}, opt, { labels: true }));
+  if (L !== 'with') await fn(Object.assign({}, opt, { labels: false }));
+};
 
 /* ---------- clipboard ---------- */
 X.copyPng = async (dpi = 300) => {
