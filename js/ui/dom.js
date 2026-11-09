@@ -68,12 +68,12 @@ const P = {
   wand: '<path d="m15 4 5 5L9 20H4v-5zM13 6l5 5"/>',
 };
 D.icon = (name, size) => `<svg viewBox="0 0 24 24" ${size ? `width="${size}" height="${size}"` : ''} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
-D.iconBtn = (name, title, onclick, extra = {}) => D.el('button', Object.assign({ class: 'icon-btn', title, html: D.icon(name), onclick, type: 'button' }, extra));
+D.iconBtn = (name, title, onclick, extra = {}) => D.el('button', Object.assign({ class: 'icon-btn', title, 'aria-label': String(title || name).replace(/\s*\(.*?\)\s*$/, ''), html: D.icon(name), onclick, type: 'button' }, extra));
 
 /* ---------- toast ---------- */
 /* action: optional { label, fn } shown as a button (e.g. Undo) */
 RNBX.toast = (msg, kind, action) => {
-  const t = D.el('div', { class: 'toast' + (kind ? ' ' + kind : ''), text: msg });
+  const t = D.el('div', { class: 'toast' + (kind ? ' ' + kind : ''), text: msg, role: kind === 'error' ? 'alert' : 'status' });
   if (action) t.append(D.el('button', { class: 'toast-act', type: 'button', text: action.label, onclick: () => { t.remove(); action.fn(); } }));
   D.$('#toastRoot').append(t);
   setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, kind === 'error' ? 4200 : action ? 6500 : 2400);
@@ -82,7 +82,8 @@ RNBX.toast = (msg, kind, action) => {
 /* ---------- modal ---------- */
 D.modal = ({ title, sub, body, foot, wide, onClose }) => {
   const back = D.el('div', { class: 'modal-back' });
-  const close = () => { back.remove(); document.removeEventListener('keydown', esc, true); onClose && onClose(); };
+  const before = document.activeElement;
+  const close = () => { back.remove(); document.removeEventListener('keydown', esc, true); onClose && onClose(); if (before && before.focus && document.contains(before)) before.focus({ preventScroll: true }); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   const m = D.el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true' },
     D.el('div', { class: 'modal-head' }, D.el('div', {}, D.el('h3', { text: title }), sub ? D.el('div', { class: 'sub', text: sub }) : null), D.iconBtn('close', 'Close', close)),
@@ -92,12 +93,23 @@ D.modal = ({ title, sub, body, foot, wide, onClose }) => {
   back.addEventListener('mousedown', e => { if (e.target === back) close(); });
   document.addEventListener('keydown', esc, true);
   D.$('#modalRoot').append(back);
+  // keyboard: focus moves into the dialog, Tab stays inside it, and focus returns where it was on close
+  m.setAttribute('aria-label', title || 'Dialog');
+  const focusables = () => [...m.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+  m.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const f = focusables(); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  setTimeout(() => { if (!m.contains(document.activeElement)) { const f = focusables(); const pick = f.find(x => x.matches('input, select, textarea')) || f.find(x => !x.closest('.modal-head')) || f[0]; if (pick) pick.focus({ preventScroll: true }); } }, 40);
   return { close, root: m };
 };
 
 /* ---------- pop-up menu ---------- */
 let openMenu = null;
-D.closeMenu = () => { if (openMenu) { openMenu.el.remove(); openMenu.anchor && openMenu.anchor.classList.remove('open'); openMenu = null; } };
+D.closeMenu = () => { if (openMenu) { openMenu.el.remove(); if (openMenu.anchor) { openMenu.anchor.classList.remove('open'); openMenu.anchor.setAttribute && openMenu.anchor.setAttribute('aria-expanded', 'false'); } openMenu = null; } };
 D.menu = (items, x, y, anchor) => {
   D.closeMenu();
   const m = D.el('div', { class: 'menu', role: 'menu' });
@@ -112,8 +124,20 @@ D.menu = (items, x, y, anchor) => {
   const r = m.getBoundingClientRect();
   m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
   m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
-  if (anchor) anchor.classList.add('open');
+  if (anchor) { anchor.classList.add('open'); anchor.setAttribute('aria-expanded', 'true'); }
   openMenu = { el: m, anchor };
+  // keyboard: arrows move, Home/End jump, Escape closes and returns to the button that opened the menu
+  const btns = () => [...m.querySelectorAll('button:not([disabled])')];
+  [...m.querySelectorAll('button')].forEach(b => b.setAttribute('role', 'menuitem'));
+  m.addEventListener('keydown', e => {
+    const b = btns(), i = b.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); (b[(i + 1) % b.length] || b[0]).focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); (b[(i - 1 + b.length) % b.length] || b[0]).focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); b[0] && b[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); b[b.length - 1] && b[b.length - 1].focus(); }
+    else if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); D.closeMenu(); if (anchor && anchor.focus) anchor.focus(); }
+  });
+  setTimeout(() => { const b = btns(); if (b[0]) b[0].focus({ preventScroll: true }); }, 0);
   setTimeout(() => {
     const off = e => { if (!m.contains(e.target) && e.target !== anchor) { D.closeMenu(); document.removeEventListener('mousedown', off, true); } };
     document.addEventListener('mousedown', off, true);

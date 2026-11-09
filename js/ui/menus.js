@@ -145,7 +145,7 @@ M.syncTools = () => {
 M.init = () => {
   const nav = D.$('#menus');
   Object.keys(M.items).forEach(name => {
-    const b = el('button', { type: 'button', text: name });
+    const b = el('button', { type: 'button', text: name, 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
     b.onclick = () => { const r = b.getBoundingClientRect(); D.menu(M.items[name](), r.left, r.bottom + 4, b); };
     b.onmouseenter = () => { const open = nav.querySelector('.open'); if (open && open !== b) b.click(); };
     nav.append(b);
@@ -168,6 +168,21 @@ M.init = () => {
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();
+  // narrow screens: everything that does not fit the top bar lives in one "More" menu
+  const more = el('button', { class: 'icon-btn more-btn', id: 'btnMore', type: 'button', title: 'More: menus, figure style, tools, help', 'aria-label': 'More', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' });
+  const at = () => { const r = more.getBoundingClientRect(); return [Math.max(8, r.right - 260), r.bottom + 4]; };
+  const sub = name => () => { const p = at(); D.menu(M.items[name](), p[0], p[1], more); };
+  const click = id => () => { const b = D.$(id); if (b) b.click(); };
+  M.moreItems = () => [
+    { title: 'Menus' }, { label: 'File…', icon: 'file', action: sub('File') }, { label: 'Edit…', action: sub('Edit') }, { label: 'Arrange…', action: sub('Arrange') }, { label: 'View…', action: sub('View') }, '-',
+    { title: 'Figure style' }, ...[['schematic', 'Schematic'], ['shaded', 'Shaded'], ['3d', '3D']].map(m => ({ label: (S.doc.style.mode === m[0] ? '● ' : '○ ') + m[1], action: () => M.setMode(m[0]) })), '-',
+    { title: 'Tools' }, { label: 'Draw by hand', action: () => RNBX.draw && RNBX.draw.toggle(true) }, { label: 'Templates…', icon: 'grid', action: click('#btnTemplates') }, { label: 'Setup from text…', action: () => RNBX.setupText && RNBX.setupText.open() },
+    { label: 'Animate…', icon: 'play', action: click('#btnAnimate') }, { label: 'Layer Studio…', action: click('#btnStudio') }, '-',
+    { label: 'Light / dark workspace', icon: 'moon', action: click('#btnTheme') }, { label: 'Help and shortcuts', icon: 'help', action: click('#btnHelp') },
+    { label: 'Guide', icon: 'book', action: () => window.open(D.$('#lnkGuide').href, '_blank', 'noopener') }, { label: 'Learn optics', icon: 'book', action: () => window.open(D.$('#btnLearn').href, '_blank', 'noopener') }];
+  more.onclick = () => { const p = at(); D.menu(M.moreItems(), p[0], p[1], more); };
+  D.$('#btnExport').before(more);
   // links to the companion app and the authors' site (addresses in js/config.js)
   D.$('#lnkSpectrax').href = RNBX.links.spectrax;
   D.$('#lnkHome').href = RNBX.links.home;
@@ -205,6 +220,8 @@ M.init = () => {
   const tb = D.$('#touchBar');
   tb.append(
     D.iconBtn('grid', 'Components', () => M.toggleDrawer()),
+    (() => { const b = D.iconBtn('wand', 'Draw by hand', () => RNBX.draw && RNBX.draw.toggle()); b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c3-1 4-6 7-9s6-4 9-7"/><path d="m16 4 4 4"/></svg>'; return b; })(),
+    D.iconBtn('eye', 'Show or hide the properties panel', () => { app.classList.toggle('props-hidden'); setTimeout(() => RNBX.canvas.fit(), 30); }, { id: 'tbProps' }),
     D.iconBtn('undo', 'Undo', () => RNBX.history.undo(), { id: 'tbUndo' }),
     D.iconBtn('redo', 'Redo', () => RNBX.history.redo(), { id: 'tbRedo' }),
     D.iconBtn('reset', 'Reset everything', () => M.resetAll()),

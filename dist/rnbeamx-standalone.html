@@ -613,6 +613,31 @@ a.icon-btn { text-decoration: none; }
 .draw-bar .db-hint { color: var(--muted, #6b7280); }
 #canvas.drawing { cursor: crosshair; }
 
+/* ---------- accessibility ---------- */
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--accent, #4f46e5); outline-offset: 2px; }
+#canvas:focus-visible { outline-offset: -3px; }
+.menu { max-height: calc(100vh - 16px); overflow-y: auto; }
+.menu button:focus-visible { outline-offset: -2px; }
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+
+/* ---------- phones ---------- */
+.more-btn { display: none; }
+@media (max-width: 820px) {
+  .more-btn { display: inline-flex; }
+  .top-right .family-link, #btnStudio, #btnAnimate, #btnTemplates, #btnHelp, #lnkHome { display: none; }
+  .topbar { gap: 8px; overflow: hidden; }
+  .top-right { margin-left: auto; gap: 6px; flex-shrink: 0; }
+  .touch-bar { overflow-x: auto; scrollbar-width: none; max-width: calc(100vw - 24px); }
+  .touch-bar::-webkit-scrollbar { display: none; }
+  .touch-bar .icon-btn { flex: 0 0 auto; width: 40px; height: 40px; }
+  #app.props-hidden .panel.right { display: none; }
+  .draw-bar { top: 6px; max-width: calc(100vw - 16px); }
+}
+@media (max-width: 480px) {
+  #versionPill, .brand-name { display: none; }
+}
+
 </style>
 </head>
 <body>
@@ -638,9 +663,9 @@ a.icon-btn { text-decoration: none; }
       <button class="btn ghost" id="btnAnimate" title="One-click animations: 3D rotation, beam switch-on, scans, build-up… (A)">Animate</button>
       <button class="btn ghost" id="btnTemplates" title="Start from a template">Templates</button>
       <button class="btn primary" id="btnExport" title="Export figure (Ctrl+E)">Export</button>
-      <button class="icon-btn" id="btnTheme" title="Light / dark workspace"></button>
-      <button class="icon-btn" id="btnHelp" title="Help &amp; shortcuts (?)"></button>
-      <a class="icon-btn" id="lnkHome" href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer" title="Rakesh Naik: research and other software"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></a>
+      <button class="icon-btn" id="btnTheme" title="Light / dark workspace" aria-label="Light or dark workspace"></button>
+      <button class="icon-btn" id="btnHelp" title="Help &amp; shortcuts (?)" aria-label="Help and shortcuts"></button>
+      <a class="icon-btn" id="lnkHome" aria-label="Rakesh Naik: research and other software" href="https://rakeshnaik1109-cloud.github.io/RakeshNaik/" target="_blank" rel="noopener noreferrer" title="Rakesh Naik: research and other software"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></a>
     </div>
   </header>
 
@@ -18508,12 +18533,12 @@ const P = {
   wand: '<path d="m15 4 5 5L9 20H4v-5zM13 6l5 5"/>',
 };
 D.icon = (name, size) => `<svg viewBox="0 0 24 24" ${size ? `width="${size}" height="${size}"` : ''} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
-D.iconBtn = (name, title, onclick, extra = {}) => D.el('button', Object.assign({ class: 'icon-btn', title, html: D.icon(name), onclick, type: 'button' }, extra));
+D.iconBtn = (name, title, onclick, extra = {}) => D.el('button', Object.assign({ class: 'icon-btn', title, 'aria-label': String(title || name).replace(/\s*\(.*?\)\s*$/, ''), html: D.icon(name), onclick, type: 'button' }, extra));
 
 /* ---------- toast ---------- */
 /* action: optional { label, fn } shown as a button (e.g. Undo) */
 RNBX.toast = (msg, kind, action) => {
-  const t = D.el('div', { class: 'toast' + (kind ? ' ' + kind : ''), text: msg });
+  const t = D.el('div', { class: 'toast' + (kind ? ' ' + kind : ''), text: msg, role: kind === 'error' ? 'alert' : 'status' });
   if (action) t.append(D.el('button', { class: 'toast-act', type: 'button', text: action.label, onclick: () => { t.remove(); action.fn(); } }));
   D.$('#toastRoot').append(t);
   setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, kind === 'error' ? 4200 : action ? 6500 : 2400);
@@ -18522,7 +18547,8 @@ RNBX.toast = (msg, kind, action) => {
 /* ---------- modal ---------- */
 D.modal = ({ title, sub, body, foot, wide, onClose }) => {
   const back = D.el('div', { class: 'modal-back' });
-  const close = () => { back.remove(); document.removeEventListener('keydown', esc, true); onClose && onClose(); };
+  const before = document.activeElement;
+  const close = () => { back.remove(); document.removeEventListener('keydown', esc, true); onClose && onClose(); if (before && before.focus && document.contains(before)) before.focus({ preventScroll: true }); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   const m = D.el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true' },
     D.el('div', { class: 'modal-head' }, D.el('div', {}, D.el('h3', { text: title }), sub ? D.el('div', { class: 'sub', text: sub }) : null), D.iconBtn('close', 'Close', close)),
@@ -18532,12 +18558,23 @@ D.modal = ({ title, sub, body, foot, wide, onClose }) => {
   back.addEventListener('mousedown', e => { if (e.target === back) close(); });
   document.addEventListener('keydown', esc, true);
   D.$('#modalRoot').append(back);
+  // keyboard: focus moves into the dialog, Tab stays inside it, and focus returns where it was on close
+  m.setAttribute('aria-label', title || 'Dialog');
+  const focusables = () => [...m.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+  m.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const f = focusables(); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  setTimeout(() => { if (!m.contains(document.activeElement)) { const f = focusables(); const pick = f.find(x => x.matches('input, select, textarea')) || f.find(x => !x.closest('.modal-head')) || f[0]; if (pick) pick.focus({ preventScroll: true }); } }, 40);
   return { close, root: m };
 };
 
 /* ---------- pop-up menu ---------- */
 let openMenu = null;
-D.closeMenu = () => { if (openMenu) { openMenu.el.remove(); openMenu.anchor && openMenu.anchor.classList.remove('open'); openMenu = null; } };
+D.closeMenu = () => { if (openMenu) { openMenu.el.remove(); if (openMenu.anchor) { openMenu.anchor.classList.remove('open'); openMenu.anchor.setAttribute && openMenu.anchor.setAttribute('aria-expanded', 'false'); } openMenu = null; } };
 D.menu = (items, x, y, anchor) => {
   D.closeMenu();
   const m = D.el('div', { class: 'menu', role: 'menu' });
@@ -18552,8 +18589,20 @@ D.menu = (items, x, y, anchor) => {
   const r = m.getBoundingClientRect();
   m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
   m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
-  if (anchor) anchor.classList.add('open');
+  if (anchor) { anchor.classList.add('open'); anchor.setAttribute('aria-expanded', 'true'); }
   openMenu = { el: m, anchor };
+  // keyboard: arrows move, Home/End jump, Escape closes and returns to the button that opened the menu
+  const btns = () => [...m.querySelectorAll('button:not([disabled])')];
+  [...m.querySelectorAll('button')].forEach(b => b.setAttribute('role', 'menuitem'));
+  m.addEventListener('keydown', e => {
+    const b = btns(), i = b.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); (b[(i + 1) % b.length] || b[0]).focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); (b[(i - 1 + b.length) % b.length] || b[0]).focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); b[0] && b[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); b[b.length - 1] && b[b.length - 1].focus(); }
+    else if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); D.closeMenu(); if (anchor && anchor.focus) anchor.focus(); }
+  });
+  setTimeout(() => { const b = btns(); if (b[0]) b[0].focus({ preventScroll: true }); }, 0);
   setTimeout(() => {
     const off = e => { if (!m.contains(e.target) && e.target !== anchor) { D.closeMenu(); document.removeEventListener('mousedown', off, true); } };
     document.addEventListener('mousedown', off, true);
@@ -26123,6 +26172,91 @@ DR.init = () => {
 
 </script>
 <script>
+/* js/ui/a11y.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — ui/a11y.js
+   Keyboard and screen-reader access to the canvas.
+
+   With the canvas focused:
+     Tab / Shift+Tab   select the next / previous object (after the
+                       last one, Tab leaves the canvas as usual)
+     Enter             move focus to the selected object's settings
+     Arrow keys, R, F, O, Delete   as everywhere (move, rotate, flip,
+                       orient to the beam, delete)
+   Every change of selection is announced in a polite live region:
+   what the object is, where it is, and whether light reaches it.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, S = RNBX.state, lib = RNBX.lib;
+const A = RNBX.a11y = {};
+let live = null, lastMsg = '';
+
+A.say = msg => {
+  if (!live) return;
+  // toggling the text makes repeated messages announce again
+  live.textContent = msg === lastMsg ? msg + ' ' : msg;
+  lastMsg = msg;
+};
+
+const nameOf = o => { const def = lib.get(o.type); const lab = o.label && o.label.show && o.label.text ? RNBX.text.fill(o.label.text, o.props).replace(/[_^{}*\\]/g, '') : ''; return (o.kindName || (def && def.name) || o.type) + (lab && lab !== ((def && def.name) || '') ? ' “' + lab + '”' : ''); };
+A.describe = o => {
+  const parts = [nameOf(o) + ' selected', 'x ' + U.fmt(o.x, 1) + ' mm, y ' + U.fmt(o.y, 1) + ' mm'];
+  if (o.rot) parts.push('rotated ' + U.fmt(o.rot, 0) + '°');
+  try {
+    const t = RNBX.render && RNBX.render._trace, h = t && t.hits && t.hits[o.id];
+    if (h && h.P > 0) parts.push('light arriving: ' + U.fmt(h.P, 2) + ' mW');
+  } catch (e) { /* no trace yet */ }
+  if (o.locked) parts.push('locked');
+  return parts.join(', ') + '.';
+};
+
+const ordered = () => S.doc.objects.filter(o => !o.hidden && lib.get(o.type) && !lib.get(o.type).connection);
+
+A.init = () => {
+  live = document.createElement('div');
+  live.className = 'sr-only'; live.id = 'a11yLive';
+  live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status');
+  document.body.append(live);
+  const help = document.createElement('p');
+  help.className = 'sr-only'; help.id = 'canvasHelp';
+  help.textContent = 'Figure canvas. Tab and Shift+Tab select objects; arrow keys move the selection, R rotates, F flips, O turns it to face the beam, Delete removes it; Enter opens its settings. Add parts from the component library.';
+  document.body.append(help);
+  const svg = document.getElementById('canvas');
+  if (!svg) return;
+  svg.setAttribute('aria-describedby', 'canvasHelp');
+  svg.setAttribute('role', 'application');
+  svg.setAttribute('aria-roledescription', 'figure canvas');
+  const search = document.getElementById('libSearch'); if (search) search.setAttribute('aria-label', 'Search components');
+
+  svg.addEventListener('keydown', e => {
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const list = ordered(); if (!list.length) return;
+      const cur = S.selection.length ? list.findIndex(o => o.id === S.selection[S.selection.length - 1]) : -1;
+      const next = cur + (e.shiftKey ? -1 : 1);
+      if (next < 0 || next >= list.length) { if (cur >= 0) RNBX.select([]); return; }   // let focus leave the canvas
+      e.preventDefault();
+      RNBX.select([list[next].id]);
+    } else if (e.key === 'Enter' && S.selection.length) {
+      const f = document.querySelector('#inspector input, #inspector select, #inspector textarea, .panel.right input, .panel.right select');
+      if (f) { e.preventDefault(); f.focus(); }
+    }
+  });
+  let prev = '';
+  RNBX.on('selection', sel => {
+    const key = sel.join(',');
+    if (key === prev) return; prev = key;
+    if (!sel.length) { A.say('Nothing selected.'); return; }
+    if (sel.length > 1) { A.say(sel.length + ' objects selected.'); return; }
+    const o = RNBX.getObj(sel[0]); if (o) A.say(A.describe(o));
+  });
+  // reflect the reduced-motion preference: animations start paused
+  try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('reduce-motion'); } catch (e) { /* ignore */ }
+};
+})();
+
+</script>
+<script>
 /* js/ui/menus.js */
 /* ═══════════════════════════════════════════════════════════
    RNBeamX — ui/menus.js
@@ -26271,7 +26405,7 @@ M.syncTools = () => {
 M.init = () => {
   const nav = D.$('#menus');
   Object.keys(M.items).forEach(name => {
-    const b = el('button', { type: 'button', text: name });
+    const b = el('button', { type: 'button', text: name, 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
     b.onclick = () => { const r = b.getBoundingClientRect(); D.menu(M.items[name](), r.left, r.bottom + 4, b); };
     b.onmouseenter = () => { const open = nav.querySelector('.open'); if (open && open !== b) b.click(); };
     nav.append(b);
@@ -26294,6 +26428,21 @@ M.init = () => {
   );
   document.querySelectorAll('#styleSwitch button').forEach(b => b.onclick = () => M.setMode(b.dataset.mode));
   D.$('#btnExport').onclick = () => RNBX.dialogs.exporter();
+  // narrow screens: everything that does not fit the top bar lives in one "More" menu
+  const more = el('button', { class: 'icon-btn more-btn', id: 'btnMore', type: 'button', title: 'More: menus, figure style, tools, help', 'aria-label': 'More', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' });
+  const at = () => { const r = more.getBoundingClientRect(); return [Math.max(8, r.right - 260), r.bottom + 4]; };
+  const sub = name => () => { const p = at(); D.menu(M.items[name](), p[0], p[1], more); };
+  const click = id => () => { const b = D.$(id); if (b) b.click(); };
+  M.moreItems = () => [
+    { title: 'Menus' }, { label: 'File…', icon: 'file', action: sub('File') }, { label: 'Edit…', action: sub('Edit') }, { label: 'Arrange…', action: sub('Arrange') }, { label: 'View…', action: sub('View') }, '-',
+    { title: 'Figure style' }, ...[['schematic', 'Schematic'], ['shaded', 'Shaded'], ['3d', '3D']].map(m => ({ label: (S.doc.style.mode === m[0] ? '● ' : '○ ') + m[1], action: () => M.setMode(m[0]) })), '-',
+    { title: 'Tools' }, { label: 'Draw by hand', action: () => RNBX.draw && RNBX.draw.toggle(true) }, { label: 'Templates…', icon: 'grid', action: click('#btnTemplates') }, { label: 'Setup from text…', action: () => RNBX.setupText && RNBX.setupText.open() },
+    { label: 'Animate…', icon: 'play', action: click('#btnAnimate') }, { label: 'Layer Studio…', action: click('#btnStudio') }, '-',
+    { label: 'Light / dark workspace', icon: 'moon', action: click('#btnTheme') }, { label: 'Help and shortcuts', icon: 'help', action: click('#btnHelp') },
+    { label: 'Guide', icon: 'book', action: () => window.open(D.$('#lnkGuide').href, '_blank', 'noopener') }, { label: 'Learn optics', icon: 'book', action: () => window.open(D.$('#btnLearn').href, '_blank', 'noopener') }];
+  more.onclick = () => { const p = at(); D.menu(M.moreItems(), p[0], p[1], more); };
+  D.$('#btnExport').before(more);
   // links to the companion app and the authors' site (addresses in js/config.js)
   D.$('#lnkSpectrax').href = RNBX.links.spectrax;
   D.$('#lnkHome').href = RNBX.links.home;
@@ -26331,6 +26480,8 @@ M.init = () => {
   const tb = D.$('#touchBar');
   tb.append(
     D.iconBtn('grid', 'Components', () => M.toggleDrawer()),
+    (() => { const b = D.iconBtn('wand', 'Draw by hand', () => RNBX.draw && RNBX.draw.toggle()); b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c3-1 4-6 7-9s6-4 9-7"/><path d="m16 4 4 4"/></svg>'; return b; })(),
+    D.iconBtn('eye', 'Show or hide the properties panel', () => { app.classList.toggle('props-hidden'); setTimeout(() => RNBX.canvas.fit(), 30); }, { id: 'tbProps' }),
     D.iconBtn('undo', 'Undo', () => RNBX.history.undo(), { id: 'tbUndo' }),
     D.iconBtn('redo', 'Redo', () => RNBX.history.redo(), { id: 'tbRedo' }),
     D.iconBtn('reset', 'Reset everything', () => M.resetAll()),
@@ -26619,6 +26770,7 @@ document.addEventListener('DOMContentLoaded', () => {
   RNBX.command.init();
   RNBX.versions.init();
   if (RNBX.draw) RNBX.draw.init();
+  if (RNBX.a11y) RNBX.a11y.init();
 
   RNBX.on('change', kind => { if (kind !== 'selection' && kind !== 'time') RNBX.project.autosave(); });
   RNBX.on('change', () => { document.title = (S.doc.meta.title && S.doc.meta.title !== 'Untitled setup' ? S.doc.meta.title + ' · ' : '') + 'RNBeamX'; });
