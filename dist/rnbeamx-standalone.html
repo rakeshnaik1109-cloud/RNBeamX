@@ -3823,7 +3823,8 @@ RNBX.isVertical = obj => obj && (obj.axis === 'up' || obj.axis === 'down');
    A patterned structure (Layer Studio ▸ Pattern, 'ucell') answers a beam with its
    diffraction orders, each with the RCWA efficiency for p and s light. Results are
    cached per structure, wavelength and angle so dragging stays responsive. */
-const geoCache = new Map(), rcwaCache = new Map();
+const geoCache = new Map(), rcwaCache = new Map(), rcwaPending = new Set(), rcwaNear = new Map();
+let redrawQueued = false;
 const cacheSet = (m, k, v) => { if (m.size > 600) m.clear(); m.set(k, v); return v; };
 function gratingOrders(obj, def, fromTop, u, lam) {
   const RC = RNBX.rcwa, TF = RNBX.thinfilm, props = obj.props, pat = props.pattern;
@@ -3839,6 +3840,22 @@ function gratingOrders(obj, def, fromTop, u, lam) {
   const step = geo.dim === 2 ? 0.25 : 0.02, th = Math.round(U.deg(Math.asin(sInc)) / step) * step;
   const key = gk + '|' + lam + '|' + th;
   let r = rcwaCache.get(key);
+  if (r === undefined && geo.dim === 2 && RC.call) {
+    // 2D cells take seconds per angle: solve in a background worker and redraw when done;
+    // meanwhile use the nearest angle already solved at this wavelength (if any)
+    if (!rcwaPending.has(key)) {
+      rcwaPending.add(key);
+      const pb = RC.problemAt2(geo, lam), jp = RC.call('solve2', [pb, lam, th, 0, 'p']), js = RC.call('solve2', [pb, lam, th, 0, 's']);
+      Promise.all([jp.promise, js.promise]).then(([p, s]) => {
+        cacheSet(rcwaCache, key, p && s ? { p, s } : null); rcwaPending.delete(key);
+        const nk = gk + '|' + lam; (rcwaNear.get(nk) || cacheSet(rcwaNear, nk, [])).push(th);
+        if (RNBX.emit && !redrawQueued) { redrawQueued = true; requestAnimationFrame(() => { redrawQueued = false; RNBX.emit('render'); }); }   // redraw only: no autosave, no history
+      }).catch(() => { cacheSet(rcwaCache, key, null); rcwaPending.delete(key); });
+    }
+    const near = (rcwaNear.get(gk + '|' + lam) || []).slice().sort((a, b) => Math.abs(a - th) - Math.abs(b - th))[0];
+    r = near != null ? rcwaCache.get(gk + '|' + lam + '|' + near) : null;
+    if (!r) return { pending: true };
+  }
   if (!r) {
     const one = pol => { try { return geo.dim === 2 ? RC.core.solve2(RC.problemAt2(geo, lam), lam, th, 0, pol) : RC.core.solve(RC.problemAt(geo, lam), lam, th, pol); } catch (e) { return null; } };
     const p = one('p'), s = one('s');
@@ -4037,12 +4054,14 @@ RNBX.trace = function trace(doc) {
 
   /* light meeting a Studio structure: incident, reflected, transmitted, absorbed and lost
      (trapped in the slab or diffracted out of the drawing plane), per wavelength */
-  const recordStack = (obj, lam, b) => {
+  const recordStack = (obj, lam, b, at, w) => {
     const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} };
     h.P += b.in; h.lambdas[lam] = (h.lambdas[lam] || 0) + b.in;
     const st = (h.stack = h.stack || {})[lam] = (h.stack || {})[lam] || { in: 0, R: 0, T: 0, A: 0, lost: 0, orders: {} };
     st.in += b.in; st.R += b.R; st.T += b.T; st.A += b.A; st.lost += b.lost || 0;
     (b.orders || []).forEach(o => { const k = o.side + (o.m > 0 ? '+' : '') + o.m; st.orders[k] = (st.orders[k] || 0) + o.P; });
+    // where the light lands, for the spot drawn on the surface
+    if (at) (h.spots = h.spots || []).push({ x: at[0], y: at[1], w: w || 0.5, P: b.in, lambda: lam, rel: b.P0 ? b.in / b.P0 : 1 });
   };
 
   /* Fresnel ghost: a weak reflection at a glass surface */
@@ -4393,6 +4412,7 @@ RNBX.trace = function trace(doc) {
         const scaled = (ep, es) => ray.E ? [C.scale(ray.E[0], Math.sqrt(ep)), C.scale(ray.E[1], Math.sqrt(es))] : null;
         const tg = V.norm(U.dirToWorld(s.obj, [1, 0])), back = down ? up : V.mul(up, -1), fwd = V.mul(back, -1);
         const G = def.grating ? gratingOrders(s.obj, def, down, V.dot(d, tg), lam) : null;
+        if (G && G.pending) { (hits[s.obj.id] = hits[s.obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} }).pending = true; break; }   // still being calculated
         if (G) {
           // grating equation: the in-plane wavevector of order m is n sin θ − m λ / Λ (k₀ units);
           // every beam leaves into the surrounding medium, so its angle follows from n_amb
@@ -4408,7 +4428,7 @@ RNBX.trace = function trace(doc) {
           G.R.forEach(o => emit(o, 'R')); G.T.forEach(o => emit(o, 'T'));
           // 2D cells: orders leaving the drawing plane
           book.lost += pw(G.totR.p - G.planeR.p + G.totT.p - G.planeT.p, G.totR.s - G.planeR.s + G.totT.s - G.planeT.s);
-          recordStack(s.obj, lam, book);
+          book.P0 = ray.P0; recordStack(s.obj, lam, book, hit, Math.abs(w || 0));
           break;
         }
         const st = def.stack ? def.stack(Object.assign({}, s.obj.props, { side: down ? 'top' : 'bottom' })) : null;
@@ -4422,7 +4442,7 @@ RNBX.trace = function trace(doc) {
         } else { Pr = ray.P * (sP.R + sS.R) / 2; Pt = ray.P * (sP.T + sS.T) / 2; }
         if (Pr > cut) out.push(child(ray, Object.assign({}, base, { d: V.reflect(d, up), P: Pr, E: Er })));
         if (Pt > cut) out.push(child(ray, Object.assign({}, base, { P: Pt, E: Et })));
-        recordStack(s.obj, lam, { in: ray.P, R: Pr, T: Pt, A: Math.max(0, pw(sP.A, sS.A)), lost: 0, orders: [] });
+        recordStack(s.obj, lam, { in: ray.P, R: Pr, T: Pt, A: Math.max(0, pw(sP.A, sS.A)), lost: 0, orders: [], P0: ray.P0 }, hit, Math.abs(w || 0));
         break;
       }
       case 'pass':
@@ -13996,6 +14016,28 @@ B.mixed = (doc, list) => {
   }
   return { col, f: mean };
 };
+/* where beams land on a Studio structure: a soft spot lying in its surface (an ellipse
+   flattened like the oblique view), coloured by the light that arrives */
+B.spots = (trace, doc) => {
+  let out = '';
+  Object.keys(trace.hits || {}).forEach(id => {
+    const h = trace.hits[id], obj = h && h.spots && doc.objects.find(o => o.id === id);
+    if (!obj) return;
+    const def = RNBX.lib.get(obj.type), ky = def && def.geom ? (def.geom(obj.props).c || {}).ky : 0.3;
+    const groups = new Map();
+    h.spots.forEach(sp => { const k = Math.round(sp.x * 2) + ',' + Math.round(sp.y * 2); (groups.get(k) || groups.set(k, []).get(k)).push(sp); });
+    groups.forEach(list => {
+      const x = list[0].x, y = list[0].y, w = Math.max(0.6, ...list.map(q => q.w)), rel = Math.min(1, list.reduce((a, q) => a + (q.rel || 1), 0) / list.length);
+      const lams = [...new Set(list.map(q => q.lambda))], col = lams.length > 1 ? B.mixed(doc, lams.map(l => ({ lambda: l, P: list.filter(q => q.lambda === l).reduce((a, q) => a + (q.rel || 1), 0), P0: list.filter(q => q.lambda === l).length }))).col : B.color(doc, list[0]);
+      const rx = 1.6 * w + 0.8, ry = rx * Math.max(0.28, Math.min(0.7, 1.6 * (ky || 0.3))), rot = U.round(obj.rot || 0, 3);
+      const op = 0.35 + 0.5 * Math.pow(rel, 0.4);
+      out += `<g transform="rotate(${rot} ${n(x)} ${n(y)})"><ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx * 1.6)}" ry="${n(ry * 1.6)}" fill="${col}" fill-opacity="${n(0.22 * op)}"/>` +
+        `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx)}" ry="${n(ry)}" fill="${col}" fill-opacity="${n(0.5 * op)}"/>` +
+        `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx * 0.45)}" ry="${n(ry * 0.45)}" fill="#ffffff" fill-opacity="${n(0.85 * op)}"/></g>`;
+    });
+  });
+  return out;
+};
 /* single rays of a ray bundle: fine lines of a fixed width */
 B.rayLine = (doc, seg) => `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.min(1, B.opacity(doc, seg) + 0.05))}" stroke-width="${n(doc.style.rayWidth || 0.16)}" stroke-linecap="round"/>`;
 B.signalScale = 1;     // relative width of emitted (Raman / fluorescence) beams
@@ -14062,6 +14104,7 @@ B.draw2D = (trace, doc, opt = {}) => {
     if (st.polarization && seg.kind === 'beam' && seg.len > 7 && !g) deco += B.polMarker(seg, col, doc);
     if (st.waistLabels && seg.q0 && seg.kind === 'beam' && !(g && g.i > 0)) deco += B.waistLabel(seg, doc);
   }
+  deco += B.spots(trace, doc);
   let flow = '';
   if (opt.time != null && B.hasMotion(doc, segs, opt.motion)) flow = B.flow2D(trace, doc, opt.time, lineMode ? lineW : null, opt.motion);
   return `<g class="rbx-beams" pointer-events="none">${halo}${core}${flow}${deco}</g>`;
@@ -14251,6 +14294,8 @@ B.flow2D = (trace, doc, t, lineW, motion) => {
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, n = v => U.round(v, 3);
 const R = RNBX.render = {};
+/* a traced Studio structure (multilayer or pattern) with light on it */
+const litStudio = (o, def) => !!(def.optics && (def.stack || def.grating) && o.props.traced !== false && R._trace && R._trace.hits && R._trace.hits[o.id]);
 
 R.transform = o => `translate(${n(o.x)} ${n(o.y)})${o.rot ? ` rotate(${n(o.rot)})` : ''}${o.scale && o.scale !== 1 ? ` scale(${n(o.scale)})` : ''}`;
 
@@ -14378,7 +14423,7 @@ R.build = (srcDoc, opt = {}) => {
   const trace = RNBX.anim && doc.animation && doc.animation.reveal ? RNBX.anim.revealTrace(doc, full, time) : full;
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
-  S.trace = trace;
+  S.trace = trace; R._trace = trace;
   const I = !!opt.interactive;
   S.time = time; S.live = I;   // panels that follow the animation (sensorgram)
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
@@ -14393,6 +14438,8 @@ R.build = (srcDoc, opt = {}) => {
     let under = '', conns = '', comps = '';
     for (const o of objs) {
       const def = lib.get(o.type);
+      // a Studio structure that light reaches sits under the beams, so they visibly land on it
+      if (def.annotation && litStudio(o, def)) { under += R.object2D(o, S, I); continue; }
       if (def.annotation || def.special) continue;
       if (def.connection) conns += R.connection(o, doc, S, trace, I);
       else if (def.under) under += R.object2D(o, S, I);
@@ -14408,6 +14455,7 @@ R.build = (srcDoc, opt = {}) => {
     if (def.special === 'inset' && mode === '3d' && !o.props.show3d) continue;
     if (def.special === 'inset') { insets += I ? `<g data-id="${o.id}">${R.inset(o, doc)}</g>` : R.inset(o, doc); continue; }
     if (!def.annotation) continue;
+    if (mode !== '3d' && litStudio(o, def)) continue;   // already drawn under the beams
     if (def.under) annUnder += R.object2D(o, S, I); else over += R.object2D(o, S, I);
   }
 
@@ -19236,6 +19284,7 @@ function readout(obj) {
     if (ok.length > 2 || ok.some(k => !/^[RT]0$/.test(k))) html += 'Diffraction orders: ' + ok.sort().map(k => `${k[0] === 'R' ? 'reflected' : 'transmitted'} m = ${k.slice(1)} ${pc(ord[k], tot.in)}`).join(' · ');
     return el('div', { class: 'readout', html });
   }
+  if (h && h.pending && !h.stack) return el('div', { class: 'readout', text: 'Calculating the RCWA response of this 2D pattern in the background…' });
   if ((def.stack || def.grating) && def.optics && obj.props.traced !== false && !h) return el('div', { class: 'readout', text: 'No beam reaches this structure yet. Light that does is split into reflected, transmitted and absorbed parts, listed here per wavelength.' });
   if (h) {
     let html = `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ');

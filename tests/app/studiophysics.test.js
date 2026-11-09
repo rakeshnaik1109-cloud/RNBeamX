@@ -31,7 +31,13 @@ module.exports = async ({ base, getBrowser, H }) => {
       const g = RNBX.beams.groups(t.segments), grp = back.map(s => g.get(s)).find(x => x && x.list);
       out.mix = grp ? RNBX.beams.mixed(d, grp.list).col : null;
       out.mixSvg = RNBX.beams.draw2D(t, d).includes(out.mix); }
-    // 4. turning interaction off makes the structure an illustration again
+    // 4. a lit structure is drawn under the beams, with a landing spot on its surface
+    { const lay = mk('layers', 80, 50, -90, { layers: [{ name: 'Glass', mat: 'glass:N-BK7', t: 6, nm: 0 }, { name: 'Au', mat: 'Au', t: 2, nm: 50 }] });
+      const d = RNBX.newDocument(); d.objects = [mk('laser', 20, 50, 0, { lambda: 633 }), lay];
+      const svg = RNBX.render.build(d, {}).svg || RNBX.render.build(d, {}), str = typeof svg === 'string' ? svg : JSON.stringify(svg);
+      const iBeams = str.indexOf('rbx-beams'), iSpot = str.indexOf('fill="#ffffff" fill-opacity');
+      const t = RNBX.trace(d); out.spot = { spots: (t.hits[lay.id].spots || []).length, beamsAt: iBeams, spotAfterBeams: iSpot > iBeams }; }
+    // 5. turning interaction off makes the structure an illustration again
     { const uc = mk('ucell', 80, 50, -90, { traced: false }); out.off = run([mk('laser', 20, 50, 0, { lambda: 633 }), uc]).t.segments.length; }
     return out;
   });
@@ -42,6 +48,7 @@ module.exports = async ({ base, getBrowser, H }) => {
   H.check('grating: order powers come from the RCWA solution and the budget closes', Math.abs((r.grating.orders['R+1'] + r.grating.orders['R-1']) / r.grating.in - r.grating.r1) < 1e-6 && Math.abs(r.grating.sum - 1) < 1e-3, r.grating);
   const hex = r.mix || '#000000', rr = parseInt(hex.slice(1, 3), 16), bb = parseInt(hex.slice(5, 7), 16);
   H.check('white light off gold, shown as one beam: mixed colour is warm (red > blue) and drawn', rr > bb + 40 && r.mixSvg, hex);
+  H.check('a lit structure gets a landing spot drawn with the beams (structure underneath)', r.spot.spots > 0 && r.spot.beamsAt > 0 && r.spot.spotAfterBeams, r.spot);
   H.check('"Beams interact" off on a patterned structure: the beam passes', r.off === 1, r.off);
   await page.close();
 };

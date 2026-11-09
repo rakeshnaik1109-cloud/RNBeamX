@@ -367,6 +367,7 @@ function readout(obj) {
     if (ok.length > 2 || ok.some(k => !/^[RT]0$/.test(k))) html += 'Diffraction orders: ' + ok.sort().map(k => `${k[0] === 'R' ? 'reflected' : 'transmitted'} m = ${k.slice(1)} ${pc(ord[k], tot.in)}`).join(' · ');
     return el('div', { class: 'readout', html });
   }
+  if (h && h.pending && !h.stack) return el('div', { class: 'readout', text: 'Calculating the RCWA response of this 2D pattern in the background…' });
   if ((def.stack || def.grating) && def.optics && obj.props.traced !== false && !h) return el('div', { class: 'readout', text: 'No beam reaches this structure yet. Light that does is split into reflected, transmitted and absorbed parts, listed here per wavelength.' });
   if (h) {
     let html = `Receives <b>${fmtP(h.P)}</b><br>` + Object.keys(h.lambdas).map(l => `${U.fmt(Number(l), 1)} nm: ${fmtP(h.lambdas[l])}`).join(' · ');

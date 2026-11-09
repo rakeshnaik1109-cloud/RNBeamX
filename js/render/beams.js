@@ -139,6 +139,28 @@ B.mixed = (doc, list) => {
   }
   return { col, f: mean };
 };
+/* where beams land on a Studio structure: a soft spot lying in its surface (an ellipse
+   flattened like the oblique view), coloured by the light that arrives */
+B.spots = (trace, doc) => {
+  let out = '';
+  Object.keys(trace.hits || {}).forEach(id => {
+    const h = trace.hits[id], obj = h && h.spots && doc.objects.find(o => o.id === id);
+    if (!obj) return;
+    const def = RNBX.lib.get(obj.type), ky = def && def.geom ? (def.geom(obj.props).c || {}).ky : 0.3;
+    const groups = new Map();
+    h.spots.forEach(sp => { const k = Math.round(sp.x * 2) + ',' + Math.round(sp.y * 2); (groups.get(k) || groups.set(k, []).get(k)).push(sp); });
+    groups.forEach(list => {
+      const x = list[0].x, y = list[0].y, w = Math.max(0.6, ...list.map(q => q.w)), rel = Math.min(1, list.reduce((a, q) => a + (q.rel || 1), 0) / list.length);
+      const lams = [...new Set(list.map(q => q.lambda))], col = lams.length > 1 ? B.mixed(doc, lams.map(l => ({ lambda: l, P: list.filter(q => q.lambda === l).reduce((a, q) => a + (q.rel || 1), 0), P0: list.filter(q => q.lambda === l).length }))).col : B.color(doc, list[0]);
+      const rx = 1.6 * w + 0.8, ry = rx * Math.max(0.28, Math.min(0.7, 1.6 * (ky || 0.3))), rot = U.round(obj.rot || 0, 3);
+      const op = 0.35 + 0.5 * Math.pow(rel, 0.4);
+      out += `<g transform="rotate(${rot} ${n(x)} ${n(y)})"><ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx * 1.6)}" ry="${n(ry * 1.6)}" fill="${col}" fill-opacity="${n(0.22 * op)}"/>` +
+        `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx)}" ry="${n(ry)}" fill="${col}" fill-opacity="${n(0.5 * op)}"/>` +
+        `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx * 0.45)}" ry="${n(ry * 0.45)}" fill="#ffffff" fill-opacity="${n(0.85 * op)}"/></g>`;
+    });
+  });
+  return out;
+};
 /* single rays of a ray bundle: fine lines of a fixed width */
 B.rayLine = (doc, seg) => `<line x1="${n(seg.a[0])}" y1="${n(seg.a[1])}" x2="${n(seg.b[0])}" y2="${n(seg.b[1])}" stroke="${B.color(doc, seg)}" stroke-opacity="${n(Math.min(1, B.opacity(doc, seg) + 0.05))}" stroke-width="${n(doc.style.rayWidth || 0.16)}" stroke-linecap="round"/>`;
 B.signalScale = 1;     // relative width of emitted (Raman / fluorescence) beams
@@ -205,6 +227,7 @@ B.draw2D = (trace, doc, opt = {}) => {
     if (st.polarization && seg.kind === 'beam' && seg.len > 7 && !g) deco += B.polMarker(seg, col, doc);
     if (st.waistLabels && seg.q0 && seg.kind === 'beam' && !(g && g.i > 0)) deco += B.waistLabel(seg, doc);
   }
+  deco += B.spots(trace, doc);
   let flow = '';
   if (opt.time != null && B.hasMotion(doc, segs, opt.motion)) flow = B.flow2D(trace, doc, opt.time, lineMode ? lineW : null, opt.motion);
   return `<g class="rbx-beams" pointer-events="none">${halo}${core}${flow}${deco}</g>`;

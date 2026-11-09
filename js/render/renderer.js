@@ -13,6 +13,8 @@
 'use strict';
 const RNBX = window.RNBX, U = RNBX.util, lib = RNBX.lib, n = v => U.round(v, 3);
 const R = RNBX.render = {};
+/* a traced Studio structure (multilayer or pattern) with light on it */
+const litStudio = (o, def) => !!(def.optics && (def.stack || def.grating) && o.props.traced !== false && R._trace && R._trace.hits && R._trace.hits[o.id]);
 
 R.transform = o => `translate(${n(o.x)} ${n(o.y)})${o.rot ? ` rotate(${n(o.rot)})` : ''}${o.scale && o.scale !== 1 ? ` scale(${n(o.scale)})` : ''}`;
 
@@ -140,7 +142,7 @@ R.build = (srcDoc, opt = {}) => {
   const trace = RNBX.anim && doc.animation && doc.animation.reveal ? RNBX.anim.revealTrace(doc, full, time) : full;
   const mode = opt.mode || doc.style.mode;
   const S = lib.style(doc, { mode: mode === '3d' ? 'shaded' : mode });
-  S.trace = trace;
+  S.trace = trace; R._trace = trace;
   const I = !!opt.interactive;
   S.time = time; S.live = I;   // panels that follow the animation (sensorgram)
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
@@ -155,6 +157,8 @@ R.build = (srcDoc, opt = {}) => {
     let under = '', conns = '', comps = '';
     for (const o of objs) {
       const def = lib.get(o.type);
+      // a Studio structure that light reaches sits under the beams, so they visibly land on it
+      if (def.annotation && litStudio(o, def)) { under += R.object2D(o, S, I); continue; }
       if (def.annotation || def.special) continue;
       if (def.connection) conns += R.connection(o, doc, S, trace, I);
       else if (def.under) under += R.object2D(o, S, I);
@@ -170,6 +174,7 @@ R.build = (srcDoc, opt = {}) => {
     if (def.special === 'inset' && mode === '3d' && !o.props.show3d) continue;
     if (def.special === 'inset') { insets += I ? `<g data-id="${o.id}">${R.inset(o, doc)}</g>` : R.inset(o, doc); continue; }
     if (!def.annotation) continue;
+    if (mode !== '3d' && litStudio(o, def)) continue;   // already drawn under the beams
     if (def.under) annUnder += R.object2D(o, S, I); else over += R.object2D(o, S, I);
   }
 
