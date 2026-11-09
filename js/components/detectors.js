@@ -42,9 +42,9 @@ const det = (type, name, abbr, cfg) => lib.register(Object.assign({
 
 det('pd', 'Photodiode', 'PD', {
   keywords: 'photodiode detector apd spad balanced',
-  defaults: { s: 4.6, sensor: 'single' },
+  defaults: Object.assign({}, lib.SENSOR_DEFAULTS, { s: 4.6, sensor: 'single' }),
   params: [{ key: 's', label: 'Size', type: 'number', unit: 'mm', min: 1.5, max: 30, step: 0.1 },
-    { key: 'sensor', label: 'Sensor', type: 'select', options: [['single', 'Single element'], ['quad', 'Quadrant (four cells)'], ['balanced', 'Balanced (two inputs)']] }],
+    { key: 'sensor', label: 'Sensor', type: 'select', options: [['single', 'Single element'], ['quad', 'Quadrant (four cells)'], ['balanced', 'Balanced (two inputs)']] }, ...lib.P.sensor()],
   variants: [{ name: 'Avalanche photodiode / SPAD', abbr: 'SPAD', props: { s: 4 }, keywords: 'apd spad single photon avalanche' }],
   bbox: p => [-p.s / 2, -p.s / 2, p.s / 2, p.s / 2],
   draw(p, S) {
@@ -64,10 +64,10 @@ det('pd', 'Photodiode', 'PD', {
 det('camera', 'Camera (CCD / CMOS)', 'CAM', {
   variants: [{ name: 'Photo camera', props: { look: 'photo', L: 12, H: 9 }, keywords: 'photo camera dslr digital camera lens body' }],
   keywords: 'camera ccd cmos emccd scmos imaging sensor',
-  defaults: { L: 10, H: 8, front: 'plain', look: 'science' },
+  defaults: Object.assign({}, lib.SENSOR_DEFAULTS, { L: 10, H: 8, front: 'plain', look: 'science' }),
   params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 },
     { key: 'front', label: 'Front', type: 'select', options: [['plain', 'Lens mount'], ['lenslet', 'Lenslet array (wavefront sensor)']], show: p => p.look !== 'photo' },
-    { key: 'look', label: 'Looks like', type: 'select', options: [['science', 'Scientific camera'], ['photo', 'Photo camera (body and lens)']] }],
+    { key: 'look', label: 'Looks like', type: 'select', options: [['science', 'Scientific camera'], ['photo', 'Photo camera (body and lens)']] }, ...lib.P.sensor()],
   labelPos: [0, 7.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],
   draw(p, S) {
@@ -169,7 +169,7 @@ det('beamdump', 'Beam dump / block', 'BD', {
 
 det('screen', 'Screen / card', 'Scr', {
   keywords: 'screen viewing card target white board',
-  defaults: { d: 10, t: 0.6 }, params: [lib.P.diameter(10), lib.P.thick(0.6)],
+  defaults: Object.assign({}, lib.SENSOR_DEFAULTS, { d: 10, t: 0.6 }), params: [lib.P.diameter(10), lib.P.thick(0.6), ...lib.P.sensor()],
   bbox: p => [-p.t / 2, -p.d / 2, p.t / 2, p.d / 2],
   draw: (p, S) => H.rect(S, -p.t / 2, -p.d / 2, p.t, p.d, S.flat('screen')),
   optics: p => [{ kind: 'absorb', a: [0, -p.d / 2], b: [0, p.d / 2] }],

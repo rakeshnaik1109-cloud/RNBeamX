@@ -248,6 +248,10 @@ RNBX.trace = function trace(doc) {
     const h = hits[obj.id] = hits[obj.id] || { P: 0, lambdas: {}, fields: {}, parts: {} };
     h.P += ray.P;
     h.lambdas[ray.lambda] = (h.lambdas[ray.lambda] || 0) + ray.P;
+    // where and how each beam lands (for "Show what it records"): position, direction, 1/e² radius in physical mm, phase, polarisation
+    if (ray.o && Array.isArray(ray.d) && (h.img = h.img || []).length < 200)
+      h.img.push({ o: ray.o, d: ray.d, P: ray.P, lambda: ray.lambda, src: ray.src, ph: phaseOf(ray), E: ray.E || null, color: ray.color,
+        w: ray.q ? O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2 || 1) : Math.abs(ray.w || 0) * scale / gMag });
     // coherent bookkeeping: light from the same source and wavelength interferes
     const key = ray.src + '|' + U.round(ray.lambda, 4);
     const ph = C.expi(phaseOf(ray));

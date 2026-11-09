@@ -80,8 +80,8 @@ lib.register({
 lib.register({
   type: 'profiler', name: 'Beam profiler', abbr: 'BP', category: 'Detectors', labelTemplate: 'Beam profiler',
   keywords: 'beam profiler camera spot size m2 waist measurement',
-  defaults: { L: 9, H: 9 },
-  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }],
+  defaults: Object.assign({}, lib.SENSOR_DEFAULTS, { L: 9, H: 9 }),
+  params: [{ key: 'L', label: 'Length', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, { key: 'H', label: 'Height', type: 'number', unit: 'mm', min: 3, max: 40, step: 0.5 }, ...lib.P.sensor()],
   hint: 'With the Gaussian beam model, the inspector reports the beam radius here.',
   snap: 'perp', labelPos: [0, 7.5],
   bbox: p => [-p.L / 2, -p.H / 2, p.L / 2, p.H / 2],

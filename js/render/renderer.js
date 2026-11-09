@@ -148,7 +148,7 @@ R.build = (srcDoc, opt = {}) => {
   S.time = time; S.live = I;   // panels that follow the animation (sensorgram)
   const objs = doc.objects.filter(o => !o.hidden && lib.get(o.type));
 
-  let scene = '', over = '', labels = '', insets = '';
+  let scene = '', over = '', labels = '', insets = '', sensors = '';
   if (mode === '3d' && RNBX.render3d) {
     const r3 = RNBX.render3d.scene(doc, trace, S, { interactive: I, time, motion: opt.motion });
     scene = r3.markup;
@@ -167,6 +167,11 @@ R.build = (srcDoc, opt = {}) => {
       if (!def.connection && opt.labels !== false) labels += R.label(o, doc, o.x + (o.label ? o.label.dx : 0), o.y + (o.label ? o.label.dy : 0), I);
     }
     scene = under + conns + RNBX.beams.draw2D(trace, doc, { time, motion: opt.motion }) + comps;
+    // detectors that show what they record: the computed image beside the part (its caption is lettering)
+    if (RNBX.sensor) for (const o of objs) if (RNBX.sensor.enabled(o)) {
+      const r = RNBX.sensor.draw(o, doc, trace, I);
+      sensors += r.img; if (opt.labels !== false) labels += r.caption;
+    }
   }
   // annotations always in page space
   let annUnder = '';
@@ -186,8 +191,8 @@ R.build = (srcDoc, opt = {}) => {
     RNBX.renderBackground(doc.page, opt.transparent) +
     (opt.layers
       // exported files: Inkscape / Illustrator layers, so all lettering can be restyled, hidden or replaced in one place
-      ? `<g clip-path="url(#rbx-page)" inkscape:groupmode="layer" inkscape:label="Figure"><g id="rbx-content">${annUnder}${scene}${over}<g id="rbx-labels" inkscape:groupmode="layer" inkscape:label="Labels">${labels}</g></g>${insets}</g>`
-      : `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${over}${labels}</g>${insets}</g>`);
+      ? `<g clip-path="url(#rbx-page)" inkscape:groupmode="layer" inkscape:label="Figure"><g id="rbx-content">${annUnder}${scene}${sensors}${over}<g id="rbx-labels" inkscape:groupmode="layer" inkscape:label="Labels">${labels}</g></g>${insets}</g>`
+      : `<g clip-path="url(#rbx-page)"><g id="rbx-content">${annUnder}${scene}${sensors}${over}${labels}</g>${insets}</g>`);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"${opt.layers ? ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"' : ''} version="1.1" width="${n(W)}mm" height="${n(H)}mm" viewBox="0 0 ${n(W)} ${n(H)}">` +
     `<title>${U.esc(doc.meta.title || 'RNBeamX figure')}</title><desc>Created with RNBeamX ${RNBX.VERSION}</desc>${inner}</svg>`;
   return { svg, inner, trace, doc };

@@ -168,5 +168,14 @@ lib.P = {
   diameter: (def = 8) => ({ key: 'd', label: 'Clear aperture', type: 'number', unit: 'mm', min: 1, max: 60, step: 0.5, def }),
   thick: (def = 1.2) => ({ key: 't', label: 'Thickness', type: 'number', unit: 'mm', min: 0.2, max: 20, step: 0.1, def }),
   material: () => ({ key: 'mat', label: 'Material', type: 'select', options: Object.keys(RNBX.optics.MATERIALS).map(k => [k, RNBX.optics.MATERIALS[k].name]) }),
+  /* "Show what it records" (cameras, profilers, photodiodes, screens; drawn by render/sensor.js) */
+  sensor: () => [
+  { key: 'showImage', label: 'Show what it records', type: 'bool', hint: 'Draws the light arriving here beside the part, computed from the traced beams: spot positions, beam size (Gaussian model) and interference fringes between beams from the same source.' },
+  { key: 'imgSide', label: 'Image position', type: 'select', options: [['right', 'Right'], ['left', 'Left'], ['above', 'Above'], ['below', 'Below']], show: p => p.showImage },
+  { key: 'imgSize', label: 'Image size', type: 'number', unit: 'mm', min: 4, max: 80, step: 0.5, show: p => p.showImage },
+  { key: 'imgFov', label: 'Field of view (0 = automatic)', type: 'number', unit: 'mm', min: 0, max: 200, step: 0.01, show: p => p.showImage },
+  { key: 'imgMap', label: 'Colours', type: 'select', options: [['beam', 'Beam colour'], ['gray', 'Greyscale'], ['viridis', 'Viridis']], show: p => p.showImage },
+],
 };
+lib.SENSOR_DEFAULTS = { showImage: false, imgSide: 'right', imgSize: 14, imgFov: 0, imgMap: 'beam' };
 })();
