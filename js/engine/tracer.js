@@ -265,7 +265,7 @@ RNBX.trace = function trace(doc) {
     else h.unpol = (h.unpol || 0) + ray.P;
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
     // ray bundles: where each ray lands across the detector (for the spot readout)
-    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }
+    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda, u: ray.pu, fan: ray.fan }); }
   };
 
   /* light meeting a Studio structure: incident, reflected, transmitted, absorbed and lost
@@ -681,7 +681,7 @@ RNBX.trace = function trace(doc) {
     return {
       a, b, len, s0: s0 == null ? ray.s : s0, opl0: opl0 == null ? ray.opl : opl0, lambda: ray.lambda, P: ray.P, P0: ray.P0,
       E: ray.E, w0: ray.w, dw: ray.dw, q0: ray.q || null, M2: ray.M2 || 1, nmed: ray.nmed || 1,
-      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray,
+      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray, pu: ray.pu, fan: ray.fan,
       kind, end, za: za == null ? (ray.z || 0) : za, zb: zb == null ? (ray.z || 0) : zb, vertical: kind === 'vertical',
     };
   }

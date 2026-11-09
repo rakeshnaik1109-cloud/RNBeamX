@@ -349,7 +349,8 @@ lib.register({
     { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
     { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)'], ['rgb', 'RGB lasers (450, 520, 638 nm)']] },
     { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
-    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
+    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true },
+    { key: 'markImage', label: 'Mark the image', type: 'bool', hint: 'draws a cross where each fan comes to focus after the optics (real or virtual)' }],
   variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
   hint: 'Pair it with lenses set to Real glass surfaces to see spherical and chromatic aberration; a screen or camera reports the spot size.',
   labelPos: [0, 6],
@@ -365,11 +366,11 @@ lib.register({
   source(p) {
     const ls = p.colors === 'fdc' ? FDC : p.colors === 'rgb' ? [450, 520, 638] : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
     const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
-    const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
+    const fan = (o, k, f) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null, pu: 2 * i / (N - 1) - 1, fan: f }); } };
     ls.forEach((l, k) => {
-      if (p.mode === 'arrow') { fan([0, -p.h], k); fan([0, 0], k); }
-      else if (p.mode === 'point') fan([0.6, 0], k);
-      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null });
+      if (p.mode === 'arrow') { fan([0, -p.h], k, 'tip'); fan([0, 0], k, 'base'); }
+      else if (p.mode === 'point') fan([0.6, 0], k, 'point');
+      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null, pu: 2 * i / (N - 1) - 1, fan: 'parallel' });
     });
     return out;
   },

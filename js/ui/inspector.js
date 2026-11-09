@@ -328,7 +328,8 @@ function readout(obj) {
   if (def.source) {
     const segs = tr.segments.filter(s => s.src === obj.id);
     const ls = [...new Set(segs.map(s => s.lambda))];
-    return el('div', { class: 'readout', html: `Emits <b>${U.esc(ls.map(l => U.fmt(l, 1)).join(', ') || '—')} nm</b> · ${segs.length} traced segments` });
+    const img = obj.type === 'raysource' && RNBX.imaging ? RNBX.imaging.summaryHtml(S.doc, tr, obj) : '';
+    return el('div', { class: 'readout', html: `Emits <b>${U.esc(ls.map(l => U.fmt(l, 1)).join(', ') || '—')} nm</b> · ${segs.length} traced segments` + img });
   }
   if (obj.type === 'lens') {
     const f = lensFocus(obj);
@@ -381,7 +382,9 @@ function readout(obj) {
       const sc = (S.doc.style.scale || 10), rms = a => { const m = a.reduce((x, r) => x + r.y, 0) / a.length; return Math.sqrt(a.reduce((x, r) => x + (r.y - m) * (r.y - m), 0) / a.length); };
       const ls = [...new Set(h.rays.map(r => r.lambda))].sort((a, b) => a - b);
       const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
-      html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+      const fans = [...new Set(h.rays.map(r => r.fan).filter(Boolean))];
+      if (fans.length > 1) html += `<br><b>Ray spot</b> per object point (${h.rays.length} rays): ` + fans.map(f => `${f} RMS ${fmtL(rms(h.rays.filter(r => r.fan === f)) * sc)}`).join(' · ') + ' <span class="muted">(at the figure scale)</span>'; else html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+      if (RNBX.imaging && h.rays.some(r => r.u != null)) html += '<br><b>Transverse ray fan</b> (landing position against pupil position; a straight line is defocus, an S-curve spherical aberration, separate colours lateral colour)' + RNBX.imaging.fanPlot(h.rays, sc);
     }
     { const st = RNBX.optics.stokes(h);
       if (st && (st.dop > 0.02 || !(h.unpol > 0))) {
@@ -509,6 +512,8 @@ function objectPanel(obj) {
     const preset = (label, props) => el('button', { class: 'btn small', type: 'button', text: label, onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, props); RNBX.anim.touch([obj.id]); RNBX.changed(); setTimeout(Ins.build, 0); } });
     body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
       preset('F · d · C', { colors: 'fdc', color: '' }), preset('RGB', { colors: 'rgb', color: '' }), preset('Single colour', { colors: 'single' }), preset('Black (print)', { colors: 'single', color: '#1d1f23' })));
+    body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
+      el('button', { class: 'btn small', type: 'button', text: 'Put a screen at the image', title: 'Adds a screen where the rays come to focus, facing them', onclick: () => { const sc0 = RNBX.imaging && RNBX.imaging.placeScreen(S.doc, RNBX.trace(S.doc), obj); if (!sc0) { RNBX.toast('No real image yet: add a lens in front of the rays.'); return; } RNBX.addObject(sc0); RNBX.toast('Screen placed at the image. Its readout gives the spot and the ray fan.'); } })));
     body.push(control({ key: 'rayWidth', label: 'Ray width (whole figure)', type: 'range', min: 0.04, max: 0.8, step: 0.02 }, () => S.doc.style.rayWidth == null ? 0.16 : S.doc.style.rayWidth, (k, v) => { RNBX.history.checkpoint('rayWidth'); S.doc.style.rayWidth = v; RNBX.changed(); }));
   }
   if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));

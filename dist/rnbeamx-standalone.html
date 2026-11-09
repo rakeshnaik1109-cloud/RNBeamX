@@ -1307,6 +1307,14 @@ O.MATERIALS = {
   'Sapphire': { name: 'Sapphire (o-ray)', B: [1.4313493, 0.65054713, 5.3414021], C: [0.00527992, 0.0142383, 325.0178] },
   'N-SF5': { name: 'N-SF5 (flint)', B: [1.52481889, 0.187085527, 1.42729015], C: [0.011254756, 0.0588995392, 129.141675] },
   'N-F2': { name: 'N-F2 (flint)', B: [1.39757037, 0.159201403, 1.2686543], C: [0.00995906143, 0.0546931752, 119.248346] },
+  'N-SF6': { name: 'N-SF6 (dense flint)', B: [1.77931763, 0.338149866, 2.08734474], C: [0.0133714182, 0.0617533621, 174.01759] },
+  'N-SF10': { name: 'N-SF10 (dense flint)', B: [1.62153902, 0.256287842, 1.64447552], C: [0.0122241457, 0.0595736775, 147.468793] },
+  'N-SF57': { name: 'N-SF57 (very dense flint)', B: [1.87543831, 0.37375749, 2.30001797], C: [0.0141749518, 0.0640509927, 177.389795] },
+  'N-BAF10': { name: 'N-BAF10 (barium flint, achromats)', B: [1.5851495, 0.143559385, 1.08521269], C: [0.00926681282, 0.0424489805, 105.613573] },
+  'N-LASF9': { name: 'N-LASF9 (lanthanum flint, high index)', B: [2.00029547, 0.298926886, 1.80691843], C: [0.0121426017, 0.0538736236, 156.530829] },
+  'N-K5': { name: 'N-K5 (crown)', B: [1.08511833, 0.199562005, 0.930511663], C: [0.00661099503, 0.024110866, 111.982777] },
+  'PMMA': { name: 'PMMA (acrylic)', B: [1.1819, 0, 0], C: [0.011313, 0, 1] },
+  'PC': { name: 'Polycarbonate', B: [1.4182, 0, 0], C: [0.021304, 0, 1] },
   'custom': { name: 'Custom index' },
 };
 O.index = (mat, nm, custom = 1.5) => {
@@ -1504,7 +1512,7 @@ const TF = RNBX.thinfilm = {};
 const DATA = {};
 (window.RNBX_NK || []).forEach(m => { DATA[m.id] = m; });
 TF.data = DATA;
-const GLASS = { 'N-BK7': 'N-BK7 glass', FS: 'Fused silica (Sellmeier)', SF11: 'SF11 glass', CaF2: 'CaF₂ (Sellmeier)', Sapphire: 'Sapphire (o-ray)' };
+const GLASS = { 'N-BK7': 'N-BK7 glass', FS: 'Fused silica (Sellmeier)', SF11: 'SF11 glass', CaF2: 'CaF₂ (Sellmeier)', Sapphire: 'Sapphire (o-ray)', 'N-SF6': 'N-SF6 glass', 'N-SF10': 'N-SF10 glass', 'N-BAF10': 'N-BAF10 glass', 'N-LASF9': 'N-LASF9 glass', 'N-K5': 'N-K5 glass', PMMA: 'PMMA (acrylic)', PC: 'Polycarbonate' };
 TF.GROUPS = [['metal', 'Metals'], ['dielectric', 'Dielectrics'], ['semiconductor', 'Semiconductors'], ['polymer', 'Polymers'], ['liquid', 'Liquids'], ['glass', 'Optical glasses']];
 /* select options: [[id, label]] with group headings as disabled entries */
 TF.options = (withCustom = true) => {
@@ -4136,7 +4144,7 @@ RNBX.trace = function trace(doc) {
     else h.unpol = (h.unpol || 0) + ray.P;
     if (gauss && ray.q) h.w = O.qRadius(ray.q, ray.lambda * 1e-6, ray.M2, ray.nmed);
     // ray bundles: where each ray lands across the detector (for the spot readout)
-    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda }); }
+    if (ray.ray && ray.o) { const yd = U.dirToWorld(obj, [0, 1]); (h.rays = h.rays || []).push({ y: V.dot(V.sub(ray.o, [obj.x, obj.y]), yd), lambda: ray.lambda, u: ray.pu, fan: ray.fan }); }
   };
 
   /* light meeting a Studio structure: incident, reflected, transmitted, absorbed and lost
@@ -4552,7 +4560,7 @@ RNBX.trace = function trace(doc) {
     return {
       a, b, len, s0: s0 == null ? ray.s : s0, opl0: opl0 == null ? ray.opl : opl0, lambda: ray.lambda, P: ray.P, P0: ray.P0,
       E: ray.E, w0: ray.w, dw: ray.dw, q0: ray.q || null, M2: ray.M2 || 1, nmed: ray.nmed || 1,
-      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray,
+      src: ray.src, color: ray.color, pulsed: ray.pulsed, emitted: !!ray.emitted, ghost: !!ray.ghost, ray: !!ray.ray, pu: ray.pu, fan: ray.fan,
       kind, end, za: za == null ? (ray.z || 0) : za, zb: zb == null ? (ray.z || 0) : zb, vertical: kind === 'vertical',
     };
   }
@@ -4640,6 +4648,150 @@ RNBX.trace = function trace(doc) {
 };
 
 RNBX.getObjIn = (doc, id) => doc.objects.find(o => o.id === id);
+})();
+
+</script>
+<script>
+/* js/engine/imaging.js */
+/* ═══════════════════════════════════════════════════════════
+   RNBeamX — engine/imaging.js
+   Where does an object form its image, and how good is it?
+
+   A "Ray bundle / object" part sends fans of rays (one per object point
+   and wavelength). After the last optical element each ray is a
+   straight line. The image of a fan is the point that minimises the sum
+   of squared perpendicular distances to those lines (closed-form
+   least squares); the RMS of the distances is the blur there, and it
+   is real if the rays converge towards it, virtual if they only seem
+   to come from it. With an object arrow, the images of its tip and base
+   give the lateral magnification. The transverse ray-fan plot shows, for
+   a detector, where each ray lands against its position in the pupil:
+   a straight line is defocus, an S-shape spherical aberration, and an
+   offset between colours lateral colour.
+═══════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+const RNBX = window.RNBX, U = RNBX.util, V = U.v;
+const IM = RNBX.imaging = {};
+
+const rot90 = d => [-d[1], d[0]];
+const mean = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+
+/* rays of one source, grouped per fan and wavelength: first and last segment of every ray */
+const raysOf = (trace, srcId) => {
+  const map = new Map();
+  trace.segments.forEach(s => {
+    if (s.src !== srcId || !s.ray || s.ghost || s.kind !== 'beam' || s.len < 1e-6 || s.pu == null) return;
+    const key = s.fan + '|' + s.lambda + '|' + s.pu;
+    const r = map.get(key) || { fan: s.fan, lambda: s.lambda, pu: s.pu, first: s, last: s, n: 0 };
+    if (s.s0 < r.first.s0) r.first = s;
+    if (s.s0 >= r.last.s0) r.last = s;
+    r.n++; map.set(key, r);
+  });
+  const groups = new Map();
+  map.forEach(r => { const k = r.fan + '|' + r.lambda; (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+  return groups;
+};
+
+/* least-squares intersection of lines (point a, unit direction d) */
+const focusOf = lines => {
+  let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+  lines.forEach(l => { const [dx, dy] = l.d, m11 = 1 - dx * dx, m12 = -dx * dy, m22 = 1 - dy * dy; a11 += m11; a12 += m12; a22 += m22; b1 += m11 * l.a[0] + m12 * l.a[1]; b2 += m12 * l.a[0] + m22 * l.a[1]; });
+  const det = a11 * a22 - a12 * a12;
+  if (Math.abs(det) < 1e-9 * lines.length * lines.length) return null;   // parallel rays: image at infinity
+  const p = [(a22 * b1 - a12 * b2) / det, (a11 * b2 - a12 * b1) / det];
+  const dist = lines.map(l => { const v = V.sub(p, l.a); return Math.abs(v[0] * l.d[1] - v[1] * l.d[0]); });
+  const ahead = lines.filter(l => V.dot(V.sub(p, l.a), l.d) > 0).length;
+  return { p, rms: Math.sqrt(mean(dist.map(x => x * x))), real: ahead > lines.length / 2 };
+};
+
+/* image analysis for one ray-bundle part */
+IM.analyse = (doc, trace, obj) => {
+  const sc = doc.style.scale || 10, groups = raysOf(trace, obj.id), out = [];
+  groups.forEach(rs => {
+    if (rs.length < 3) return;
+    const passed = rs.filter(r => r.last !== r.first);   // rays that met at least one element
+    if (passed.length < 3) return;
+    const lines = passed.map(r => ({ a: r.last.a, d: V.norm(V.sub(r.last.b, r.last.a)) }));
+    const f = focusOf(lines), din = V.norm(rs.reduce((acc, r) => V.add(acc, V.norm(V.sub(r.first.b, r.first.a))), [0, 0])), dout = V.norm(lines.reduce((acc, l) => V.add(acc, l.d), [0, 0]));
+    const half = arr => Math.max.apply(null, arr.map(d => Math.asin(Math.min(1, Math.abs(d[0] * dir(arr)[1] - d[1] * dir(arr)[0])))));
+    const dirs0 = passed.map(r => V.norm(V.sub(r.first.b, r.first.a))), dirs1 = lines.map(l => l.d);
+    out.push({ fan: rs[0].fan, lambda: rs[0].lambda, rays: rs.length, through: passed.length, focus: f, axisIn: din, axisOut: dout,
+      naIn: Math.sin(half(dirs0)), naOut: Math.sin(half(dirs1)), sc });
+  });
+  // lateral magnification from the images of the arrow's tip and base (same wavelength)
+  const mags = [];
+  out.filter(g => g.fan === 'tip' && g.focus).forEach(t => {
+    const b = out.find(g => g.fan === 'base' && g.lambda === t.lambda && g.focus); if (!b) return;
+    const o0 = U.toWorld(obj, [0, 0]), o1 = U.toWorld(obj, [0, -obj.props.h]);
+    const pin = rot90(b.axisIn), pout = rot90(b.axisOut), ho = V.dot(V.sub(o1, o0), pin), hi = V.dot(V.sub(t.focus.p, b.focus.p), pout);
+    if (Math.abs(ho) > 1e-9) mags.push({ lambda: t.lambda, m: hi / ho });
+  });
+  // longitudinal colour: spread of the image positions along the axis between wavelengths
+  const byFan = {}; out.forEach(g => { if (g.focus) (byFan[g.fan] = byFan[g.fan] || []).push(g); });
+  let colour = null;
+  Object.keys(byFan).forEach(k => { const gs = byFan[k]; if (gs.length < 2) return; const ax = gs[0].axisOut, z = gs.map(g => V.dot(g.focus.p, ax)); const sp = Math.max.apply(null, z) - Math.min.apply(null, z); if (colour == null || sp > colour) colour = sp; });
+  return { groups: out, mags, colour, sc };
+};
+const dir = arr => V.norm(arr.reduce((a, d) => V.add(a, d), [0, 0]));
+
+const fmtL = mm => Math.abs(mm) >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
+IM.summaryHtml = (doc, trace, obj) => {
+  const r = IM.analyse(doc, trace, obj), sc = r.sc;
+  if (!r.groups.length) return '';
+  const good = r.groups.filter(g => g.focus);
+  if (!good.length) return '<br><b>Image</b>: the rays leave parallel — the image is at infinity.';
+  const pick = gs => gs.slice().sort((a, b) => Math.abs(a.lambda - 587.56) - Math.abs(b.lambda - 587.56))[0];
+  const g0 = pick(good.filter(g => g.fan !== 'tip')) || pick(good);
+  let html = `<br><b>Image</b> (${g0.lambda.toFixed(1)} nm${g0.fan === 'base' ? ', arrow base' : ''}): ${g0.focus.real ? 'real' : 'virtual'}, at x ${U.fmt(g0.focus.p[0], 2)}, y ${U.fmt(g0.focus.p[1], 2)} (page mm) · blur RMS ${fmtL(g0.focus.rms * sc)}`;
+  if (r.mags.length) html += ` · magnification <b>${U.fmt(r.mags[0].m, 3)}×</b>${r.mags[0].m < 0 ? ' (inverted)' : ''}`;
+  html += `<br>NA in ${U.fmt(g0.naIn, 3)} · NA out ${U.fmt(g0.naOut, 3)}`;
+  if (r.colour != null) html += ` · focus shift between colours <b>${fmtL(r.colour * sc)}</b>`;
+  return html;
+};
+
+/* where to put a screen: at the image, facing the rays */
+IM.placeScreen = (doc, trace, obj) => {
+  const r = IM.analyse(doc, trace, obj), g = r.groups.find(q => q.focus && q.focus.real && q.fan !== 'tip') || r.groups.find(q => q.focus && q.focus.real);
+  if (!g) return null;
+  // centred on the whole image (both ends of an arrow), large enough to catch it
+  const pts = r.groups.filter(q => q.focus && q.focus.real).map(q => q.focus.p), side = rot90(g.axisOut);
+  const offs = pts.map(p => V.dot(V.sub(p, g.focus.p), side)), lo = Math.min.apply(null, offs.concat(0)), hi = Math.max.apply(null, offs.concat(0));
+  const c = V.add(g.focus.p, V.mul(side, (lo + hi) / 2));
+  const o = RNBX.createObject('screen', U.round(c[0], 3), U.round(c[1], 3));
+  o.rot = U.round(U.deg(Math.atan2(g.axisOut[1], g.axisOut[0])), 2);
+  o.props.d = U.round(Math.max(o.props.d || 10, (hi - lo) * 1.3 + 4), 1);
+  return o;
+};
+
+/* canvas marker for "Mark the image" */
+IM.marker = (doc, trace, obj) => {
+  const r = IM.analyse(doc, trace, obj); let s = '';
+  r.groups.forEach(g => {
+    if (!g.focus) return;
+    const [x, y] = g.focus.p, k = 1.1, col = RNBX.lib.colorOf(doc, g.lambda, obj.props.color);
+    s += `<g stroke="${col}" stroke-width="0.3" ${g.focus.real ? '' : 'stroke-dasharray="0.5 0.4"'}><line x1="${U.round(x - k, 3)}" y1="${U.round(y - k, 3)}" x2="${U.round(x + k, 3)}" y2="${U.round(y + k, 3)}"/><line x1="${U.round(x - k, 3)}" y1="${U.round(y + k, 3)}" x2="${U.round(x + k, 3)}" y2="${U.round(y - k, 3)}"/></g>`;
+  });
+  return s;
+};
+
+/* transverse ray-fan plot (inline SVG) for the rays landing on a detector */
+IM.fanPlot = (rays, sc) => {
+  const rs = rays.filter(r => r.u != null);
+  if (rs.length < 3) return '';
+  const groups = {}; rs.forEach(r => { const k = r.fan + '|' + r.lambda; (groups[k] = groups[k] || []).push(r); });
+  const allY = rs.map(r => r.y), my = mean(allY), span = Math.max(1e-9, Math.max.apply(null, allY.map(y => Math.abs(y - my))));
+  const W = 250, H = 120, ox = 32, oy = 8, pw = W - ox - 8, ph = H - oy - 22;
+  const X = u => ox + (u + 1) / 2 * pw, Y = y => oy + ph / 2 - (y - my) / span * ph / 2 * 0.92;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;display:block;margin-top:4px" role="img" aria-label="Transverse ray-fan plot">`;
+  s += `<rect x="${ox}" y="${oy}" width="${pw}" height="${ph}" fill="none" stroke="currentColor" stroke-opacity=".25"/><line x1="${ox}" x2="${ox + pw}" y1="${oy + ph / 2}" y2="${oy + ph / 2}" stroke="currentColor" stroke-opacity=".2"/><line x1="${ox + pw / 2}" x2="${ox + pw / 2}" y1="${oy}" y2="${oy + ph}" stroke="currentColor" stroke-opacity=".2"/>`;
+  Object.keys(groups).forEach(k => {
+    const g = groups[k].slice().sort((a, b) => a.u - b.u), col = RNBX.lib.colorOf(RNBX.state.doc, g[0].lambda, '');
+    s += `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${g.map(r => X(r.u).toFixed(1) + ',' + Y(r.y).toFixed(1)).join(' ')}"/>` + g.map(r => `<circle cx="${X(r.u).toFixed(1)}" cy="${Y(r.y).toFixed(1)}" r="1.6" fill="${col}"/>`).join('');
+  });
+  s += `<text x="${ox + pw / 2}" y="${H - 6}" font-size="8.5" text-anchor="middle" fill="currentColor" opacity=".7">pupil position (−1 … +1)</text><text x="4" y="${oy + 8}" font-size="8.5" fill="currentColor" opacity=".7">±${fmtL(span * sc)}</text></svg>`;
+  return s;
+};
 })();
 
 </script>
@@ -6935,7 +7087,8 @@ lib.register({
     { key: 'tilt', label: 'Field angle', type: 'number', unit: '°', min: -45, max: 45, step: 0.5, animatable: true, hint: 'tilts the whole bundle' },
     { key: 'colors', label: 'Colours', type: 'select', options: [['single', 'One wavelength'], ['fdc', 'Blue, yellow, red (F, d, C lines)'], ['rgb', 'RGB lasers (450, 520, 638 nm)']] },
     { key: 'lambda', label: 'Wavelength', type: 'wavelength', unit: 'nm', min: 150, max: 12000, step: 1, show: p => p.colors === 'single' },
-    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true }],
+    { key: 'color', label: 'Ray colour override', type: 'color', allowEmpty: true },
+    { key: 'markImage', label: 'Mark the image', type: 'bool', hint: 'draws a cross where each fan comes to focus after the optics (real or virtual)' }],
   variants: [{ name: 'Point source (ray fan)', props: { mode: 'point', h: 0.5 }, keywords: 'point source fan' }, { name: 'Parallel ray bundle', props: { mode: 'parallel', h: 5, rays: 9 }, keywords: 'collimated parallel rays infinity' }],
   hint: 'Pair it with lenses set to Real glass surfaces to see spherical and chromatic aberration; a screen or camera reports the spot size.',
   labelPos: [0, 6],
@@ -6951,11 +7104,11 @@ lib.register({
   source(p) {
     const ls = p.colors === 'fdc' ? FDC : p.colors === 'rgb' ? [450, 520, 638] : [p.lambda], N = Math.max(2, Math.round(p.rays)), out = [];
     const t0 = U.rad(p.tilt || 0), P = 1 / ls.length;
-    const fan = (o, k) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null }); } };
+    const fan = (o, k, f) => { for (let i = 0; i < N; i++) { const a = t0 + U.rad(p.fan) * (i / (N - 1) - 0.5); out.push({ o, d: [Math.cos(a), Math.sin(a)], lambda: ls[k], P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null, pu: 2 * i / (N - 1) - 1, fan: f }); } };
     ls.forEach((l, k) => {
-      if (p.mode === 'arrow') { fan([0, -p.h], k); fan([0, 0], k); }
-      else if (p.mode === 'point') fan([0.6, 0], k);
-      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null });
+      if (p.mode === 'arrow') { fan([0, -p.h], k, 'tip'); fan([0, 0], k, 'base'); }
+      else if (p.mode === 'point') fan([0.6, 0], k, 'point');
+      else for (let i = 0; i < N; i++) out.push({ o: [0.75, p.h * (i / (N - 1) - 0.5)], d: [Math.cos(t0), Math.sin(t0)], lambda: l, P: P / N, E: null, w: 0, dw: 0, ray: true, color: p.color || null, pu: 2 * i / (N - 1) - 1, fan: 'parallel' });
     });
     return out;
   },
@@ -14668,6 +14821,7 @@ R.build = (srcDoc, opt = {}) => {
     }
     scene = under + conns + RNBX.beams.draw2D(trace, doc, { time, motion: opt.motion }) + comps;
     // detectors that show what they record: the computed image beside the part (its caption is lettering)
+    if (RNBX.imaging) for (const o of objs) if (o.type === 'raysource' && o.props.markImage) sensors += RNBX.imaging.marker(doc, trace, o);
     if (RNBX.sensor) for (const o of objs) if (RNBX.sensor.enabled(o)) {
       const r = RNBX.sensor.draw(o, doc, trace, I);
       sensors += r.img; if (opt.labels !== false) labels += r.caption;
@@ -19686,7 +19840,8 @@ function readout(obj) {
   if (def.source) {
     const segs = tr.segments.filter(s => s.src === obj.id);
     const ls = [...new Set(segs.map(s => s.lambda))];
-    return el('div', { class: 'readout', html: `Emits <b>${U.esc(ls.map(l => U.fmt(l, 1)).join(', ') || '—')} nm</b> · ${segs.length} traced segments` });
+    const img = obj.type === 'raysource' && RNBX.imaging ? RNBX.imaging.summaryHtml(S.doc, tr, obj) : '';
+    return el('div', { class: 'readout', html: `Emits <b>${U.esc(ls.map(l => U.fmt(l, 1)).join(', ') || '—')} nm</b> · ${segs.length} traced segments` + img });
   }
   if (obj.type === 'lens') {
     const f = lensFocus(obj);
@@ -19739,7 +19894,9 @@ function readout(obj) {
       const sc = (S.doc.style.scale || 10), rms = a => { const m = a.reduce((x, r) => x + r.y, 0) / a.length; return Math.sqrt(a.reduce((x, r) => x + (r.y - m) * (r.y - m), 0) / a.length); };
       const ls = [...new Set(h.rays.map(r => r.lambda))].sort((a, b) => a - b);
       const fmtL = mm => mm >= 1 ? U.fmt(mm, 3) + ' mm' : U.fmt(mm * 1000, 3) + ' µm';
-      html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+      const fans = [...new Set(h.rays.map(r => r.fan).filter(Boolean))];
+      if (fans.length > 1) html += `<br><b>Ray spot</b> per object point (${h.rays.length} rays): ` + fans.map(f => `${f} RMS ${fmtL(rms(h.rays.filter(r => r.fan === f)) * sc)}`).join(' · ') + ' <span class="muted">(at the figure scale)</span>'; else html += `<br><b>Ray spot</b> (${h.rays.length} rays): RMS ${fmtL(rms(h.rays) * sc)}` + (ls.length > 1 ? ' · ' + ls.map(l => `${U.fmt(l, 1)} nm ${fmtL(rms(h.rays.filter(r => r.lambda === l)) * sc)}`).join(' · ') : '') + ' <span class="muted">(at the figure scale)</span>';
+      if (RNBX.imaging && h.rays.some(r => r.u != null)) html += '<br><b>Transverse ray fan</b> (landing position against pupil position; a straight line is defocus, an S-curve spherical aberration, separate colours lateral colour)' + RNBX.imaging.fanPlot(h.rays, sc);
     }
     { const st = RNBX.optics.stokes(h);
       if (st && (st.dop > 0.02 || !(h.unpol > 0))) {
@@ -19867,6 +20024,8 @@ function objectPanel(obj) {
     const preset = (label, props) => el('button', { class: 'btn small', type: 'button', text: label, onclick: () => { RNBX.history.checkpoint(); Object.assign(obj.props, props); RNBX.anim.touch([obj.id]); RNBX.changed(); setTimeout(Ins.build, 0); } });
     body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
       preset('F · d · C', { colors: 'fdc', color: '' }), preset('RGB', { colors: 'rgb', color: '' }), preset('Single colour', { colors: 'single' }), preset('Black (print)', { colors: 'single', color: '#1d1f23' })));
+    body.push(el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
+      el('button', { class: 'btn small', type: 'button', text: 'Put a screen at the image', title: 'Adds a screen where the rays come to focus, facing them', onclick: () => { const sc0 = RNBX.imaging && RNBX.imaging.placeScreen(S.doc, RNBX.trace(S.doc), obj); if (!sc0) { RNBX.toast('No real image yet: add a lens in front of the rays.'); return; } RNBX.addObject(sc0); RNBX.toast('Screen placed at the image. Its readout gives the spot and the ray fan.'); } })));
     body.push(control({ key: 'rayWidth', label: 'Ray width (whole figure)', type: 'range', min: 0.04, max: 0.8, step: 0.02 }, () => S.doc.style.rayWidth == null ? 0.16 : S.doc.style.rayWidth, (k, v) => { RNBX.history.checkpoint('rayWidth'); S.doc.style.rayWidth = v; RNBX.changed(); }));
   }
   if (obj.type === 'lens' || obj.type === 'objective') body.push(el('div', { class: 'row', style: { marginBottom: '10px' } }, el('button', { class: 'btn small', type: 'button', text: 'Move screen to focus', title: 'Puts the nearest screen, camera or detector in front of the lens at its focus', onclick: () => Ins.focusDetector(obj) })));

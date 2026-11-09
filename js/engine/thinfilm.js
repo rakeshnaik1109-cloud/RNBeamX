@@ -26,7 +26,7 @@ const TF = RNBX.thinfilm = {};
 const DATA = {};
 (window.RNBX_NK || []).forEach(m => { DATA[m.id] = m; });
 TF.data = DATA;
-const GLASS = { 'N-BK7': 'N-BK7 glass', FS: 'Fused silica (Sellmeier)', SF11: 'SF11 glass', CaF2: 'CaF₂ (Sellmeier)', Sapphire: 'Sapphire (o-ray)' };
+const GLASS = { 'N-BK7': 'N-BK7 glass', FS: 'Fused silica (Sellmeier)', SF11: 'SF11 glass', CaF2: 'CaF₂ (Sellmeier)', Sapphire: 'Sapphire (o-ray)', 'N-SF6': 'N-SF6 glass', 'N-SF10': 'N-SF10 glass', 'N-BAF10': 'N-BAF10 glass', 'N-LASF9': 'N-LASF9 glass', 'N-K5': 'N-K5 glass', PMMA: 'PMMA (acrylic)', PC: 'Polycarbonate' };
 TF.GROUPS = [['metal', 'Metals'], ['dielectric', 'Dielectrics'], ['semiconductor', 'Semiconductors'], ['polymer', 'Polymers'], ['liquid', 'Liquids'], ['glass', 'Optical glasses']];
 /* select options: [[id, label]] with group headings as disabled entries */
 TF.options = (withCustom = true) => {

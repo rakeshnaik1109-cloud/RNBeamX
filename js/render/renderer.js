@@ -168,6 +168,7 @@ R.build = (srcDoc, opt = {}) => {
     }
     scene = under + conns + RNBX.beams.draw2D(trace, doc, { time, motion: opt.motion }) + comps;
     // detectors that show what they record: the computed image beside the part (its caption is lettering)
+    if (RNBX.imaging) for (const o of objs) if (o.type === 'raysource' && o.props.markImage) sensors += RNBX.imaging.marker(doc, trace, o);
     if (RNBX.sensor) for (const o of objs) if (RNBX.sensor.enabled(o)) {
       const r = RNBX.sensor.draw(o, doc, trace, I);
       sensors += r.img; if (opt.labels !== false) labels += r.caption;
